@@ -24,39 +24,42 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle' # تفعيل التخزين المؤقت الذكي
+          # أزلت خاصية cache هنا لمنع الخطأ الذي ظهر في الصورة
 
-      - name: Initialize and Build Project
+      - name: Create Project and Sync
         run: |
-          # بناء البيئة الأساسية
+          # 1. تهيئة بيئة Node
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
           
+          # 2. تجهيز ملفات الويب (الموجودة حالياً في المستودع)
           mkdir -p www
           cp index.html www/ 2>/dev/null || true
+          # إذا كان لديك ملفات CSS أو JS أخرى، سيتم نقلها أيضاً
+          cp *.css www/ 2>/dev/null || true
+          cp *.js www/ 2>/dev/null || true
           
-          # تهيئة أندرويد
+          # 3. بناء مشروع أندرويد من الصفر
           npx cap init "Ossama TV" "com.ossama.tv" --web-dir www
           npx cap add android
 
-          # تحميل الأيقونة
+          # 4. إعداد الأيقونة (تأكد من وضع رابط صورتك هنا)
           mkdir -p resources
           curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
           
-          # توليد الأصول والمزامنة
+          # 5. توليد الأيقونات والمزامنة النهائية
           npx capacitor-assets generate --android
           npx cap sync android
 
       - name: Build Debug APK
         run: |
           cd android
-          # حل مشكلة الصلاحيات و Jar file
           chmod +x gradlew
-          ./gradlew clean # تنظيف البناء السابق لضمان عدم وجود ملفات Jar معطوبة
-          ./gradlew assembleDebug --no-daemon # تشغيل البناء بدون محرك خلفي لتقليل استهلاك الذاكرة
+          # تنظيف وبناء بدون استخدام daemon لتقليل استهلاك الذاكرة
+          ./gradlew clean assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ossama-TV-App
+          name: Ossama-TV-Final-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
