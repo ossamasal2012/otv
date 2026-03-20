@@ -1,4 +1,4 @@
-name: Build OTV LIVE APK
+name: Build OTV LIVE APK (Capacitor)
 
 on:
   push:
@@ -19,35 +19,36 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install Bubblewrap CLI
-        run: npm install -g @bubblewrap/cli
-
       - name: Set up Java (JDK 17)
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Install Dependencies
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init "OTV LIVE" "com.ossama.otv" --web-dir .
+
       # =============================================================
-      # ⬇️ ضع رابط أيقونة التطبيق (PNG) بدلاً من الرابط أدناه ⬇️
+      # ⬇️ ضع رابط أيقونة التطبيق هنا ⬇️
       # =============================================================
       - name: Download App Icon
         run: |
           curl -L "https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png" -o icon.png
       # =============================================================
 
-      - name: Initialize and Build APK
+      - name: Add Android Platform
         run: |
-          # إعداد مشروع Bubblewrap بناءً على ملف HTML الخاص بك
-          bubblewrap init --manifest="index (5).html" \
-          --meta='{"name": "OTV LIVE", "shortName": "OTV", "startUrl": "/index (5).html", "themeColor": "#050505", "backgroundColor": "#050505", "display": "standalone"}' \
-          --icon="icon.png"
-          
-          # بناء التطبيق والموافقة على التراخيص تلقائياً
-          bubblewrap build --accept_license
+          npx cap add android
+
+      - name: Build Android Project
+        run: |
+          cd android && ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OTV-Live-Release-APK
-          path: ./*.apk
+          name: OTV-Live-Capacitor-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
