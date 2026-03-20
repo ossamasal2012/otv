@@ -1,184 +1,137 @@
-name: Build Signed APK - OTV App
+name: Build APK - OTV App
 
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # السماح بالتشغيل اليدوي
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build & Sign APK
+    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
-      # ===========================
       # 1. استنساخ الكود
-      # ===========================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ===========================
       # 2. إعداد Node.js
-      # ===========================
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      # ===========================
-      # 3. إعداد Java (مطلوب لـ Android)
-      # ===========================
+      # 3. إعداد Java
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ===========================
       # 4. إعداد Android SDK
-      # ===========================
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      # ===========================
-      # 5. تثبيت الحزم
-      # ===========================
-      - name: Install Dependencies
-        run: npm install
+      # 5. إنشاء package.json وتثبيت Capacitor
+      - name: Setup Capacitor Project
+        run: |
+          if [ ! -f package.json ]; then
+            cat > package.json << 'EOF'
+          {
+            "name": "otv-live-tv",
+            "version": "1.0.0",
+            "description": "OTV Live TV",
+            "scripts": { "build": "echo build" },
+            "dependencies": {
+              "@capacitor/android": "^6.0.0",
+              "@capacitor/core": "^6.0.0"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "^6.0.0"
+            }
+          }
+          EOF
+          fi
+          npm install
 
-      # ===========================
-      # 6. تثبيت Capacitor CLI
-      # ===========================
-      - name: Install Capacitor CLI
-        run: npm install -g @capacitor/cli
+      # 6. إنشاء capacitor.config.json
+      - name: Create Capacitor Config
+        run: |
+          if [ ! -f capacitor.config.json ]; then
+            cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.otv.livetv",
+            "appName": "OTV Live",
+            "webDir": "dist",
+            "server": {
+              "androidScheme": "https"
+            }
+          }
+          EOF
+          fi
 
-      # ===========================
-      # 7. بناء ملفات الويب (HTML/CSS/JS)
-      # ===========================
+      # 7. نسخ index.html إلى dist
       - name: Build Web Assets
         run: |
-          # إذا كنت تستخدم Vite أو Webpack أو غيره، استبدل هذا السطر
-          # npm run build
-          
-          # للملف HTML الواحد (index.html) → انسخه إلى مجلد dist
           mkdir -p dist
-          cp index.html dist/index.html
-          # أضف أي ملفات إضافية هنا إذا لزم الأمر
-          # cp -r assets dist/assets
+          if [ -f index.html ]; then
+            cp index.html dist/index.html
+            echo "✅ تم نسخ index.html"
+          else
+            echo "⚠️ لم يُعثر على index.html"
+          fi
 
-      # ===========================
-      # 8. مزامنة Capacitor مع Android
-      # ===========================
+      # 8. إضافة منصة Android
+      - name: Add Android Platform
+        run: npx cap add android || echo "Already exists"
+
+      # 9. مزامنة Capacitor
       - name: Capacitor Sync
         run: npx cap sync android
 
-      # ===========================
-      # 9. تنزيل أيقونة التطبيق
-      # ===========================
-      - name: Download & Set App Icon
+      # 10. تنزيل وضبط أيقونة التطبيق
+      - name: Set App Icon
         run: |
-          # ▶▶▶ ضع رابط الأيقونة هنا (PNG بحجم 1024x1024 على الأقل) ◀◀◀
+          # ▶▶▶ ضع رابط أيقونتك هنا (PNG بحجم 1024x1024) ◀◀◀
           ICON_URL="https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png"
-          
-          # تنزيل الأيقونة
-          curl -L "$ICON_URL" -o app_icon.png
-          
-          # إنشاء مجلدات الأيقونات بأحجام مختلفة لـ Android
-          mkdir -p android/app/src/main/res/mipmap-mdpi
-          mkdir -p android/app/src/main/res/mipmap-hdpi
-          mkdir -p android/app/src/main/res/mipmap-xhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxhdpi
-          mkdir -p android/app/src/main/res/mipmap-xxxhdpi
-          
-          # تغيير حجم الأيقونة (يتطلب ImageMagick)
-          sudo apt-get install -y imagemagick
-          
-          convert app_icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-          convert app_icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-          convert app_icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          convert app_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          convert app_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          
-          # نسخ الأيقونة المستديرة (Round Icons)
-          cp android/app/src/main/res/mipmap-mdpi/ic_launcher.png    android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-          cp android/app/src/main/res/mipmap-hdpi/ic_launcher.png    android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-          cp android/app/src/main/res/mipmap-xhdpi/ic_launcher.png   android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
-          cp android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png  android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-          cp android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-          
-          echo "✅ تم تحديث أيقونة التطبيق بنجاح"
 
-      # ===========================
-      # 10. منح صلاحيات Gradle
-      # ===========================
-      - name: Grant Gradle Execute Permissions
+          sudo apt-get install -y imagemagick -q
+          curl -L "$ICON_URL" -o app_icon.png 2>/dev/null
+
+          if [ -f app_icon.png ]; then
+            for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              mkdir -p android/app/src/main/res/mipmap-$dir
+            done
+            convert app_icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            convert app_icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            convert app_icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            convert app_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            convert app_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              cp android/app/src/main/res/mipmap-$dir/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png \
+                 android/app/src/main/res/mipmap-$dir/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            done
+            echo "✅ تم تحديث الأيقونة"
+          fi
+
+      # 11. منح صلاحيات Gradle
+      - name: Grant Gradle Permissions
         run: chmod +x android/gradlew
 
-      # ===========================
-      # 11. بناء APK (بدون توقيع أولاً)
-      # ===========================
-      - name: Build Release APK
+      # 12. بناء APK
+      - name: Build Debug APK
         working-directory: android
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleDebug --stacktrace
 
-      # ===========================
-      # 12. فك تشفير Keystore من Secrets
-      # ===========================
-      - name: Decode Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
-          echo "✅ تم فك تشفير Keystore"
-
-      # ===========================
-      # 13. توقيع APK رقمياً
-      # ===========================
-      - name: Sign APK
-        run: |
-          # مسار APK غير الموقع
-          UNSIGNED_APK="android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          SIGNED_APK="android/app/build/outputs/apk/release/OTV-signed.apk"
-          
-          # التحقق من وجود الملف
-          if [ ! -f "$UNSIGNED_APK" ]; then
-            UNSIGNED_APK="android/app/build/outputs/apk/release/app-release.apk"
-          fi
-          
-          # توقيع APK باستخدام apksigner
-          ${ANDROID_HOME}/build-tools/34.0.0/apksigner sign \
-            --ks android/app/keystore.jks \
-            --ks-key-alias "${{ secrets.KEY_ALIAS }}" \
-            --ks-pass pass:"${{ secrets.KEYSTORE_PASSWORD }}" \
-            --key-pass pass:"${{ secrets.KEY_PASSWORD }}" \
-            --out "$SIGNED_APK" \
-            "$UNSIGNED_APK"
-          
-          echo "✅ تم توقيع APK بنجاح: $SIGNED_APK"
-
-      # ===========================
-      # 14. التحقق من التوقيع
-      # ===========================
-      - name: Verify APK Signature
-        run: |
-          ${ANDROID_HOME}/build-tools/34.0.0/apksigner verify \
-            android/app/build/outputs/apk/release/OTV-signed.apk
-          echo "✅ التوقيع صحيح وصالح"
-
-      # ===========================
-      # 15. رفع APK الموقع كـ Artifact
-      # ===========================
-      - name: Upload Signed APK
+      # 13. رفع APK كـ Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OTV-App-Signed
-          path: android/app/build/outputs/apk/release/OTV-signed.apk
+          name: OTV-App
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      # ===========================
-      # 16. إنشاء Release تلقائي (اختياري)
-      # ===========================
+      # 14. إنشاء Release تلقائي
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v1
@@ -187,16 +140,11 @@ jobs:
           name: "OTV App v${{ github.run_number }}"
           body: |
             ## 📱 OTV Live TV - الإصدار ${{ github.run_number }}
-            
             ### تعليمات التثبيت:
-            1. قم بتنزيل ملف APK
-            2. فعّل "مصادر غير معروفة" في إعدادات هاتفك
+            1. نزّل ملف APK
+            2. فعّل "مصادر غير معروفة" في الإعدادات
             3. ثبّت التطبيق
-            
-            ### ملاحظات:
-            - هذا التطبيق موقع رقمياً ويمكن تثبيته بأمان
-            - يدعم بث مباشر بجودة عالية
-          files: android/app/build/outputs/apk/release/OTV-signed.apk
+          files: android/app/build/outputs/apk/debug/app-debug.apk
           draft: false
           prerelease: false
         env:
