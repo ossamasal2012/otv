@@ -6,6 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+# تحديد المجلد الافتراضي الذي يحتوي على الكود (المجلد الفرعي otv)
+defaults:
+  run:
+    working-directory: otv
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -22,6 +27,9 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Install Capacitor Assets Tool
+        run: npm install -g @capacitor/assets
+
       - name: Build Web Project
         run: npm run build
 
@@ -31,11 +39,18 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      # الحل: إضافة المنصة إذا لم تكن موجودة ثم عمل المزامنة
-      - name: Add and Sync Android Platform
+      - name: Add Android Platform
+        run: npx cap add android
+
+      - name: Download and Set App Icon
         run: |
-          npx cap add android || true
-          npx cap sync android
+          mkdir -p resources
+          # ضع رابط صورتك هنا
+          curl -L "رابط_صورتك_هنا" -o resources/icon.png
+          capacitor-assets generate --android
+
+      - name: Sync Capacitor with Android
+        run: npx cap sync android
 
       - name: Build Debug APK
         run: |
@@ -45,4 +60,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: My-App-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          # التأكد من المسار الصحيح للرفع مع المجلد الفرعي
+          path: otv/android/app/build/outputs/apk/debug/app-debug.apk
