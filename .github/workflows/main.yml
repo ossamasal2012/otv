@@ -1,61 +1,40 @@
-name: Build Android APK
+name: Deploy HTML Project
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source Code
+      - name: ⬇️ Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: 📁 Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: 📦 Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          node-version: '20'
+          path: .
 
-      - name: Set up Java JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'zulu' # توزيع zulu هو الأكثر استقراراً لبناء أندرويد
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
 
-      - name: Build Project From Scratch
-        run: |
-          # إنشاء المشروع
-          npm init -y
-          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
-          
-          # تجهيز الملفات
-          mkdir -p www
-          [ -f index.html ] && cp index.html www/
-          
-          # تهيئة أندرويد (اسم التطبيق: OSSAMA TV)
-          npx cap init "OSSAMA TV" "com.ossama.tv" --web-dir www
-          npx cap add android
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
-          # تحميل الأيقونة وتوليدها
-          mkdir -p resources
-          curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
-          npx capacitor-assets generate --android
-          
-          # مزامنة الملفات
-          npx cap sync android
-
-      - name: Build With Gradle
-        run: |
-          cd android
-          chmod +x gradlew
-          # أمر بناء مباشر وصريح بدون أي تعقيدات
-          ./gradlew assembleDebug --no-daemon
-
-      - name: Upload Finished APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: OSSAMA-TV-APP
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
