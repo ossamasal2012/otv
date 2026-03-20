@@ -89,29 +89,36 @@ jobs:
       - name: Capacitor Sync
         run: npx cap sync android
 
-      # 10. تنزيل وضبط أيقونة التطبيق
+      # 10. تنزيل وضبط أيقونة التطبيق (لن يوقف البناء عند الفشل)
       - name: Set App Icon
+        continue-on-error: true   # ← حتى لو فشل لن يوقف البناء
         run: |
           # ▶▶▶ ضع رابط أيقونتك هنا (PNG بحجم 1024x1024) ◀◀◀
           ICON_URL="https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png"
 
           sudo apt-get install -y imagemagick -q
-          curl -L "$ICON_URL" -o app_icon.png 2>/dev/null
 
-          if [ -f app_icon.png ]; then
+          # تنزيل الأيقونة مع التحقق من نجاح التنزيل
+          HTTP_CODE=$(curl -L -w "%{http_code}" "$ICON_URL" -o app_icon.png 2>/dev/null)
+          echo "HTTP Status: $HTTP_CODE"
+
+          # التحقق أن الملف صورة صالحة
+          if [ "$HTTP_CODE" = "200" ] && file app_icon.png | grep -qiE "png|jpeg|image"; then
             for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
               mkdir -p android/app/src/main/res/mipmap-$dir
             done
-            convert app_icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
-            convert app_icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
-            convert app_icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
-            convert app_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
-            convert app_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+            convert app_icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+            convert app_icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            convert app_icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+            convert app_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+            convert app_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
             for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-              cp android/app/src/main/res/mipmap-$dir/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png \
-                 android/app/src/main/res/mipmap-$dir/https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png
+              cp android/app/src/main/res/mipmap-$dir/ic_launcher.png \
+                 android/app/src/main/res/mipmap-$dir/ic_launcher_round.png
             done
-            echo "✅ تم تحديث الأيقونة"
+            echo "✅ تم تحديث الأيقونة بنجاح"
+          else
+            echo "⚠️ تعذّر تنزيل الأيقونة - سيُستخدم الافتراضي وسيكمل البناء"
           fi
 
       # 11. منح صلاحيات Gradle
