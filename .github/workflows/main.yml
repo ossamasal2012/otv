@@ -6,11 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-# تحديد المجلد الافتراضي الذي يحتوي على الكود (المجلد الفرعي otv)
-defaults:
-  run:
-    working-directory: otv
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -24,13 +19,16 @@ jobs:
         with:
           node-version: '20'
 
+      # نستخدم "working-directory: otv" في كل خطوة تحتاج للملفات البرمجية
       - name: Install Dependencies
+        working-directory: otv
         run: npm install
 
       - name: Install Capacitor Assets Tool
         run: npm install -g @capacitor/assets
 
       - name: Build Web Project
+        working-directory: otv
         run: npm run build
 
       - name: Set up Java JDK
@@ -40,25 +38,27 @@ jobs:
           distribution: 'zulu'
 
       - name: Add Android Platform
+        working-directory: otv
         run: npx cap add android
 
       - name: Download and Set App Icon
+        working-directory: otv
         run: |
           mkdir -p resources
-          # ضع رابط صورتك هنا
-          curl -L "رابط_صورتك_هنا" -o resources/icon.png
+          # استبدل الرابط أدناه برابط صورتك المباشر
+          curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
           capacitor-assets generate --android
 
       - name: Sync Capacitor with Android
+        working-directory: otv
         run: npx cap sync android
 
       - name: Build Debug APK
-        run: |
-          cd android && ./gradlew assembleDebug
+        working-directory: otv/android
+        run: ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: My-App-Debug-APK
-          # التأكد من المسار الصحيح للرفع مع المجلد الفرعي
           path: otv/android/app/build/outputs/apk/debug/app-debug.apk
