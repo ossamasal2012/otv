@@ -17,49 +17,45 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
-          # أزلت خاصية cache هنا لمنع الخطأ الذي ظهر في الصورة
+          distribution: 'zulu' # توزيع zulu هو الأكثر استقراراً لبناء أندرويد
 
-      - name: Create Project and Sync
+      - name: Build Project From Scratch
         run: |
-          # 1. تهيئة بيئة Node
+          # إنشاء المشروع
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
           
-          # 2. تجهيز ملفات الويب (الموجودة حالياً في المستودع)
+          # تجهيز الملفات
           mkdir -p www
-          cp index.html www/ 2>/dev/null || true
-          # إذا كان لديك ملفات CSS أو JS أخرى، سيتم نقلها أيضاً
-          cp *.css www/ 2>/dev/null || true
-          cp *.js www/ 2>/dev/null || true
+          [ -f index.html ] && cp index.html www/
           
-          # 3. بناء مشروع أندرويد من الصفر
-          npx cap init "Ossama TV" "com.ossama.tv" --web-dir www
+          # تهيئة أندرويد (اسم التطبيق: OSSAMA TV)
+          npx cap init "OSSAMA TV" "com.ossama.tv" --web-dir www
           npx cap add android
 
-          # 4. إعداد الأيقونة (تأكد من وضع رابط صورتك هنا)
+          # تحميل الأيقونة وتوليدها
           mkdir -p resources
           curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
-          
-          # 5. توليد الأيقونات والمزامنة النهائية
           npx capacitor-assets generate --android
+          
+          # مزامنة الملفات
           npx cap sync android
 
-      - name: Build Debug APK
+      - name: Build With Gradle
         run: |
           cd android
           chmod +x gradlew
-          # تنظيف وبناء بدون استخدام daemon لتقليل استهلاك الذاكرة
-          ./gradlew clean assembleDebug --no-daemon
+          # أمر بناء مباشر وصريح بدون أي تعقيدات
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ossama-TV-Final-APK
+          name: OSSAMA-TV-APP
           path: android/app/build/outputs/apk/debug/app-debug.apk
