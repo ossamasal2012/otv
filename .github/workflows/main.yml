@@ -19,46 +19,46 @@ jobs:
         with:
           node-version: '20'
 
-      # نستخدم "working-directory: otv" في كل خطوة تحتاج للملفات البرمجية
-      - name: Install Dependencies
-        working-directory: otv
-        run: npm install
-
-      - name: Install Capacitor Assets Tool
-        run: npm install -g @capacitor/assets
-
-      - name: Build Web Project
-        working-directory: otv
-        run: npm run build
-
       - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'zulu'
 
-      - name: Add Android Platform
-        working-directory: otv
-        run: npx cap add android
-
-      - name: Download and Set App Icon
-        working-directory: otv
+      # هذه الخطوة تبحث عن المجلد الذي يحتوي على package.json وتنفذ الأوامر بداخله
+      - name: Install and Build
         run: |
+          # العثور على المجلد الذي يحتوي على مشروعك
+          PROJECT_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \;)
+          echo "Project directory is: $PROJECT_DIR"
+          cd $PROJECT_DIR
+          
+          # تثبيت التبعيات وبناء مشروع الويب
+          npm install
+          npm run build
+          
+          # تثبيت أداة الأيقونات
+          npm install -g @capacitor/assets
+          
+          # تحميل الأيقونة (استبدل الرابط أدناه برابط صورتك)
           mkdir -p resources
-          # استبدل الرابط أدناه برابط صورتك المباشر
           curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
-          capacitor-assets generate --android
-
-      - name: Sync Capacitor with Android
-        working-directory: otv
-        run: npx cap sync android
-
-      - name: Build Debug APK
-        working-directory: otv/android
-        run: ./gradlew assembleDebug
+          
+          # إضافة منصة أندرويد وبناء الأيقونات
+          npx cap add android || true
+          npx capacitor-assets generate --android
+          npx cap sync android
+          
+          # بناء ملف APK
+          cd android
+          ./gradlew assembleDebug
+          
+          # نقل ملف الـ APK لمكان معروف للرفع
+          mkdir -p ../../output
+          cp app/build/outputs/apk/debug/app-debug.apk ../../output/app-debug.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: My-App-Debug-APK
-          path: otv/android/app/build/outputs/apk/debug/app-debug.apk
+          path: output/app-debug.apk
