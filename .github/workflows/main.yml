@@ -1,158 +1,45 @@
-name: Build APK - OTV App
+name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من GitHub
 
 jobs:
   build:
-    name: Build APK
     runs-on: ubuntu-latest
 
     steps:
-      # 1. استنساخ الكود
-      - name: Checkout Repository
+      - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      # 2. إعداد Node.js
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3. إعداد Java
-      - name: Setup Java JDK
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Web Project
+        run: npm run build
+
+      - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
+          distribution: 'zulu'
 
-      # 4. إعداد Android SDK
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      # 5. إنشاء package.json وتثبيت Capacitor
-      - name: Setup Capacitor Project
-        run: |
-          if [ ! -f package.json ]; then
-            cat > package.json << 'EOF'
-          {
-            "name": "otv-live-tv",
-            "version": "1.0.0",
-            "description": "OTV Live TV",
-            "scripts": { "build": "echo build" },
-            "dependencies": {
-              "@capacitor/android": "^6.0.0",
-              "@capacitor/core": "^6.0.0"
-            },
-            "devDependencies": {
-              "@capacitor/cli": "^6.0.0"
-            }
-          }
-          EOF
-          fi
-          npm install
-
-      # 6. إنشاء capacitor.config.json
-      - name: Create Capacitor Config
-        run: |
-          if [ ! -f capacitor.config.json ]; then
-            cat > capacitor.config.json << 'EOF'
-          {
-            "appId": "com.otv.livetv",
-            "appName": "OTV Live",
-            "webDir": "dist",
-            "server": {
-              "androidScheme": "https"
-            }
-          }
-          EOF
-          fi
-
-      # 7. نسخ index.html إلى dist
-      - name: Build Web Assets
-        run: |
-          mkdir -p dist
-          if [ -f index.html ]; then
-            cp index.html dist/index.html
-            echo "✅ تم نسخ index.html"
-          else
-            echo "⚠️ لم يُعثر على index.html"
-          fi
-
-      # 8. إضافة منصة Android
-      - name: Add Android Platform
-        run: npx cap add android || echo "Already exists"
-
-      # 9. مزامنة Capacitor
-      - name: Capacitor Sync
+      - name: Sync Capacitor with Android
         run: npx cap sync android
 
-      # 10. تنزيل وضبط أيقونة التطبيق (لن يوقف البناء عند الفشل)
-      - name: Set App Icon
-        continue-on-error: true   # ← حتى لو فشل لن يوقف البناء
-        run: |
-          # ▶▶▶ ضع رابط أيقونتك هنا (PNG بحجم 1024x1024) ◀◀◀
-          ICON_URL="https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png"
-
-          sudo apt-get install -y imagemagick -q
-
-          # تنزيل الأيقونة مع التحقق من نجاح التنزيل
-          HTTP_CODE=$(curl -L -w "%{http_code}" "$ICON_URL" -o app_icon.png 2>/dev/null)
-          echo "HTTP Status: $HTTP_CODE"
-
-          # التحقق أن الملف صورة صالحة
-          if [ "$HTTP_CODE" = "200" ] && file app_icon.png | grep -qiE "png|jpeg|image"; then
-            for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-              mkdir -p android/app/src/main/res/mipmap-$dir
-            done
-            convert app_icon.png -resize 48x48   android/app/src/main/res/mipmap-mdpi/ic_launcher.png
-            convert app_icon.png -resize 72x72   android/app/src/main/res/mipmap-hdpi/ic_launcher.png
-            convert app_icon.png -resize 96x96   android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
-            convert app_icon.png -resize 144x144 android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-            convert app_icon.png -resize 192x192 android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-            for dir in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-              cp android/app/src/main/res/mipmap-$dir/ic_launcher.png \
-                 android/app/src/main/res/mipmap-$dir/ic_launcher_round.png
-            done
-            echo "✅ تم تحديث الأيقونة بنجاح"
-          else
-            echo "⚠️ تعذّر تنزيل الأيقونة - سيُستخدم الافتراضي وسيكمل البناء"
-          fi
-
-      # 11. منح صلاحيات Gradle
-      - name: Grant Gradle Permissions
-        run: chmod +x android/gradlew
-
-      # 12. بناء APK
       - name: Build Debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          cd android && ./gradlew assembleDebug
 
-      # 13. رفع APK كـ Artifact
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OTV-App
+          name: My-App-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 30
-
-      # 14. إنشاء Release تلقائي
-      - name: Create GitHub Release
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.run_number }}
-          name: "OTV App v${{ github.run_number }}"
-          body: |
-            ## 📱 OTV Live TV - الإصدار ${{ github.run_number }}
-            ### تعليمات التثبيت:
-            1. نزّل ملف APK
-            2. فعّل "مصادر غير معروفة" في الإعدادات
-            3. ثبّت التطبيق
-          files: android/app/build/outputs/apk/debug/app-debug.apk
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
