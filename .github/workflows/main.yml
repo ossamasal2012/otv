@@ -1,0 +1,53 @@
+name: Build OSSAMA TV APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Set up Java (JDK 17)
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # =============================================================
+      # مكان وضع رابط أيقونة التطبيق (استبدل الرابط أدناه برابط صورتك)
+      # =============================================================
+      - name: Download App Icon
+        run: |
+          curl -L "https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png" -o icon.png
+      # =============================================================
+
+      - name: Initialize Bubblewrap Project
+        run: |
+          bubblewrap init --manifest="index (5).html" \
+          --meta='{"name": "OTV LIVE", "shortName": "OTV", "startUrl": "/index (5).html", "themeColor": "#050505", "backgroundColor": "#050505"}' \
+          --icon="icon.png"
+
+      - name: Build APK
+        run: |
+          bubblewrap build --accept_license
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: OTV-Live-Release-APK
+          path: ./*.apk
