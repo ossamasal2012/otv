@@ -1,4 +1,4 @@
-name: Build OSSAMA TV APK
+name: Build OTV LIVE APK
 
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/actions/checkout@v3
+        uses: actions/checkout@v3
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -29,25 +29,23 @@ jobs:
           distribution: 'temurin'
 
       # =============================================================
-      # مكان وضع رابط أيقونة التطبيق (استبدل الرابط أدناه برابط صورتك)
+      # ⬇️ ضع رابط أيقونة التطبيق (PNG) بين القوسين أدناه ⬇️
       # =============================================================
       - name: Download App Icon
         run: |
           curl -L "https://i.ibb.co/fYkRx1fB/Gemini-Generated-Image-ekxxfoekxxfoekxx.png" -o icon.png
       # =============================================================
 
-      - name: Initialize Bubblewrap Project
+      - name: Initialize and Build APK
         run: |
           bubblewrap init --manifest="index (5).html" \
-          --meta='{"name": "OTV LIVE", "shortName": "OTV", "startUrl": "/index (5).html", "themeColor": "#050505", "backgroundColor": "#050505"}' \
+          --meta='{"name": "OTV LIVE", "shortName": "OTV", "startUrl": "/index (5).html", "themeColor": "#050505", "backgroundColor": "#050505", "display": "standalone"}' \
           --icon="icon.png"
-
-      - name: Build APK
-        run: |
+          
           bubblewrap build --accept_license
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          name: OTV-Live-Release-APK
+          name: OTV-Live-Release
           path: ./*.apk
