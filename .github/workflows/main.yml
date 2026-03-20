@@ -19,44 +19,41 @@ jobs:
         with:
           node-version: '18'
 
-      # حل مشكلة Java: استخدام نسخة 17 المستقرة
       - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle' # تفعيل التخزين المؤقت الذكي
 
       - name: Initialize and Build Project
         run: |
-          # إنشاء بيئة العمل إذا لم تكن موجودة
-          if [ ! -f "package.json" ]; then
-            npm init -y
-            npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
-          fi
+          # بناء البيئة الأساسية
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
           
-          # إنشاء مجلد الويب ونقل الملفات
           mkdir -p www
           cp index.html www/ 2>/dev/null || true
           
-          # تهيئة كاباسيتور (يمكنك تغيير الاسم هنا)
-          if [ ! -d "android" ]; then
-            npx cap init "Ossama TV" "com.ossama.tv" --web-dir www
-            npx cap add android
-          fi
+          # تهيئة أندرويد
+          npx cap init "Ossama TV" "com.ossama.tv" --web-dir www
+          npx cap add android
 
-          # إعداد الأيقونة (استبدل الرابط أدناه برابط صورتك المباشر)
+          # تحميل الأيقونة
           mkdir -p resources
           curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
           
-          # توليد الأيقونات والمزامنة
+          # توليد الأصول والمزامنة
           npx capacitor-assets generate --android
           npx cap sync android
 
       - name: Build Debug APK
         run: |
           cd android
+          # حل مشكلة الصلاحيات و Jar file
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew clean # تنظيف البناء السابق لضمان عدم وجود ملفات Jar معطوبة
+          ./gradlew assembleDebug --no-daemon # تشغيل البناء بدون محرك خلفي لتقليل استهلاك الذاكرة
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
