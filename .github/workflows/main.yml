@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build APK from index.html
 
 on:
   push:
@@ -25,40 +25,38 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      # هذه الخطوة تبحث عن المجلد الذي يحتوي على package.json وتنفذ الأوامر بداخله
-      - name: Install and Build
+      # هذه الخطوة ستقوم بإنشاء المشروع من الصفر حول ملف index.html الخاص بك
+      - name: Auto-Generate Capacitor Project
         run: |
-          # العثور على المجلد الذي يحتوي على مشروعك
-          PROJECT_DIR=$(find . -name "package.json" -not -path "*/node_modules/*" -exec dirname {} \;)
-          echo "Project directory is: $PROJECT_DIR"
-          cd $PROJECT_DIR
+          # 1. إنشاء ملف package.json وهمي
+          npm init -y
           
-          # تثبيت التبعيات وبناء مشروع الويب
-          npm install
-          npm run build
+          # 2. تثبيت مكتبات Capacitor المطلوبة
+          npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/assets
           
-          # تثبيت أداة الأيقونات
-          npm install -g @capacitor/assets
+          # 3. إنشاء مجلد لملفات الويب ونقل ملف index.html إليه
+          mkdir -p www
+          cp index.html www/ 2>/dev/null || true
           
-          # تحميل الأيقونة (استبدل الرابط أدناه برابط صورتك)
+          # 4. تهيئة إعدادات Capacitor (تم وضع اسم التطبيق: Ossama App)
+          npx cap init "Ossama App" "com.ossama.app" --web-dir www
+          
+          # 5. تحميل الأيقونة (استبدل الرابط أدناه برابط أيقونتك)
           mkdir -p resources
           curl -L "https://raw.githubusercontent.com/ionic-team/capacitor-assets/main/assets/icon-only.png" -o resources/icon.png
-          
-          # إضافة منصة أندرويد وبناء الأيقونات
-          npx cap add android || true
           npx capacitor-assets generate --android
-          npx cap sync android
           
-          # بناء ملف APK
+          # 6. إضافة منصة أندرويد والمزامنة
+          npx cap add android
+          npx cap sync android
+
+      - name: Build Debug APK
+        run: |
           cd android
           ./gradlew assembleDebug
-          
-          # نقل ملف الـ APK لمكان معروف للرفع
-          mkdir -p ../../output
-          cp app/build/outputs/apk/debug/app-debug.apk ../../output/app-debug.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: My-App-Debug-APK
-          path: output/app-debug.apk
+          name: Ossama-App-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
