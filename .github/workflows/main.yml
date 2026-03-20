@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # يتيح لك تشغيل البناء يدوياً من GitHub
+  workflow_dispatch:
 
 jobs:
   build:
@@ -31,8 +31,11 @@ jobs:
           java-version: '17'
           distribution: 'zulu'
 
-      - name: Sync Capacitor with Android
-        run: npx cap sync android
+      # الحل: إضافة المنصة إذا لم تكن موجودة ثم عمل المزامنة
+      - name: Add and Sync Android Platform
+        run: |
+          npx cap add android || true
+          npx cap sync android
 
       - name: Build Debug APK
         run: |
