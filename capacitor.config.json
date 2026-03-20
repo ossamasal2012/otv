@@ -1,0 +1,13 @@
+{
+  "appId": "com.otv.livetv",
+  "appName": "OTV Live",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "buildOptions": {
+      "releaseType": "APK"
+    }
+  }
+}
