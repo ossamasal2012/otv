@@ -29,7 +29,7 @@ jobs:
           distribution: 'temurin'
 
       # =============================================================
-      # ⬇️ ضع رابط أيقونة التطبيق (PNG) بين القوسين أدناه ⬇️
+      # ⬇️ ضع رابط أيقونة التطبيق (PNG) بدلاً من الرابط أدناه ⬇️
       # =============================================================
       - name: Download App Icon
         run: |
@@ -38,14 +38,16 @@ jobs:
 
       - name: Initialize and Build APK
         run: |
+          # إعداد مشروع Bubblewrap بناءً على ملف HTML الخاص بك
           bubblewrap init --manifest="index (5).html" \
           --meta='{"name": "OTV LIVE", "shortName": "OTV", "startUrl": "/index (5).html", "themeColor": "#050505", "backgroundColor": "#050505", "display": "standalone"}' \
           --icon="icon.png"
           
+          # بناء التطبيق والموافقة على التراخيص تلقائياً
           bubblewrap build --accept_license
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OTV-Live-Release
+          name: OTV-Live-Release-APK
           path: ./*.apk
