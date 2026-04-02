@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>يلا گـــول | Yalla Goal Pro</title>
-    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -18,6 +17,7 @@
             color: #f1f5f9;
             height: 100vh;
             overflow: hidden;
+            margin: 0;
         }
 
         .channel-item {
@@ -26,24 +26,9 @@
             overflow: hidden;
         }
 
-        .channel-item::before {
-            content: '';
-            position: absolute;
-            right: 0;
-            top: 0;
-            height: 100%;
-            width: 4px;
-            background: transparent;
-            transition: all 0.3s;
-        }
-
         .active-card {
             background: linear-gradient(270deg, rgba(16, 185, 129, 0.15) 0%, rgba(15, 23, 42, 0.5) 100%) !important;
             border-color: rgba(16, 185, 129, 0.4) !important;
-        }
-
-        .active-card::before {
-            background: #10b981;
         }
 
         .active-btn {
@@ -73,34 +58,30 @@
         <!-- Logo Desktop -->
         <div class="p-6 border-b border-slate-800/60 hidden lg:flex flex-col gap-1">
             <h1 class="text-2xl font-black text-emerald-500 tracking-tighter">يلا گـــول</h1>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">تطوير أُسامه</p>
+            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">تطوير أُسامه - نسخة آمنة</p>
         </div>
 
         <!-- Search Bar -->
         <div class="px-4 pt-4 shrink-0">
             <div class="relative group">
                 <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث عن قناة..." 
-                    class="w-full bg-slate-800/40 border border-slate-700/50 rounded-xl py-2 px-4 pr-10 text-xs focus:outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-600">
+                    class="w-full bg-slate-800/40 border border-slate-700/50 rounded-xl py-2 px-4 pr-10 text-xs focus:outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-600 text-white">
                 <i class="fa-solid fa-magnifying-glass absolute right-3 top-2.5 text-slate-600 group-focus-within:text-emerald-500 text-xs"></i>
             </div>
         </div>
 
         <!-- Categories -->
         <div class="p-4 overflow-x-auto no-scrollbar flex lg:flex-row flex-wrap gap-2 shrink-0">
-            <div id="categoryMenu" class="flex lg:flex-wrap gap-2 w-max lg:w-full">
-                <!-- Categories injected here -->
-            </div>
+            <div id="categoryMenu" class="flex lg:flex-wrap gap-2 w-max lg:w-full"></div>
         </div>
 
         <!-- Channels List -->
-        <div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar">
-            <!-- Channels injected here -->
-        </div>
+        <div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar"></div>
 
         <!-- Mobile Branding -->
         <div class="lg:hidden p-3 bg-slate-950/80 text-center border-t border-slate-800/60 flex justify-between items-center px-6">
             <span class="text-xs font-black text-emerald-500">يلا گـــول</span>
-            <span class="text-[9px] text-slate-600 font-bold uppercase">تطوير أُسامه</span>
+            <span class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">تطوير أُسامه</span>
         </div>
     </aside>
 
@@ -112,7 +93,14 @@
         </div>
         
         <video id="vPlayer" class="w-full h-full object-contain hidden z-10" controls autoplay playsinline></video>
-        <iframe id="iPlayer" class="w-full h-full hidden border-0 z-10" allowfullscreen></iframe>
+        
+        <!-- الحماية هنا: تم إضافة sandbox لمنع النوافذ المنبثقة -->
+        <iframe id="iPlayer" 
+                class="w-full h-full hidden border-0 z-10" 
+                allowfullscreen 
+                sandbox="allow-scripts allow-same-origin allow-forms"
+                referrerpolicy="no-referrer">
+        </iframe>
         
         <div id="liveTag" class="absolute top-6 right-6 z-20 flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full hidden">
             <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
@@ -121,6 +109,19 @@
     </main>
 
     <script>
+        /* نظام منع النوافذ المنبثقة الصارم */
+        (function() {
+            // منع فتح أي نافذة جديدة من داخل الصفحة
+            window.open = function() { 
+                console.log("تم منع محاولة فتح نافذة إعلانية.");
+                return null; 
+            };
+            
+            // منع الرسائل التحذيرية التي قد تظهر من المشغلات الخارجية
+            window.alert = function() { return true; };
+            window.confirm = function() { return true; };
+        })();
+
         const myChannels = [
             ["BeIN Sports 3", "https://19.wwwkoora.com/albaplayer/bein-sports-hd-3/", "رياضة", "i"],
             ["Sport CH 2", "http://stream.mytvplus.net:7003/sport/ch2/ch2_1080.m3u8", "رياضة", "v"],
@@ -175,14 +176,12 @@
             const box = document.getElementById('channelsBox');
             let filtered = myChannels;
 
-            // تصفية حسب القسم
             if (currentCat === "المفضلة") {
                 filtered = myChannels.filter(c => favorites.includes(c[0]));
             } else if (currentCat !== "الكل") {
                 filtered = myChannels.filter(c => c[2] === currentCat);
             }
 
-            // تصفية حسب البحث
             if (searchQuery) {
                 filtered = filtered.filter(c => c[0].toLowerCase().includes(searchQuery));
             }
@@ -234,6 +233,7 @@
 
             if (type === 'i') {
                 i.classList.remove('hidden');
+                // نستخدم التوجيه الآمن
                 i.src = url;
             } else {
                 v.classList.remove('hidden');
