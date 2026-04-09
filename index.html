@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -53,7 +54,8 @@
 <body class="flex flex-col lg:flex-row">
 
     <!-- Sidebar -->
-    <aside class="w-full lg:w-80 flex flex-col bg-slate-900/40 border-l border-slate-800/60 z-20 order-2 lg:order-1 h-[50vh] lg:h-full backdrop-blur-md">
+    <aside class="w-full lg:w-80 flex flex-col bg-slate-900/40 border-l border-slate-800/60 z-20 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full backdrop-blur-md overflow-hidden">
+
         
         <!-- Logo Desktop -->
         <div class="p-6 border-b border-slate-800/60 hidden lg:flex flex-col gap-1">
@@ -84,6 +86,13 @@
             <span class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">تطوير أُسامه</span>
         </div>
     </aside>
+        <!-- Player Main Area -->
+    <!-- تم تعديل كلاسات الموبايل هنا: أضفنا h-[30vh] و shrink-0 ليصبح ارتفاع الفيديو مناسباً في الموبايل -->
+    <main class="w-full lg:flex-1 bg-black relative flex items-center justify-center order-1 lg:order-2 h-[35vh] lg:h-full shrink-0">
+        <div id="loader" class="absolute flex flex-col items-center gap-4 text-slate-700">
+            <div class="w-16 h-16 rounded-full border-4 border-emerald-500/10 border-t-emerald-500/40 animate-spin"></div>
+            <span class="text-xs font-bold tracking-widest">انتظار اختيار القناة</span>
+        </div>
 
     <!-- Player Main Area -->
     <main class="flex-1 bg-black relative flex items-center justify-center order-1 lg:order-2 h-[35vh] lg:h-full">
