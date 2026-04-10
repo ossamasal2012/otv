@@ -1,17 +1,17 @@
-
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
+<!DOCTYPE html><html lang="ar" dir="rtl"><head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>يلا گـــول | Yalla Goal Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.4.12/dist/hls.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
-        
+
         body {
             font-family: 'Tajawal', sans-serif;
             background-color: #020617;
@@ -22,115 +22,105 @@
         }
 
         .channel-item {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
+            transition: all 0.2s ease;
+            cursor: pointer;
         }
 
         .active-card {
-            background: linear-gradient(270deg, rgba(16, 185, 129, 0.15) 0%, rgba(15, 23, 42, 0.5) 100%) !important;
-            border-color: rgba(16, 185, 129, 0.4) !important;
+            background: linear-gradient(270deg, rgba(16, 185, 129, 0.2) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
+            border-color: #10b981 !important;
         }
 
         .active-btn {
             background: #10b981 !important;
             color: white !important;
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
         }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(20px); }
-            to { opacity: 1; transform: translateX(0); }
-        }
-        .animate-item { animation: slideIn 0.3s ease forwards; }
 
-        .fav-star.active {
-            color: #fbbf24 !important;
+        #dynamic-player-root {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .plyr {
+            height: 100% !important;
+            width: 100% !important;
+        }
+
+        .custom-hide-controls .plyr__controls {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translateY(10px);
+        }
+
+        .custom-show-controls .plyr__controls {
+            opacity: 1 !important;
+            pointer-events: all !important;
+            transform: translateY(0);
+        }
+
+        .overlay-screen {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #020617;
+            gap: 1rem;
+        }
+        
+        #iPlayer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            border: 0;
+            z-index: 40;
+            display: none;
         }
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
 
-    <!-- Sidebar -->
-    <aside class="w-full lg:w-80 flex flex-col bg-slate-900/40 border-l border-slate-800/60 z-20 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full backdrop-blur-md overflow-hidden">
-
-        
-        <!-- Logo Desktop -->
-        <div class="p-6 border-b border-slate-800/60 hidden lg:flex flex-col gap-1">
-            <h1 class="text-2xl font-black text-emerald-500 tracking-tighter">يلا گـــول</h1>
-            <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">تطوير أُسامه - نسخة آمنة</p>
+    <aside class="w-full lg:w-80 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
+        <div class="p-5 border-b border-slate-900 hidden lg:block">
+            <h1 class="text-xl font-black text-emerald-500">يلا گـــول PRO</h1>
+            <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">تطوير أُسامه - v2.3</p>
         </div>
 
-        <!-- Search Bar -->
-        <div class="px-4 pt-4 shrink-0">
-            <div class="relative group">
-                <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث عن قناة..." 
-                    class="w-full bg-slate-800/40 border border-slate-700/50 rounded-xl py-2 px-4 pr-10 text-xs focus:outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-600 text-white">
-                <i class="fa-solid fa-magnifying-glass absolute right-3 top-2.5 text-slate-600 group-focus-within:text-emerald-500 text-xs"></i>
-            </div>
+        <div class="p-4 shrink-0">
+            <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث سريع..."
+                class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-4 text-xs focus:outline-none focus:border-emerald-500 transition-all text-white">
         </div>
 
-        <!-- Categories -->
-        <div class="p-4 overflow-x-auto no-scrollbar flex lg:flex-row flex-wrap gap-2 shrink-0">
-            <div id="categoryMenu" class="flex lg:flex-wrap gap-2 w-max lg:w-full"></div>
-        </div>
+        <div id="categoryMenu" class="px-4 pb-2 overflow-x-auto no-scrollbar flex gap-2 shrink-0"></div>
 
-        <!-- Channels List -->
         <div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar"></div>
-
-        <!-- Mobile Branding -->
-        <div class="lg:hidden p-3 bg-slate-950/80 text-center border-t border-slate-800/60 flex justify-between items-center px-6">
-            <span class="text-xs font-black text-emerald-500">يلا گـــول</span>
-            <span class="text-[9px] text-slate-600 font-bold uppercase tracking-widest">تطوير أُسامه</span>
-        </div>
     </aside>
-        <!-- Player Main Area -->
-    <!-- تم تعديل كلاسات الموبايل هنا: أضفنا h-[30vh] و shrink-0 ليصبح ارتفاع الفيديو مناسباً في الموبايل -->
-    <main class="w-full lg:flex-1 bg-black relative flex items-center justify-center order-1 lg:order-2 h-[35vh] lg:h-full shrink-0">
-        <div id="loader" class="absolute flex flex-col items-center gap-4 text-slate-700">
-            <div class="w-16 h-16 rounded-full border-4 border-emerald-500/10 border-t-emerald-500/40 animate-spin"></div>
-            <span class="text-xs font-bold tracking-widest">انتظار اختيار القناة</span>
+
+    <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[35vh] lg:h-full overflow-hidden">
+        
+        <div id="placeholderScreen" class="overlay-screen">
+            <div class="w-12 h-12 rounded-full border-2 border-slate-800 border-t-emerald-500 animate-spin"></div>
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">انتظار القناة...</span>
         </div>
 
-    <!-- Player Main Area -->
-    <main class="flex-1 bg-black relative flex items-center justify-center order-1 lg:order-2 h-[35vh] lg:h-full">
-        <div id="loader" class="absolute flex flex-col items-center gap-4 text-slate-700">
-            <div class="w-16 h-16 rounded-full border-4 border-emerald-500/10 border-t-emerald-500/40 animate-spin"></div>
-            <span class="text-xs font-bold tracking-widest">انتظار اختيار القناة</span>
+        <div id="errorScreen" class="overlay-screen hidden text-center px-10">
+            <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-2"></i>
+            <h3 class="text-sm font-bold">خطأ في التشغيل</h3>
+            <p class="text-[10px] text-slate-500">المصدر غير متاح حالياً، جرب قناة أخرى</p>
         </div>
-        
-        <video id="vPlayer" class="w-full h-full object-contain hidden z-10" controls autoplay playsinline></video>
-        
-        <!-- الحماية هنا: تم إضافة sandbox لمنع النوافذ المنبثقة -->
-        <iframe id="iPlayer" 
-                class="w-full h-full hidden border-0 z-10" 
-                allowfullscreen 
-                sandbox="allow-scripts allow-same-origin allow-forms"
-                referrerpolicy="no-referrer">
-        </iframe>
-        
-        <div id="liveTag" class="absolute top-6 right-6 z-20 flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full hidden">
-            <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-            <span id="currentChName" class="text-[10px] font-bold text-white uppercase"></span>
-        </div>
+
+        <div id="dynamic-player-root"></div>
+
+        <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
+
     </main>
 
     <script>
-        /* نظام منع النوافذ المنبثقة الصارم */
-        (function() {
-            // منع فتح أي نافذة جديدة من داخل الصفحة
-            window.open = function() { 
-                console.log("تم منع محاولة فتح نافذة إعلانية.");
-                return null; 
-            };
-            
-            // منع الرسائل التحذيرية التي قد تظهر من المشغلات الخارجية
-            window.alert = function() { return true; };
-            window.confirm = function() { return true; };
-        })();
-
         const myChannels = [
             ["beIN Sport 1 ", "https://985642.softstreamloft5.sbs/albaplayer/bein-1/?serv=1", "رياضة", "i"],
             ["beIN Sport 2 ", "https://985642.softstreamloft5.sbs/albaplayer/bein-2/?serv=1", "رياضة", "i"],
@@ -140,136 +130,124 @@
             ["BeIN Sport 3 a", "https://19.wwwkoora.com/albaplayer/bein-sports-hd-3/", "رياضة", "i"],
             ["BeIN Sport 2 a", "http://stream.mytvplus.net:7003/sport/ch2/ch2_1080.m3u8", "رياضة", "v"],
             ["mbc iraq", "https://live.aflam4you.net/zremb472.php?vid=10&aflam_s=1", "ترفيه", "i"],
-
-            
-            
-
-
-
-
-
         ];
 
         let hls = null;
+        let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
+        let controlsVisible = true;
 
-        const v = document.getElementById('vPlayer');
-        const i = document.getElementById('iPlayer');
-        const l = document.getElementById('loader');
-        const t = document.getElementById('liveTag');
-        const n = document.getElementById('currentChName');
-
-        const categories = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
-
-        function initApp() {
+        function init() {
             renderMenu();
             renderChannels();
         }
 
         function renderMenu() {
-            const menu = document.getElementById('categoryMenu');
-            menu.innerHTML = categories.map(cat => `
-                <button onclick="filter('${cat}')" class="px-4 py-1.5 rounded-full text-[10px] font-bold transition-all border border-slate-800 bg-slate-800/30 text-slate-500 whitespace-nowrap ${currentCat === cat ? 'active-btn' : 'hover:bg-slate-800/60'}">
-                    ${cat === 'المفضلة' ? '<i class="fa-solid fa-star ml-1 text-[9px]"></i>' : ''}${cat}
+            const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
+            document.getElementById('categoryMenu').innerHTML = cats.map(c => `
+                <button onclick="filter('${c}')" class="px-3 py-1 rounded-lg text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap ${currentCat === c ? 'active-btn' : ''}">
+                    ${c}
                 </button>
             `).join('');
         }
 
-        function searchChannels() {
-            searchQuery = document.getElementById('searchInput').value.toLowerCase();
-            renderChannels();
-        }
-
-        function toggleFavorite(e, channelName) {
-            e.stopPropagation();
-            if (favorites.includes(channelName)) {
-                favorites = favorites.filter(f => f !== channelName);
-            } else {
-                favorites.push(channelName);
-            }
-            localStorage.setItem('yalla_favs', JSON.stringify(favorites));
-            renderChannels();
-        }
-
         function renderChannels() {
             const box = document.getElementById('channelsBox');
-            let filtered = myChannels;
+            const filtered = myChannels.filter(c => {
+                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
+                return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
+            });
 
-            if (currentCat === "المفضلة") {
-                filtered = myChannels.filter(c => favorites.includes(c[0]));
-            } else if (currentCat !== "الكل") {
-                filtered = myChannels.filter(c => c[2] === currentCat);
-            }
-
-            if (searchQuery) {
-                filtered = filtered.filter(c => c[0].toLowerCase().includes(searchQuery));
-            }
-            
-            if (filtered.length === 0) {
-                box.innerHTML = `<div class="text-center py-10 text-slate-600 text-xs">لا توجد قنوات هنا..</div>`;
-                return;
-            }
-
-            box.innerHTML = filtered.map((ch, index) => {
-                const isFav = favorites.includes(ch[0]);
-                return `
-                <div onclick="play('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
-                     style="animation-delay: ${index * 0.03}s"
-                     class="channel-item bg-slate-800/10 border border-slate-800/40 p-4 rounded-xl cursor-pointer hover:bg-slate-800/30 transition-all flex items-center justify-between group animate-item">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-slate-600 group-hover:text-emerald-500 transition-colors">
-                            <i class="fa-solid fa-play text-[10px]"></i>
-                        </div>
-                        <h4 class="text-xs font-bold text-slate-300 group-hover:text-white transition-colors">${ch[0]}</h4>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="fav-star transition-all hover:scale-125 ${isFav ? 'active' : 'text-slate-700'}">
-                            <i class="fa-solid fa-star text-[12px]"></i>
-                        </button>
-                        <i class="fa-solid fa-chevron-left text-[10px] text-slate-700 group-hover:text-emerald-500 transition-all transform group-hover:-translate-x-1"></i>
-                    </div>
+            box.innerHTML = filtered.map(ch => `
+                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+                     class="channel-item bg-slate-900/40 border border-slate-800/40 p-4 rounded-xl flex items-center justify-between group">
+                    <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+                    <i class="fa-solid ${favorites.includes(ch[0]) ? 'fa-star text-amber-500' : 'fa-play text-slate-700'} text-[10px]"></i>
                 </div>
-            `}).join('');
+            `).join('');
         }
 
-        function filter(cat) {
-            currentCat = cat;
-            renderMenu();
-            renderChannels();
+        function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
+        function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
+
+        function cleanup() {
+            if (hls) { hls.destroy(); hls = null; }
+            if (plyr) { plyr.destroy(); plyr = null; }
+            const root = document.getElementById('dynamic-player-root');
+            root.innerHTML = "";
+            const iframe = document.getElementById('iPlayer');
+            iframe.src = "about:blank";
+            iframe.style.display = "none";
+            document.getElementById('errorScreen').classList.add('hidden');
+            document.getElementById('placeholderScreen').classList.remove('hidden');
+            controlsVisible = true;
         }
 
-        function play(url, type, name, el) {
-            document.querySelectorAll('.channel-item').forEach(d => d.classList.remove('active-card'));
+        function setupToggleLogic() {
+            const plyrContainer = document.querySelector('.plyr');
+            if (!plyrContainer) return;
+            plyrContainer.classList.add('custom-show-controls');
+            plyrContainer.addEventListener('click', (e) => {
+                if (e.target.closest('.plyr__controls') || e.target.closest('.plyr__menu')) return;
+                controlsVisible = !controlsVisible;
+                plyrContainer.classList.toggle('custom-hide-controls', !controlsVisible);
+                plyrContainer.classList.toggle('custom-show-controls', controlsVisible);
+            });
+        }
+
+        function playChannel(url, type, name, el) {
+            document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             el.classList.add('active-card');
             
-            l.classList.add('hidden');
-            t.classList.remove('hidden');
-            n.textContent = name;
-
-            if (hls) hls.destroy();
-            v.pause(); v.classList.add('hidden');
-            i.src = ""; i.classList.add('hidden');
+            cleanup();
 
             if (type === 'i') {
-                i.classList.remove('hidden');
-                // نستخدم التوجيه الآمن
-                i.src = url;
+                const iframe = document.getElementById('iPlayer');
+                iframe.style.display = "block";
+                iframe.src = url;
+                document.getElementById('placeholderScreen').classList.add('hidden');
             } else {
-                v.classList.remove('hidden');
+                const root = document.getElementById('dynamic-player-root');
+                const video = document.createElement('video');
+                video.id = "vPlayer";
+                video.className = "w-full h-full";
+                video.autoplay = true;
+                video.setAttribute('playsinline', '');
+                video.setAttribute('crossorigin', '');
+                root.appendChild(video);
+
+                const plyrOptions = {
+                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
+                    hideControls: false,
+                    clickToPlay: false
+                };
+
                 if (Hls.isSupported()) {
                     hls = new Hls();
                     hls.loadSource(url);
-                    hls.attachMedia(v);
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => v.play());
-                } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
-                    v.src = url;
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        plyr = new Plyr(video, plyrOptions);
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        setTimeout(setupToggleLogic, 500);
+                    });
+                    hls.on(Hls.Events.ERROR, (event, data) => {
+                        if (data.fatal) {
+                            document.getElementById('placeholderScreen').classList.add('hidden');
+                            document.getElementById('errorScreen').classList.remove('hidden');
+                        }
+                    });
+                } else {
+                    video.src = url;
+                    plyr = new Plyr(video, plyrOptions);
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                    setTimeout(setupToggleLogic, 500);
                 }
             }
         }
 
-        initApp();
+        init();
     </script>
-</body>
-</html>
+</body></html>
