@@ -153,21 +153,25 @@
             `).join('');
         }
 
-        function renderChannels() {
-            const box = document.getElementById('channelsBox');
-            const filtered = myChannels.filter(c => {
-                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
-                return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
-            });
+function renderChannels() {
+    const box = document.getElementById('channelsBox');
+    const filtered = myChannels.filter(c => {
+        const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
+        return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
+    });
 
-            box.innerHTML = filtered.map(ch => `
-                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                     class="channel-item bg-slate-900/40 border border-slate-800/40 p-4 rounded-xl flex items-center justify-between group">
-                    <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-                    <i class="fa-solid ${favorites.includes(ch[0]) ? 'fa-star text-amber-500' : 'fa-play text-slate-700'} text-[10px]"></i>
-                </div>
-            `).join('');
-        }
+    box.innerHTML = filtered.map(ch => {
+        const isFav = favorites.includes(ch[0]);
+        return `
+        <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
+             class="channel-item bg-slate-900/40 border border-slate-800/40 p-4 rounded-xl flex items-center justify-between group">
+            <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+            <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-lg transition-all hover:scale-125"></i>
+            </button>
+        </div>`;
+    }).join('');
+}
 
         function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
         function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
@@ -196,6 +200,22 @@
                 plyrContainer.classList.toggle('custom-show-controls', controlsVisible);
             });
         }
+        function toggleFavorite(event, name) {
+    event.stopImmediatePropagation(); // لمنع تشغيل القناة عند الضغط على النجمة
+    
+    const index = favorites.indexOf(name);
+    if (index > -1) {
+        favorites.splice(index, 1); // إزالة من المفضلة
+    } else {
+        favorites.push(name); // إضافة للمفضلة
+    }
+    
+    // حفظ التعديلات في المتصفح
+    localStorage.setItem('yalla_favs', JSON.stringify(favorites));
+    
+    // تحديث القائمة فوراً
+    renderChannels();
+}
 
         function playChannel(url, type, name, el) {
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
