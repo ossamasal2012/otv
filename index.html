@@ -1,3 +1,4 @@
+
 <!DOCTYPE html><html lang="ar" dir="rtl"><head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -98,8 +99,7 @@
 
         <div id="categoryMenu" class="px-4 pb-2 overflow-x-auto no-scrollbar flex gap-2 shrink-0"></div>
 
-        <div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar"></div>
-    </aside>
+<div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar"></div>   </aside>
 
     <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[35vh] lg:h-full overflow-hidden">
         
@@ -164,10 +164,10 @@ function renderChannels() {
         const isFav = favorites.includes(ch[0]);
         return `
         <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
-             class="channel-item bg-slate-900/40 border border-slate-800/40 p-4 rounded-xl flex items-center justify-between group">
+            class="channel-item bg-slate-900/40 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group">
             <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
             <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-lg transition-all hover:scale-125"></i>
+                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-sm transition-all hover:scale-110"></i>
             </button>
         </div>`;
     }).join('');
