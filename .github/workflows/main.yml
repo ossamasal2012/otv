@@ -19,7 +19,6 @@ jobs:
         with:
           node-version: "20"
 
-      # ── Java 21 (مطلوب لـ Capacitor الحديث) ──
       - name: ☕ Setup Java 21
         uses: actions/setup-java@v4
         with:
@@ -77,6 +76,32 @@ jobs:
         run: |
           cd yalla-goal
           npx cap add android
+
+      # ─── حل تعارض Kotlin stdlib ───
+      # نضيف في build.gradle (المشروع الرئيسي) قسم configurations
+      # يجبر كل المكتبات على استخدام kotlin-stdlib 1.8.22 فقط
+      - name: 🔧 Fix Kotlin Duplicate stdlib in app/build.gradle
+        run: |
+          APP_GRADLE="yalla-goal/android/app/build.gradle"
+          echo "=== قبل التعديل ==="
+          cat "$APP_GRADLE"
+
+          # إضافة configurations block في نهاية الملف لحل التعارض
+          cat >> "$APP_GRADLE" << 'EOF'
+
+          // ─── حل تعارض Kotlin stdlib ───
+          configurations.all {
+              resolutionStrategy {
+                  force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+                  force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.0"
+                  force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.0"
+                  force "org.jetbrains.kotlin:kotlin-stdlib-common:1.9.0"
+              }
+          }
+          EOF
+
+          echo "=== بعد التعديل ==="
+          cat "$APP_GRADLE"
 
       - name: 🌐 Create Network Security Config
         run: |
@@ -230,6 +255,7 @@ jobs:
           echo "=========================================="
           echo "✅ يلا گول APK جاهز!"
           echo "☕ Java: 21"
+          echo "🔧 Kotlin stdlib: موحّد 1.9.0"
           echo "🌐 CORS: مُحلول نهائياً"
           echo "📡 HTTP + HTTPS: مدعوم"
           echo "🎬 HLS / M3U8: مدعوم"
