@@ -16,54 +16,57 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # تم التحديث لأحدث نسخة مستقرة
+          node-version: 18
 
-      - name: Install Dependencies
+      - name: Install Tools & Dependencies
         run: |
           npm install -g @capacitor/cli @capacitor/core
           npm install @capacitor/android @capacitor/http
+
+      - name: Prepare Web Assets
+        run: |
+          # إنشاء المجلد والتأكد من وجود الملف بداخله
           mkdir -p www
           cp index.html www/
-
-      - name: Initialize Capacitor
-        run: |
+          # إنشاء ملف إعدادات جديد تماماً لضمان عدم وجود أخطاء مسار
           cat <<EOF > capacitor.config.json
           {
             "appId": "com.ossama.yallagoal",
             "appName": "Yalla Goal",
             "webDir": "www",
-            "server": { "androidScheme": "https", "allowNavigation": ["*"] },
+            "server": { "androidScheme": "https" },
             "plugins": { "CapacitorHttp": { "enabled": true } }
           }
           EOF
-          npx cap add android
+
+      - name: Add & Sync Android
+        run: |
+          npx cap add android || true
           npx cap sync android
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'zulu' # تم تغيير التوزيع لزيادة التوافق
-          # لا يوجد كاش هنا لضمان بناء نظيف
+          distribution: 'zulu'
 
       - name: Fix Permissions & Manifest
         run: |
+          # إضافة الصلاحيات ودعم الروابط العادية
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
-      - name: Build Android APK
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          # تنظيف شامل للمجلدات المؤقتة قبل البدء
           ./gradlew clean
-          # إيقاف الـ Daemon لتجنب أخطاء قفل الملفات Jar
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Yalla-Goal-App
+          name: Yalla-Goal-Final-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
