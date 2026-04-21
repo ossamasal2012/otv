@@ -1,4 +1,4 @@
-name: Build Android APK (OSSAMA TV)
+name: Build Android APK (OTV)
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20 # تم التحديث لأحدث إصدار مستقر
+          node-version: 18
 
       - name: Install Dependencies
         run: |
@@ -29,10 +29,11 @@ jobs:
         run: |
           npx cap init "Yalla Goal" "com.ossama.yallagoal" --web-dir www
           npx cap add android
-          npx cap sync android # مزامنة ملفات الـ Web مع مجلد أندرويد
+          npx cap sync android
 
       - name: Configure Android Permissions & Network
         run: |
+          # إضافة صلاحيات الإنترنت ودعم الروابط غير المشفرة HTTP
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
@@ -41,13 +42,15 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle' # تفعيل التخزين المؤقت لـ Gradle لتفيعل البناء السريع وتجنب أخطاء الملفات
+          cache: 'gradle'
 
       - name: Build Android APK
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }} # إجبار النظام على استخدام Java 17 لمنع خطأ release 21
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew clean # تنظيف الملفات القديمة قبل البناء لحل مشكلة Jar file
+          ./gradlew clean
           ./gradlew assembleDebug
 
       - name: Upload APK
