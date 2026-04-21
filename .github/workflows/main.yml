@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20 # تم التحديث لأحدث إصدار مستقر
 
       - name: Install Dependencies
         run: |
@@ -25,12 +25,11 @@ jobs:
           mkdir -p www
           cp index.html www/
 
-      - name: Initialize Capacitor
+      - name: Initialize & Sync Capacitor
         run: |
           npx cap init "Yalla Goal" "com.ossama.yallagoal" --web-dir www
-
-      - name: Add Android Platform
-        run: npx cap add android
+          npx cap add android
+          npx cap sync android # مزامنة ملفات الـ Web مع مجلد أندرويد
 
       - name: Configure Android Permissions & Network
         run: |
@@ -42,11 +41,13 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: 'gradle' # تفعيل التخزين المؤقت لـ Gradle لتفيعل البناء السريع وتجنب أخطاء الملفات
 
       - name: Build Android APK
         run: |
           cd android
           chmod +x gradlew
+          ./gradlew clean # تنظيف الملفات القديمة قبل البناء لحل مشكلة Jar file
           ./gradlew assembleDebug
 
       - name: Upload APK
