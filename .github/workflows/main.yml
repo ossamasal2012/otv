@@ -44,8 +44,10 @@ jobs:
       - name: 🗂️ Create Project & www
         run: |
           mkdir -p yalla-goal/www
-          cp index.html yalla-goal/www/index.html
-
+          # ننسخ index.html وأي ملفات أخرى إن وجدت
+          cp -r * yalla-goal/www/ 2>/dev/null || true
+          
+          # تأكد من وجود ملف package.json صحيح
           cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
@@ -77,7 +79,7 @@ jobs:
             "android": {
               "allowMixedContent": true,
               "captureInput": true,
-              "webContentsDebuggingEnabled": false
+              "webContentsDebuggingEnabled": true
             }
           }
           EOF
@@ -101,12 +103,13 @@ jobs:
       # STEP 3 — كل التعديلات بعد sync مباشرة
       # ══════════════════════════════════════════
 
-      - name: 📄 Ensure index.html in assets (after sync)
+      - name: 📄 Ensure All Web Assets are inside public (after sync)
         run: |
           ASSETS="yalla-goal/android/app/src/main/assets/public"
           mkdir -p "$ASSETS"
-          cp yalla-goal/www/index.html "$ASSETS/index.html"
-          echo "✅ index.html في assets:"
+          # تم التعديل هنا لنسخ كافة محتويات www لتجنب الشاشة البيضاء
+          cp -r yalla-goal/www/* "$ASSETS/"
+          echo "✅ جميع ملفات الويب في assets:"
           ls -lh "$ASSETS/"
 
       - name: 🌐 Network Security Config
@@ -162,33 +165,36 @@ jobs:
           </manifest>
           EOF
 
-      - name: 🛠️ Write MainActivity.java
+      - name: 🛠️ Write MainActivity.java (Fixed)
         run: |
           MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
           PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
           echo "Package: [$PACKAGE]"
 
+          # تم حذف overriding لـ WebViewClient لأنه يعطل Capacitor Local Server
           cat > "$MAIN_ACTIVITY" << JAVAEOF
           package ${PACKAGE};
 
           import android.annotation.SuppressLint;
           import android.os.Bundle;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebResourceRequest;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
-          import android.webkit.WebViewClient;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
 
               @Override
-              @SuppressLint("SetJavaScriptEnabled")
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+              }
+
+              @Override
+              public void onStart() {
+                  super.onStart();
                   fixWebViewSettings();
               }
 
+              @SuppressLint("SetJavaScriptEnabled")
               private void fixWebViewSettings() {
                   try {
                       WebView webView = getBridge().getWebView();
@@ -199,25 +205,14 @@ jobs:
                       s.setDatabaseEnabled(true);
                       s.setAllowFileAccess(true);
                       s.setAllowContentAccess(true);
-                      s.setAllowFileAccessFromFileURLs(true);
-                      s.setAllowUniversalAccessFromFileURLs(true);
                       s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                       s.setMediaPlaybackRequiresUserGesture(false);
-                      s.setLoadWithOverviewMode(true);
-                      s.setUseWideViewPort(true);
-                      s.setCacheMode(WebSettings.LOAD_DEFAULT);
                       s.setUserAgentString(
                           "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
                           "AppleWebKit/537.36 (KHTML, like Gecko) " +
                           "Chrome/120.0.0.0 Mobile Safari/537.36"
                       );
-                      webView.setWebChromeClient(new WebChromeClient());
-                      webView.setWebViewClient(new WebViewClient() {
-                          @Override
-                          public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                              return false;
-                          }
-                      });
+                      // تم إزالة setWebViewClient و setWebChromeClient ليعمل Capacitor بشكل طبيعي
                   } catch (Exception e) {
                       e.printStackTrace();
                   }
@@ -344,11 +339,10 @@ jobs:
       - name: ✅ Build Summary
         run: |
           echo "=========================================="
-          echo "✅ يلا گول APK جاهز!"
-          echo "📄 index.html: ✅ في assets بعد sync"
+          echo "✅ يلا گول APK جاهز ومُعدل!"
+          echo "📄 assets: ✅ تم نسخ كامل مجلد الويب لتجنب الشاشة البيضاء"
           echo "🖼️  الأيقونة: ✅ مولّدة بعد sync"
           echo "☕ Java: 21"
-          echo "🌐 CORS: ✅ مُحلول"
-          echo "📡 HTTP + HTTPS: ✅ مدعوم"
+          echo "🌐 WebView: ✅ تم إصلاح مشكلة ERR_CONNECTION_REFUSED"
           echo "🎬 HLS / M3U8: ✅ مدعوم"
           echo "=========================================="
