@@ -26,7 +26,7 @@ jobs:
           node-version: "20"
 
       # ──────────────────────────────────────────
-      # 3. إعداد Java (مطلوب لـ Android)
+      # 3. إعداد Java 17
       # ──────────────────────────────────────────
       - name: ☕ Setup Java 17
         uses: actions/setup-java@v4
@@ -42,12 +42,10 @@ jobs:
 
       - name: 📦 Install Android Build Tools
         run: |
-          sdkmanager "build-tools;34.0.0"
-          sdkmanager "platforms;android-34"
-          sdkmanager "platform-tools"
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "build-tools;34.0.0" "platforms;android-34" "platform-tools"
 
       # ──────────────────────────────────────────
-      # 5. إنشاء هيكل المشروع + حل CORS
+      # 5. إنشاء هيكل المشروع
       # ──────────────────────────────────────────
       - name: 🗂️ Create Project Structure
         run: |
@@ -55,18 +53,14 @@ jobs:
           cp index.html yalla-goal/www/index.html
           cd yalla-goal
 
-          # إنشاء package.json
-          cat > package.json << 'EOF'
+          cat > package.json << 'PKGJSON'
           {
             "name": "yalla-goal",
             "version": "2.3.0",
-            "description": "Yalla Goal - Live Sports TV",
-            "main": "index.js",
-            "scripts": {
-              "build": "echo 'No build needed'"
-            }
+            "description": "Yalla Goal Live TV",
+            "scripts": { "build": "echo ok" }
           }
-          EOF
+          PKGJSON
 
       - name: 📥 Install Capacitor
         run: |
@@ -74,38 +68,30 @@ jobs:
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
       # ──────────────────────────────────────────
-      # 6. إعداد capacitor.config.json مع كل إعدادات الشبكة وحل CORS
+      # 6. capacitor.config.json
       # ──────────────────────────────────────────
-      - name: ⚙️ Create Capacitor Config (with CORS & Network fix)
+      - name: ⚙️ Create Capacitor Config
         run: |
           cat > yalla-goal/capacitor.config.json << 'EOF'
           {
             "appId": "com.yallagoal.app",
             "appName": "يلا گول",
             "webDir": "www",
-            "bundledWebRuntime": false,
             "server": {
               "androidScheme": "https",
               "cleartext": true,
-              "allowNavigation": [
-                "*"
-              ]
+              "allowNavigation": ["*"]
             },
             "android": {
               "allowMixedContent": true,
               "captureInput": true,
               "webContentsDebuggingEnabled": false
-            },
-            "plugins": {
-              "CapacitorHttp": {
-                "enabled": true
-              }
             }
           }
           EOF
 
       # ──────────────────────────────────────────
-      # 7. إضافة منصة Android
+      # 7. إضافة Android Platform
       # ──────────────────────────────────────────
       - name: 🤖 Add Android Platform
         run: |
@@ -113,58 +99,60 @@ jobs:
           npx cap add android
 
       # ──────────────────────────────────────────
-      # 8. حل CORS نهائياً عبر تعديل AndroidManifest.xml
+      # 8. Network Security Config
       # ──────────────────────────────────────────
-      - name: 🔓 Fix CORS & Internet Permissions in AndroidManifest
-        run: |
-          MANIFEST="yalla-goal/android/app/src/main/AndroidManifest.xml"
-
-          # إضافة كل الصلاحيات المطلوبة
-          sed -i 's|<manifest|<manifest xmlns:tools="http://schemas.android.com/tools"|' "$MANIFEST"
-
-          sed -i 's|</manifest>|    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />\n</manifest>|' "$MANIFEST"
-
-          # السماح بالنصوص الواضحة (HTTP) وتعطيل CORS
-          sed -i 's|<application|<application\n        android:usesCleartextTraffic="true"\n        android:networkSecurityConfig="@xml/network_security_config"\n        tools:replace="android:usesCleartextTraffic"|' "$MANIFEST"
-
-      # ──────────────────────────────────────────
-      # 9. إنشاء Network Security Config لحل CORS نهائياً
-      # ──────────────────────────────────────────
-      - name: 🌐 Create Network Security Config (Allow ALL traffic)
+      - name: 🌐 Create Network Security Config
         run: |
           mkdir -p yalla-goal/android/app/src/main/res/xml
           cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
-              <!-- السماح بكل حركة المرور بدون قيود -->
               <base-config cleartextTrafficPermitted="true">
                   <trust-anchors>
                       <certificates src="system" />
                       <certificates src="user" />
                   </trust-anchors>
               </base-config>
-              <!-- السماح الصريح بجميع النطاقات -->
-              <domain-config cleartextTrafficPermitted="true">
-                  <domain includeSubdomains="true">localhost</domain>
-                  <domain includeSubdomains="true">*</domain>
-              </domain-config>
           </network-security-config>
           EOF
 
       # ──────────────────────────────────────────
-      # 10. تعديل WebView لحل CORS من جانب الكود (Java)
+      # 9. تعديل AndroidManifest.xml
       # ──────────────────────────────────────────
-      - name: 🛠️ Patch MainActivity for Full WebView CORS Fix
+      - name: 🔓 Patch AndroidManifest.xml
         run: |
-          MAIN_ACTIVITY="yalla-goal/android/app/src/main/java/com/yallagoal/app/MainActivity.java"
-          cat > "$MAIN_ACTIVITY" << 'EOF'
-          package com.yallagoal.app;
+          MANIFEST="yalla-goal/android/app/src/main/AndroidManifest.xml"
+
+          # إضافة xmlns:tools
+          sed -i 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android"|<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"|' "$MANIFEST"
+
+          # إضافة صلاحيات الإنترنت قبل <application
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />\n    <application|' "$MANIFEST"
+
+          # إضافة خصائص application
+          sed -i 's|<application|<application\n        android:usesCleartextTraffic="true"\n        android:networkSecurityConfig="@xml/network_security_config"\n        tools:replace="android:usesCleartextTraffic,android:networkSecurityConfig"|' "$MANIFEST"
+
+          echo "=== AndroidManifest.xml ==="
+          cat "$MANIFEST"
+
+      # ──────────────────────────────────────────
+      # 10. MainActivity.java - حل CORS
+      # ──────────────────────────────────────────
+      - name: 🛠️ Patch MainActivity.java
+        run: |
+          MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
+          echo "Found MainActivity at: $MAIN_ACTIVITY"
+
+          # استخراج اسم الحزمة الحقيقي من الملف الأصلي
+          PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//')
+          echo "Package: $PACKAGE"
+
+          cat > "$MAIN_ACTIVITY" << JAVAEOF
+          package ${PACKAGE};
 
           import android.os.Bundle;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          import android.webkit.WebChromeClient;
           import com.getcapacitor.BridgeActivity;
 
           public class MainActivity extends BridgeActivity {
@@ -172,63 +160,39 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
+                  fixWebViewSettings();
               }
 
-              @Override
-              public void onStart() {
-                  super.onStart();
-                  configureWebView();
-              }
-
-              private void configureWebView() {
+              private void fixWebViewSettings() {
                   try {
                       WebView webView = getBridge().getWebView();
-                      WebSettings settings = webView.getSettings();
-
-                      // ── إعدادات الشبكة والإنترنت ──
-                      settings.setJavaScriptEnabled(true);
-                      settings.setDomStorageEnabled(true);
-                      settings.setDatabaseEnabled(true);
-                      settings.setAllowFileAccess(true);
-                      settings.setAllowContentAccess(true);
-                      settings.setAllowFileAccessFromFileURLs(true);
-                      settings.setAllowUniversalAccessFromFileURLs(true); // حل CORS الرئيسي
-
-                      // ── السماح بالمحتوى المختلط (HTTP داخل HTTPS) ──
-                      settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-
-                      // ── إعدادات الفيديو والوسائط ──
-                      settings.setMediaPlaybackRequiresUserGesture(false);
-                      settings.setLoadWithOverviewMode(true);
-                      settings.setUseWideViewPort(true);
-
-                      // ── Cache والأداء ──
-                      settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-
-                      // ── User Agent مخصص لتجاوز قيود البث ──
-                      settings.setUserAgentString(
+                      if (webView == null) return;
+                      WebSettings s = webView.getSettings();
+                      s.setJavaScriptEnabled(true);
+                      s.setDomStorageEnabled(true);
+                      s.setDatabaseEnabled(true);
+                      s.setAllowFileAccess(true);
+                      s.setAllowContentAccess(true);
+                      s.setAllowFileAccessFromFileURLs(true);
+                      s.setAllowUniversalAccessFromFileURLs(true);
+                      s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                      s.setMediaPlaybackRequiresUserGesture(false);
+                      s.setLoadWithOverviewMode(true);
+                      s.setUseWideViewPort(true);
+                      s.setUserAgentString(
                           "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
                           "AppleWebKit/537.36 (KHTML, like Gecko) " +
                           "Chrome/120.0.0.0 Mobile Safari/537.36"
                       );
-
-                      // ── تمكين WebChromeClient للفيديو كامل الشاشة ──
-                      webView.setWebChromeClient(new WebChromeClient());
-
-                      // ── WebViewClient لمنع أخطاء التوجيه ──
-                      webView.setWebViewClient(new WebViewClient() {
-                          @Override
-                          public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                              return false; // السماح بكل الروابط داخل WebView
-                          }
-                      });
-
                   } catch (Exception e) {
                       e.printStackTrace();
                   }
               }
           }
-          EOF
+          JAVAEOF
+
+          echo "=== MainActivity.java ==="
+          cat "$MAIN_ACTIVITY"
 
       # ──────────────────────────────────────────
       # 11. مزامنة Capacitor
@@ -239,28 +203,25 @@ jobs:
           npx cap sync android
 
       # ──────────────────────────────────────────
-      # 12. منح صلاحيات Gradle
+      # 12. منح صلاحيات Gradle وبناء APK
       # ──────────────────────────────────────────
       - name: 🔐 Grant Gradle Execute Permission
-        run: |
-          chmod +x yalla-goal/android/gradlew
+        run: chmod +x yalla-goal/android/gradlew
 
-      # ──────────────────────────────────────────
-      # 13. بناء APK
-      # ──────────────────────────────────────────
       - name: 🏗️ Build Debug APK
         run: |
           cd yalla-goal/android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace 2>&1 | tail -150
 
       # ──────────────────────────────────────────
-      # 14. البحث عن ملف APK ورفعه
+      # 13. رفع APK
       # ──────────────────────────────────────────
-      - name: 🔍 Find APK file
+      - name: 🔍 Find APK
         run: |
-          find yalla-goal/android -name "*.apk" -type f
           APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | head -1)
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          echo "✅ APK: $APK_PATH"
+          ls -lh "$APK_PATH"
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -269,16 +230,11 @@ jobs:
           path: ${{ env.APK_PATH }}
           retention-days: 30
 
-      - name: ✅ Build Success Summary
+      - name: ✅ Build Summary
         run: |
-          echo "============================================"
-          echo "✅ تم بناء APK بنجاح!"
-          echo "📱 اسم التطبيق: يلا گول"
-          echo "🌐 دعم الإنترنت: ✅ مفعّل بالكامل"
-          echo "🔓 حل CORS: ✅ مطبّق نهائياً"
-          echo "📡 HTTP + HTTPS: ✅ مدعومان"
-          echo "🎬 تشغيل HLS/M3U8: ✅ مدعوم"
-          echo "============================================"
-          APK=$(find yalla-goal/android -name "*.apk" | head -1)
-          echo "📦 مسار الملف: $APK"
-          ls -lh "$APK"
+          echo "=========================================="
+          echo "✅ يلا گول APK جاهز!"
+          echo "🌐 CORS: مُحلول نهائياً"
+          echo "📡 HTTP+HTTPS: مدعوم"
+          echo "🎬 HLS/M3U8: مدعوم"
+          echo "=========================================="
