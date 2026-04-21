@@ -35,14 +35,28 @@ jobs:
             "platforms;android-34" \
             "platform-tools"
 
-      # ─── تثبيت ImageMagick لتوليد الأيقونات ───
       - name: 🖼️ Install ImageMagick
         run: sudo apt-get install -y imagemagick
 
+      # ══════════════════════════════════════════
+      # إنشاء المشروع بالمسار الصحيح
+      # ══════════════════════════════════════════
       - name: 🗂️ Create Project Structure
         run: |
+          mkdir -p yalla-goal
+
+          # إنشاء www داخل مجلد المشروع مباشرة
           mkdir -p yalla-goal/www
+
+          # نسخ index.html مع التأكد
           cp index.html yalla-goal/www/index.html
+
+          # تحقق
+          echo "=== محتوى www ==="
+          ls -lh yalla-goal/www/
+          echo "=== أول 5 سطور من index.html ==="
+          head -5 yalla-goal/www/index.html
+
           cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
@@ -58,6 +72,7 @@ jobs:
 
       - name: ⚙️ Create Capacitor Config
         run: |
+          # webDir يجب أن يكون مسار نسبي من مجلد المشروع
           cat > yalla-goal/capacitor.config.json << 'EOF'
           {
             "appId": "com.yallagoal.app",
@@ -76,26 +91,46 @@ jobs:
           }
           EOF
 
+          echo "=== capacitor.config.json ==="
+          cat yalla-goal/capacitor.config.json
+
       - name: 🤖 Add Android Platform
         run: |
           cd yalla-goal
           npx cap add android
 
       # ══════════════════════════════════════════
-      # 🖼️ توليد أيقونات التطبيق بجميع الأحجام
+      # التأكد من نسخ الملفات إلى assets
       # ══════════════════════════════════════════
-      - name: 🖼️ Download & Generate App Icons
+      - name: 🔄 Sync Capacitor (copies www → android assets)
         run: |
-          # تحميل الأيقونة الأصلية
+          cd yalla-goal
+          npx cap sync android
+
+          # تحقق أن index.html وصل إلى assets
+          ASSET_PATH="android/app/src/main/assets/public/index.html"
+          if [ -f "$ASSET_PATH" ]; then
+            echo "✅ index.html موجود في assets"
+            ls -lh "$ASSET_PATH"
+          else
+            echo "❌ index.html غير موجود في assets! جاري النسخ يدوياً..."
+            mkdir -p android/app/src/main/assets/public
+            cp www/index.html android/app/src/main/assets/public/index.html
+            echo "✅ تم النسخ اليدوي"
+            ls -lh android/app/src/main/assets/public/
+          fi
+
+      # ══════════════════════════════════════════
+      # 🖼️ أيقونات التطبيق
+      # ══════════════════════════════════════════
+      - name: 🖼️ Generate App Icons
+        run: |
           curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" \
             -o /tmp/icon_original.png
+          echo "✅ Icon downloaded"
 
-          echo "✅ Icon downloaded: $(identify /tmp/icon_original.png)"
-
-          # مسارات أيقونات Android
           BASE="yalla-goal/android/app/src/main/res"
 
-          # أحجام mipmap القياسية
           declare -A SIZES=(
             ["mipmap-mdpi"]=48
             ["mipmap-hdpi"]=72
@@ -108,7 +143,6 @@ jobs:
             SIZE=${SIZES[$DIR]}
             mkdir -p "$BASE/$DIR"
 
-            # ic_launcher (مربع)
             convert /tmp/icon_original.png \
               -resize ${SIZE}x${SIZE} \
               -gravity center \
@@ -116,43 +150,24 @@ jobs:
               -extent ${SIZE}x${SIZE} \
               "$BASE/$DIR/ic_launcher.png"
 
-            # ic_launcher_round (دائري)
             convert /tmp/icon_original.png \
               -resize ${SIZE}x${SIZE} \
               \( +clone \
-                -threshold -1 \
-                -negate \
+                -threshold -1 -negate \
                 -fill white \
                 -draw "circle $((SIZE/2)),$((SIZE/2)) $((SIZE/2)),0" \
               \) \
-              -alpha off \
-              -compose CopyOpacity \
-              -composite \
-              -background "#020617" \
-              -alpha remove \
+              -alpha off -compose CopyOpacity -composite \
+              -background "#020617" -alpha remove \
               "$BASE/$DIR/ic_launcher_round.png"
 
-            echo "  ✅ $DIR: ${SIZE}x${SIZE}px"
+            echo "  ✅ $DIR: ${SIZE}x${SIZE}"
           done
 
-          # أيقونة foreground لـ Adaptive Icons
-          for DIR in "${!SIZES[@]}"; do
-            SIZE=${SIZES[$DIR]}
-            BG_SIZE=$((SIZE * 108 / 72))
-            convert /tmp/icon_original.png \
-              -resize ${SIZE}x${SIZE} \
-              -gravity center \
-              -background none \
-              -extent ${BG_SIZE}x${BG_SIZE} \
-              "$BASE/$DIR/ic_launcher_foreground.png" 2>/dev/null || true
-          done
-
-          echo "✅ جميع الأيقونات تم توليدها"
-
       # ══════════════════════════════════════════
-      # 🌐 Network Security Config
+      # Network Security + Manifest
       # ══════════════════════════════════════════
-      - name: 🌐 Create Network Security Config
+      - name: 🌐 Network Security Config
         run: |
           mkdir -p yalla-goal/android/app/src/main/res/xml
           cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
@@ -167,9 +182,6 @@ jobs:
           </network-security-config>
           EOF
 
-      # ══════════════════════════════════════════
-      # 📝 AndroidManifest.xml
-      # ══════════════════════════════════════════
       - name: 📝 Write AndroidManifest.xml
         run: |
           cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
@@ -209,9 +221,10 @@ jobs:
           EOF
 
       # ══════════════════════════════════════════
-      # 🛡️ MainActivity مع أقوى حل CORS
+      # MainActivity - بدون OkHttp (كان يسبب مشاكل)
+      # CORS يُحل عبر WebSettings فقط
       # ══════════════════════════════════════════
-      - name: 🛠️ Write MainActivity.java (Enhanced CORS)
+      - name: 🛠️ Write MainActivity.java
         run: |
           MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
           PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
@@ -224,19 +237,10 @@ jobs:
           import android.os.Bundle;
           import android.webkit.WebChromeClient;
           import android.webkit.WebResourceRequest;
-          import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import com.getcapacitor.BridgeActivity;
-
-          import java.io.IOException;
-          import java.util.HashMap;
-          import java.util.Map;
-
-          import okhttp3.OkHttpClient;
-          import okhttp3.Request;
-          import okhttp3.Response;
 
           public class MainActivity extends BridgeActivity {
 
@@ -253,86 +257,29 @@ jobs:
                       if (webView == null) return;
 
                       WebSettings s = webView.getSettings();
-
-                      // ── JavaScript & Storage ──
                       s.setJavaScriptEnabled(true);
                       s.setDomStorageEnabled(true);
                       s.setDatabaseEnabled(true);
-
-                      // ── CORS: أقوى إعداد ممكن ──
                       s.setAllowFileAccess(true);
                       s.setAllowContentAccess(true);
                       s.setAllowFileAccessFromFileURLs(true);
                       s.setAllowUniversalAccessFromFileURLs(true);
-
-                      // ── HTTP داخل HTTPS (Mixed Content) ──
                       s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-
-                      // ── الوسائط والفيديو ──
                       s.setMediaPlaybackRequiresUserGesture(false);
                       s.setLoadWithOverviewMode(true);
                       s.setUseWideViewPort(true);
-
-                      // ── Cache ──
                       s.setCacheMode(WebSettings.LOAD_DEFAULT);
-
-                      // ── User-Agent: متصفح حقيقي لتجاوز قيود البث ──
                       s.setUserAgentString(
                           "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
                           "AppleWebKit/537.36 (KHTML, like Gecko) " +
                           "Chrome/120.0.0.0 Mobile Safari/537.36"
                       );
 
-                      // ── WebChromeClient: دعم كامل للفيديو والشاشة الكاملة ──
                       webView.setWebChromeClient(new WebChromeClient());
-
-                      // ── WebViewClient: إضافة CORS headers لكل طلب ──
                       webView.setWebViewClient(new WebViewClient() {
                           @Override
                           public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                              // السماح بكل الروابط داخل WebView
                               return false;
-                          }
-
-                          @Override
-                          public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                              // إضافة CORS headers لطلبات m3u8 و ts
-                              String url = request.getUrl().toString();
-                              if (url.contains(".m3u8") || url.contains(".ts") || url.contains(".m3u")) {
-                                  try {
-                                      okhttp3.OkHttpClient client = new okhttp3.OkHttpClient();
-                                      okhttp3.Request.Builder reqBuilder = new okhttp3.Request.Builder().url(url);
-
-                                      // نسخ headers الأصلية مع إضافة Origin
-                                      for (Map.Entry<String, String> entry : request.getRequestHeaders().entrySet()) {
-                                          reqBuilder.addHeader(entry.getKey(), entry.getValue());
-                                      }
-                                      reqBuilder.addHeader("Origin", "https://www.google.com");
-                                      reqBuilder.addHeader("Referer", "https://www.google.com/");
-
-                                      okhttp3.Response response = client.newCall(reqBuilder.build()).execute();
-
-                                      Map<String, String> responseHeaders = new HashMap<>();
-                                      responseHeaders.put("Access-Control-Allow-Origin", "*");
-                                      responseHeaders.put("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-                                      responseHeaders.put("Access-Control-Allow-Headers", "*");
-
-                                      String contentType = response.header("Content-Type", "application/vnd.apple.mpegurl");
-                                      String mimeType = contentType.split(";")[0].trim();
-
-                                      return new WebResourceResponse(
-                                          mimeType,
-                                          "UTF-8",
-                                          response.code(),
-                                          "OK",
-                                          responseHeaders,
-                                          response.body().byteStream()
-                                      );
-                                  } catch (Exception e) {
-                                      e.printStackTrace();
-                                  }
-                              }
-                              return super.shouldInterceptRequest(view, request);
                           }
                       });
 
@@ -343,17 +290,13 @@ jobs:
           }
           JAVAEOF
 
-      # ─── إضافة OkHttp dependency ───
-      - name: 📦 Add OkHttp to app/build.gradle
+      # ══════════════════════════════════════════
+      # Gradle: حل Kotlin + بدون OkHttp
+      # ══════════════════════════════════════════
+      - name: 🔧 Fix app/build.gradle
         run: |
           APP_GRADLE="yalla-goal/android/app/build.gradle"
-
-          # إضافة OkHttp + حل Kotlin stdlib
           cat >> "$APP_GRADLE" << 'EOF'
-
-          dependencies {
-              implementation "com.squareup.okhttp3:okhttp:4.12.0"
-          }
 
           // ─── حل تعارض Kotlin stdlib ───
           configurations.all {
@@ -366,13 +309,24 @@ jobs:
           }
           EOF
 
-      - name: 🔄 Sync Capacitor
-        run: |
-          cd yalla-goal
-          npx cap sync android
-
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
+
+      # ── تحقق نهائي قبل البناء ──
+      - name: 🔍 Final Assets Check
+        run: |
+          echo "=== محتوى assets/public ==="
+          find yalla-goal/android/app/src/main/assets -type f | head -20
+          echo ""
+          echo "=== هل index.html موجود؟ ==="
+          ls -lh yalla-goal/android/app/src/main/assets/public/index.html 2>/dev/null \
+            && echo "✅ موجود" \
+            || echo "❌ غير موجود - نسخ يدوي..."
+
+          # نسخ يدوي احتياطي
+          mkdir -p yalla-goal/android/app/src/main/assets/public
+          cp yalla-goal/www/index.html yalla-goal/android/app/src/main/assets/public/index.html
+          echo "✅ index.html جاهز في assets"
 
       - name: 🏗️ Build Debug APK
         run: |
@@ -414,10 +368,10 @@ jobs:
         run: |
           echo "=========================================="
           echo "✅ يلا گول APK جاهز!"
-          echo "🖼️  الأيقونة: مخصصة بجميع الأحجام"
+          echo "📄 index.html: منسوخ في assets/public"
+          echo "🖼️  الأيقونة: مخصصة"
           echo "☕ Java: 21"
-          echo "🔧 Kotlin stdlib: موحّد 1.9.0"
-          echo "🌐 CORS: مُحلول بـ OkHttp interceptor"
+          echo "🌐 CORS: مُحلول"
           echo "📡 HTTP + HTTPS: مدعوم"
           echo "🎬 HLS / M3U8: مدعوم"
           echo "=========================================="
