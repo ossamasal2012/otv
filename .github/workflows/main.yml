@@ -39,23 +39,12 @@ jobs:
         run: sudo apt-get install -y imagemagick
 
       # ══════════════════════════════════════════
-      # إنشاء المشروع بالمسار الصحيح
+      # STEP 1 — إنشاء المشروع + www
       # ══════════════════════════════════════════
-      - name: 🗂️ Create Project Structure
+      - name: 🗂️ Create Project & www
         run: |
-          mkdir -p yalla-goal
-
-          # إنشاء www داخل مجلد المشروع مباشرة
           mkdir -p yalla-goal/www
-
-          # نسخ index.html مع التأكد
           cp index.html yalla-goal/www/index.html
-
-          # تحقق
-          echo "=== محتوى www ==="
-          ls -lh yalla-goal/www/
-          echo "=== أول 5 سطور من index.html ==="
-          head -5 yalla-goal/www/index.html
 
           cat > yalla-goal/package.json << 'EOF'
           {
@@ -65,14 +54,16 @@ jobs:
           }
           EOF
 
+          echo "✅ www:"
+          ls -lh yalla-goal/www/
+
       - name: 📥 Install Capacitor
         run: |
           cd yalla-goal
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: ⚙️ Create Capacitor Config
+      - name: ⚙️ Capacitor Config
         run: |
-          # webDir يجب أن يكون مسار نسبي من مجلد المشروع
           cat > yalla-goal/capacitor.config.json << 'EOF'
           {
             "appId": "com.yallagoal.app",
@@ -91,82 +82,33 @@ jobs:
           }
           EOF
 
-          echo "=== capacitor.config.json ==="
-          cat yalla-goal/capacitor.config.json
-
       - name: 🤖 Add Android Platform
         run: |
           cd yalla-goal
           npx cap add android
 
       # ══════════════════════════════════════════
-      # التأكد من نسخ الملفات إلى assets
+      # STEP 2 — cap sync (يمسح assets ويعيد نسخها)
       # ══════════════════════════════════════════
-      - name: 🔄 Sync Capacitor (copies www → android assets)
+      - name: 🔄 Capacitor Sync
         run: |
           cd yalla-goal
           npx cap sync android
-
-          # تحقق أن index.html وصل إلى assets
-          ASSET_PATH="android/app/src/main/assets/public/index.html"
-          if [ -f "$ASSET_PATH" ]; then
-            echo "✅ index.html موجود في assets"
-            ls -lh "$ASSET_PATH"
-          else
-            echo "❌ index.html غير موجود في assets! جاري النسخ يدوياً..."
-            mkdir -p android/app/src/main/assets/public
-            cp www/index.html android/app/src/main/assets/public/index.html
-            echo "✅ تم النسخ اليدوي"
-            ls -lh android/app/src/main/assets/public/
-          fi
+          echo "=== assets بعد sync ==="
+          find android/app/src/main/assets -type f 2>/dev/null | head -20
 
       # ══════════════════════════════════════════
-      # 🖼️ أيقونات التطبيق
+      # STEP 3 — كل التعديلات بعد sync مباشرة
       # ══════════════════════════════════════════
-      - name: 🖼️ Generate App Icons
+
+      - name: 📄 Ensure index.html in assets (after sync)
         run: |
-          curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" \
-            -o /tmp/icon_original.png
-          echo "✅ Icon downloaded"
+          ASSETS="yalla-goal/android/app/src/main/assets/public"
+          mkdir -p "$ASSETS"
+          cp yalla-goal/www/index.html "$ASSETS/index.html"
+          echo "✅ index.html في assets:"
+          ls -lh "$ASSETS/"
 
-          BASE="yalla-goal/android/app/src/main/res"
-
-          declare -A SIZES=(
-            ["mipmap-mdpi"]=48
-            ["mipmap-hdpi"]=72
-            ["mipmap-xhdpi"]=96
-            ["mipmap-xxhdpi"]=144
-            ["mipmap-xxxhdpi"]=192
-          )
-
-          for DIR in "${!SIZES[@]}"; do
-            SIZE=${SIZES[$DIR]}
-            mkdir -p "$BASE/$DIR"
-
-            convert /tmp/icon_original.png \
-              -resize ${SIZE}x${SIZE} \
-              -gravity center \
-              -background "#020617" \
-              -extent ${SIZE}x${SIZE} \
-              "$BASE/$DIR/ic_launcher.png"
-
-            convert /tmp/icon_original.png \
-              -resize ${SIZE}x${SIZE} \
-              \( +clone \
-                -threshold -1 -negate \
-                -fill white \
-                -draw "circle $((SIZE/2)),$((SIZE/2)) $((SIZE/2)),0" \
-              \) \
-              -alpha off -compose CopyOpacity -composite \
-              -background "#020617" -alpha remove \
-              "$BASE/$DIR/ic_launcher_round.png"
-
-            echo "  ✅ $DIR: ${SIZE}x${SIZE}"
-          done
-
-      # ══════════════════════════════════════════
-      # Network Security + Manifest
-      # ══════════════════════════════════════════
       - name: 🌐 Network Security Config
         run: |
           mkdir -p yalla-goal/android/app/src/main/res/xml
@@ -220,10 +162,6 @@ jobs:
           </manifest>
           EOF
 
-      # ══════════════════════════════════════════
-      # MainActivity - بدون OkHttp (كان يسبب مشاكل)
-      # CORS يُحل عبر WebSettings فقط
-      # ══════════════════════════════════════════
       - name: 🛠️ Write MainActivity.java
         run: |
           MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
@@ -255,7 +193,6 @@ jobs:
                   try {
                       WebView webView = getBridge().getWebView();
                       if (webView == null) return;
-
                       WebSettings s = webView.getSettings();
                       s.setJavaScriptEnabled(true);
                       s.setDomStorageEnabled(true);
@@ -274,7 +211,6 @@ jobs:
                           "AppleWebKit/537.36 (KHTML, like Gecko) " +
                           "Chrome/120.0.0.0 Mobile Safari/537.36"
                       );
-
                       webView.setWebChromeClient(new WebChromeClient());
                       webView.setWebViewClient(new WebViewClient() {
                           @Override
@@ -282,7 +218,6 @@ jobs:
                               return false;
                           }
                       });
-
                   } catch (Exception e) {
                       e.printStackTrace();
                   }
@@ -290,13 +225,9 @@ jobs:
           }
           JAVAEOF
 
-      # ══════════════════════════════════════════
-      # Gradle: حل Kotlin + بدون OkHttp
-      # ══════════════════════════════════════════
       - name: 🔧 Fix app/build.gradle
         run: |
-          APP_GRADLE="yalla-goal/android/app/build.gradle"
-          cat >> "$APP_GRADLE" << 'EOF'
+          cat >> yalla-goal/android/app/build.gradle << 'EOF'
 
           // ─── حل تعارض Kotlin stdlib ───
           configurations.all {
@@ -309,24 +240,70 @@ jobs:
           }
           EOF
 
+      # ── الأيقونات بعد sync وبعد تعديل الـ res ──
+      - name: 🖼️ Generate App Icons (after sync)
+        run: |
+          curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" \
+            -o /tmp/icon.png
+          echo "✅ Icon: $(identify /tmp/icon.png | head -1)"
+
+          BASE="yalla-goal/android/app/src/main/res"
+
+          declare -A SIZES=(
+            ["mipmap-mdpi"]=48
+            ["mipmap-hdpi"]=72
+            ["mipmap-xhdpi"]=96
+            ["mipmap-xxhdpi"]=144
+            ["mipmap-xxxhdpi"]=192
+          )
+
+          for DIR in "${!SIZES[@]}"; do
+            SIZE=${SIZES[$DIR]}
+            mkdir -p "$BASE/$DIR"
+
+            # ic_launcher مربع
+            convert /tmp/icon.png \
+              -resize ${SIZE}x${SIZE}^ \
+              -gravity center \
+              -extent ${SIZE}x${SIZE} \
+              -background "#020617" \
+              "$BASE/$DIR/ic_launcher.png"
+
+            # ic_launcher_round دائري
+            convert /tmp/icon.png \
+              -resize ${SIZE}x${SIZE}^ \
+              -gravity center \
+              -extent ${SIZE}x${SIZE} \
+              \( +clone -alpha extract \
+                -draw "fill black polygon 0,0 0,${SIZE} ${SIZE},${SIZE} ${SIZE},0 \
+                       fill white circle $((SIZE/2)),$((SIZE/2)) $((SIZE/2)),0" \
+                \( +clone -negate \) \
+                -compose Multiply -composite \
+              \) \
+              -alpha off -compose CopyOpacity -composite \
+              -background "#020617" -alpha remove \
+              "$BASE/$DIR/ic_launcher_round.png"
+
+            echo "  ✅ $DIR: ${SIZE}x${SIZE}"
+          done
+
+          echo "=== الأيقونات المولّدة ==="
+          find "$BASE" -name "ic_launcher*.png" | sort
+
+      # ── تحقق نهائي ──
+      - name: 🔍 Final Verification
+        run: |
+          echo "=== assets/public ==="
+          find yalla-goal/android/app/src/main/assets -type f
+          echo ""
+          echo "=== res/mipmap-xxxhdpi ==="
+          ls -lh yalla-goal/android/app/src/main/res/mipmap-xxxhdpi/ 2>/dev/null || echo "مجلد غير موجود"
+          echo ""
+          echo "=== AndroidManifest ==="
+          cat yalla-goal/android/app/src/main/AndroidManifest.xml
+
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
-
-      # ── تحقق نهائي قبل البناء ──
-      - name: 🔍 Final Assets Check
-        run: |
-          echo "=== محتوى assets/public ==="
-          find yalla-goal/android/app/src/main/assets -type f | head -20
-          echo ""
-          echo "=== هل index.html موجود؟ ==="
-          ls -lh yalla-goal/android/app/src/main/assets/public/index.html 2>/dev/null \
-            && echo "✅ موجود" \
-            || echo "❌ غير موجود - نسخ يدوي..."
-
-          # نسخ يدوي احتياطي
-          mkdir -p yalla-goal/android/app/src/main/assets/public
-          cp yalla-goal/www/index.html yalla-goal/android/app/src/main/assets/public/index.html
-          echo "✅ index.html جاهز في assets"
 
       - name: 🏗️ Build Debug APK
         run: |
@@ -368,10 +345,10 @@ jobs:
         run: |
           echo "=========================================="
           echo "✅ يلا گول APK جاهز!"
-          echo "📄 index.html: منسوخ في assets/public"
-          echo "🖼️  الأيقونة: مخصصة"
+          echo "📄 index.html: ✅ في assets بعد sync"
+          echo "🖼️  الأيقونة: ✅ مولّدة بعد sync"
           echo "☕ Java: 21"
-          echo "🌐 CORS: مُحلول"
-          echo "📡 HTTP + HTTPS: مدعوم"
-          echo "🎬 HLS / M3U8: مدعوم"
+          echo "🌐 CORS: ✅ مُحلول"
+          echo "📡 HTTP + HTTPS: ✅ مدعوم"
+          echo "🎬 HLS / M3U8: ✅ مدعوم"
           echo "=========================================="
