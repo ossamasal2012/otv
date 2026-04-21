@@ -19,11 +19,12 @@ jobs:
         with:
           node-version: "20"
 
-      - name: ☕ Setup Java 17
+      # ── Java 21 (مطلوب لـ Capacitor الحديث) ──
+      - name: ☕ Setup Java 21
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "17"
+          java-version: "21"
 
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -35,7 +36,6 @@ jobs:
             "platforms;android-34" \
             "platform-tools"
 
-      # ─── إنشاء المشروع ───
       - name: 🗂️ Create Project Structure
         run: |
           mkdir -p yalla-goal/www
@@ -78,7 +78,6 @@ jobs:
           cd yalla-goal
           npx cap add android
 
-      # ─── Network Security Config ───
       - name: 🌐 Create Network Security Config
         run: |
           mkdir -p yalla-goal/android/app/src/main/res/xml
@@ -94,7 +93,6 @@ jobs:
           </network-security-config>
           EOF
 
-      # ─── كتابة AndroidManifest.xml من الصفر ───
       - name: 📝 Write AndroidManifest.xml
         run: |
           cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
@@ -133,7 +131,6 @@ jobs:
           </manifest>
           EOF
 
-      # ─── MainActivity.java ───
       - name: 🛠️ Write MainActivity.java
         run: |
           MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
@@ -192,55 +189,23 @@ jobs:
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
 
-      # ─── طباعة هيكل المشروع للتشخيص ───
-      - name: 🔍 Debug Project Structure
-        run: |
-          echo "=== AndroidManifest.xml ==="
-          cat yalla-goal/android/app/src/main/AndroidManifest.xml
-
-          echo ""
-          echo "=== network_security_config.xml ==="
-          cat yalla-goal/android/app/src/main/res/xml/network_security_config.xml
-
-          echo ""
-          echo "=== MainActivity.java ==="
-          find yalla-goal/android -name "MainActivity.java" -exec cat {} \;
-
-          echo ""
-          echo "=== app/build.gradle ==="
-          cat yalla-goal/android/app/build.gradle
-
-          echo ""
-          echo "=== strings.xml ==="
-          find yalla-goal/android -name "strings.xml" -exec cat {} \;
-
-      # ─── البناء مع تسجيل الخطأ الحقيقي ───
       - name: 🏗️ Build Debug APK
         run: |
           cd yalla-goal/android
-          # تشغيل Gradle وحفظ الخروج الكامل في ملف
           ./gradlew assembleDebug --stacktrace 2>&1 | tee /tmp/gradle_output.txt
           EXIT_CODE=${PIPESTATUS[0]}
-
           if [ $EXIT_CODE -ne 0 ]; then
-            echo ""
             echo "══════════════════════════════════════"
-            echo "❌ BUILD FAILED — الخطأ الحقيقي:"
-            echo "══════════════════════════════════════"
-            # استخراج سطور الخطأ الحقيقية
-            grep -A 10 "FAILURE\|error:\|Error\|Exception\|what went wrong\|BUILD FAILED" /tmp/gradle_output.txt | head -60
+            echo "❌ الخطأ الحقيقي:"
+            grep -A 5 "What went wrong\|error:\|Caused by" /tmp/gradle_output.txt | head -40
             echo "══════════════════════════════════════"
             exit 1
           fi
 
-      # ─── رفع APK ───
       - name: 🔍 Find APK
         run: |
           APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
-            echo "❌ APK not found!"
-            exit 1
-          fi
+          if [ -z "$APK_PATH" ]; then echo "❌ APK not found!"; exit 1; fi
           echo "✅ APK: $APK_PATH"
           ls -lh "$APK_PATH"
           echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
@@ -252,7 +217,6 @@ jobs:
           path: ${{ env.APK_PATH }}
           retention-days: 30
 
-      # ─── رفع log الخطأ دائماً للتشخيص ───
       - name: 📋 Upload Gradle Log (always)
         if: always()
         uses: actions/upload-artifact@v4
@@ -265,6 +229,7 @@ jobs:
         run: |
           echo "=========================================="
           echo "✅ يلا گول APK جاهز!"
+          echo "☕ Java: 21"
           echo "🌐 CORS: مُحلول نهائياً"
           echo "📡 HTTP + HTTPS: مدعوم"
           echo "🎬 HLS / M3U8: مدعوم"
