@@ -28,19 +28,25 @@ jobs:
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: 📦 Install Android Build Tools
+        run: |
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
+            "build-tools;34.0.0" \
+            "platforms;android-34" \
+            "platform-tools"
+
+      # ─── إنشاء المشروع ───
       - name: 🗂️ Create Project Structure
         run: |
           mkdir -p yalla-goal/www
           cp index.html yalla-goal/www/index.html
-          cd yalla-goal
-          cat > package.json << 'PKGJSON'
+          cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
-            "version": "2.3.1",
-            "description": "Yalla Goal Live TV",
+            "version": "2.3.0",
             "scripts": { "build": "echo ok" }
           }
-          PKGJSON
+          EOF
 
       - name: 📥 Install Capacitor
         run: |
@@ -54,8 +60,16 @@ jobs:
             "appId": "com.yallagoal.app",
             "appName": "يلا گول",
             "webDir": "www",
-            "server": { "androidScheme": "https", "cleartext": true, "allowNavigation": ["*"] },
-            "android": { "allowMixedContent": true }
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true,
+              "allowNavigation": ["*"]
+            },
+            "android": {
+              "allowMixedContent": true,
+              "captureInput": true,
+              "webContentsDebuggingEnabled": false
+            }
           }
           EOF
 
@@ -64,35 +78,164 @@ jobs:
           cd yalla-goal
           npx cap add android
 
-      # إصلاح خطأ الـ XML و الـ Java Release بشكل جذري
-      - name: 🛠️ Final Fixes (Manifest & Java)
+      # ─── نكتب AndroidManifest.xml من الصفر بشكل نظيف ───
+      - name: 📝 Write AndroidManifest.xml from scratch
         run: |
-          # 1. إصلاح الـ Manifest بدون كسر الـ XML
-          MANIFEST="yalla-goal/android/app/src/main/AndroidManifest.xml"
-          sed -i 's/<application/<application android:usesCleartextTraffic="true" /' "$MANIFEST"
-          
-          # 2. إجبار Gradle على استخدام Java 17 لتجنب خطأ "source release 21"
-          GRADLE_PROPS="yalla-goal/android/gradle.properties"
-          echo "org.gradle.java.home=/usr/lib/jvm/temurin-17-jdk-amd64" >> "$GRADLE_PROPS"
-          
-          # 3. التأكد من توافق إصدارات البناء
-          APP_GRADLE="yalla-goal/android/app/build.gradle"
-          sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 34/' "$APP_GRADLE"
-          sed -i 's/compileSdkVersion [0-9]*/compileSdkVersion 34/' "$APP_GRADLE"
+          cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="@string/app_name"
+                  android:roundIcon="@mipmap/ic_launcher_round"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme"
+                  android:usesCleartextTraffic="true"
+                  android:networkSecurityConfig="@xml/network_security_config">
+
+                  <activity
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+                      android:name=".MainActivity"
+                      android:label="@string/title_activity_main"
+                      android:theme="@style/AppTheme.NoActionBarLaunch"
+                      android:launchMode="singleTask"
+                      android:exported="true">
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                  </activity>
+
+              </application>
+          </manifest>
+          EOF
+
+          echo "=== AndroidManifest.xml ==="
+          cat yalla-goal/android/app/src/main/AndroidManifest.xml
+
+      # ─── Network Security Config ───
+      - name: 🌐 Create Network Security Config
+        run: |
+          mkdir -p yalla-goal/android/app/src/main/res/xml
+          cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true">
+                  <trust-anchors>
+                      <certificates src="system"/>
+                      <certificates src="user"/>
+                  </trust-anchors>
+              </base-config>
+          </network-security-config>
+          EOF
+
+      # ─── MainActivity.java ───
+      - name: 🛠️ Write MainActivity.java
+        run: |
+          MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
+          echo "Found: $MAIN_ACTIVITY"
+          PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
+          echo "Package: [$PACKAGE]"
+
+          cat > "$MAIN_ACTIVITY" << JAVAEOF
+          package ${PACKAGE};
+
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  fixWebViewSettings();
+              }
+
+              private void fixWebViewSettings() {
+                  try {
+                      WebView webView = getBridge().getWebView();
+                      if (webView == null) return;
+                      WebSettings s = webView.getSettings();
+                      s.setJavaScriptEnabled(true);
+                      s.setDomStorageEnabled(true);
+                      s.setDatabaseEnabled(true);
+                      s.setAllowFileAccess(true);
+                      s.setAllowContentAccess(true);
+                      s.setAllowFileAccessFromFileURLs(true);
+                      s.setAllowUniversalAccessFromFileURLs(true);
+                      s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                      s.setMediaPlaybackRequiresUserGesture(false);
+                      s.setLoadWithOverviewMode(true);
+                      s.setUseWideViewPort(true);
+                      s.setUserAgentString(
+                          "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
+                          "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                          "Chrome/120.0.0.0 Mobile Safari/537.36"
+                      );
+                  } catch (Exception e) {
+                      e.printStackTrace();
+                  }
+              }
+          }
+          JAVAEOF
+
+          echo "=== MainActivity.java ==="
+          cat "$MAIN_ACTIVITY"
 
       - name: 🔄 Sync Capacitor
         run: |
           cd yalla-goal
           npx cap sync android
 
+      - name: 🔐 Grant Gradle Permission
+        run: chmod +x yalla-goal/android/gradlew
+
+      # ─── البناء ───
       - name: 🏗️ Build Debug APK
         run: |
           cd yalla-goal/android
-          chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
+
+      # ─── رفع APK ───
+      - name: 🔍 Find and Verify APK
+        run: |
+          echo "=== Searching for APK ==="
+          find yalla-goal/android -name "*.apk" -type f
+
+          APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | head -1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ APK not found!"
+            exit 1
+          fi
+
+          echo "✅ APK: $APK_PATH"
+          ls -lh "$APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-v2.3.1-Final
-          path: yalla-goal/android/app/build/outputs/apk/debug/app-debug.apk
+          name: YallaGoal-v2.3-debug
+          path: ${{ env.APK_PATH }}
+          retention-days: 30
+
+      - name: ✅ Build Summary
+        run: |
+          echo "=========================================="
+          echo "✅ يلا گول APK جاهز!"
+          echo "🌐 CORS: مُحلول نهائياً"
+          echo "📡 HTTP + HTTPS: مدعوم"
+          echo "🎬 HLS / M3U8: مدعوم"
+          echo "=========================================="
