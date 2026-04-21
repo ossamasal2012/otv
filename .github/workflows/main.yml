@@ -11,65 +11,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ──────────────────────────────────────────
-      # 1. استنساخ الكود
-      # ──────────────────────────────────────────
       - name: ⬇️ Checkout Repository
         uses: actions/checkout@v4
 
-      # ──────────────────────────────────────────
-      # 2. إعداد Node.js
-      # ──────────────────────────────────────────
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      # ──────────────────────────────────────────
-      # 3. إعداد Java 17
-      # ──────────────────────────────────────────
       - name: ☕ Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
           java-version: "17"
 
-      # ──────────────────────────────────────────
-      # 4. إعداد Android SDK
-      # ──────────────────────────────────────────
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
 
       - name: 📦 Install Android Build Tools
         run: |
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT "build-tools;34.0.0" "platforms;android-34" "platform-tools"
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
+            "build-tools;34.0.0" \
+            "platforms;android-34" \
+            "platform-tools"
 
-      # ──────────────────────────────────────────
-      # 5. إنشاء هيكل المشروع
-      # ──────────────────────────────────────────
+      # ─── إنشاء هيكل المشروع ───
       - name: 🗂️ Create Project Structure
         run: |
           mkdir -p yalla-goal/www
           cp index.html yalla-goal/www/index.html
-          cd yalla-goal
 
-          cat > package.json << 'PKGJSON'
+          cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
             "version": "2.3.0",
             "description": "Yalla Goal Live TV",
             "scripts": { "build": "echo ok" }
           }
-          PKGJSON
+          EOF
 
       - name: 📥 Install Capacitor
         run: |
           cd yalla-goal
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      # ──────────────────────────────────────────
-      # 6. capacitor.config.json
-      # ──────────────────────────────────────────
       - name: ⚙️ Create Capacitor Config
         run: |
           cat > yalla-goal/capacitor.config.json << 'EOF'
@@ -90,17 +75,12 @@ jobs:
           }
           EOF
 
-      # ──────────────────────────────────────────
-      # 7. إضافة Android Platform
-      # ──────────────────────────────────────────
       - name: 🤖 Add Android Platform
         run: |
           cd yalla-goal
           npx cap add android
 
-      # ──────────────────────────────────────────
-      # 8. Network Security Config
-      # ──────────────────────────────────────────
+      # ─── Network Security Config ───
       - name: 🌐 Create Network Security Config
         run: |
           mkdir -p yalla-goal/android/app/src/main/res/xml
@@ -109,43 +89,68 @@ jobs:
           <network-security-config>
               <base-config cleartextTrafficPermitted="true">
                   <trust-anchors>
-                      <certificates src="system" />
-                      <certificates src="user" />
+                      <certificates src="system"/>
+                      <certificates src="user"/>
                   </trust-anchors>
               </base-config>
           </network-security-config>
           EOF
 
-      # ──────────────────────────────────────────
-      # 9. تعديل AndroidManifest.xml
-      # ──────────────────────────────────────────
+      # ─── Patch AndroidManifest ───
       - name: 🔓 Patch AndroidManifest.xml
         run: |
           MANIFEST="yalla-goal/android/app/src/main/AndroidManifest.xml"
 
-          # إضافة xmlns:tools
-          sed -i 's|<manifest xmlns:android="http://schemas.android.com/apk/res/android"|<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"|' "$MANIFEST"
+          python3 << PYEOF
+          import xml.etree.ElementTree as ET
 
-          # إضافة صلاحيات الإنترنت قبل <application
-          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />\n    <application|' "$MANIFEST"
+          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
+          ET.register_namespace('tools',   'http://schemas.android.com/tools')
 
-          # إضافة خصائص application
-          sed -i 's|<application|<application\n        android:usesCleartextTraffic="true"\n        android:networkSecurityConfig="@xml/network_security_config"\n        tools:replace="android:usesCleartextTraffic,android:networkSecurityConfig"|' "$MANIFEST"
+          tree = ET.parse('${MANIFEST}')
+          root = tree.getroot()
 
-          echo "=== AndroidManifest.xml ==="
+          ANDROID = 'http://schemas.android.com/apk/res/android'
+          TOOLS   = 'http://schemas.android.com/tools'
+
+          # تأكد من وجود xmlns:tools
+          root.set('xmlns:tools', TOOLS)
+
+          # إضافة صلاحيات الإنترنت
+          perms = [
+              'android.permission.INTERNET',
+              'android.permission.ACCESS_NETWORK_STATE',
+              'android.permission.ACCESS_WIFI_STATE',
+              'android.permission.CHANGE_NETWORK_STATE',
+          ]
+          existing = {e.get(f'{{{ANDROID}}}name') for e in root.findall('uses-permission')}
+          for perm in perms:
+              if perm not in existing:
+                  el = ET.SubElement(root, 'uses-permission')
+                  el.set(f'{{{ANDROID}}}name', perm)
+
+          # تعديل <application>
+          app = root.find('application')
+          if app is not None:
+              app.set(f'{{{ANDROID}}}usesCleartextTraffic', 'true')
+              app.set(f'{{{ANDROID}}}networkSecurityConfig', '@xml/network_security_config')
+              app.set(f'{{{TOOLS}}}replace',
+                      'android:usesCleartextTraffic,android:networkSecurityConfig')
+
+          tree.write('${MANIFEST}', xml_declaration=True, encoding='utf-8')
+          print("✅ AndroidManifest patched successfully")
+          PYEOF
+
           cat "$MANIFEST"
 
-      # ──────────────────────────────────────────
-      # 10. MainActivity.java - حل CORS
-      # ──────────────────────────────────────────
+      # ─── Patch MainActivity ───
       - name: 🛠️ Patch MainActivity.java
         run: |
           MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
-          echo "Found MainActivity at: $MAIN_ACTIVITY"
+          echo "Found: $MAIN_ACTIVITY"
 
-          # استخراج اسم الحزمة الحقيقي من الملف الأصلي
-          PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//')
-          echo "Package: $PACKAGE"
+          PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
+          echo "Package: [$PACKAGE]"
 
           cat > "$MAIN_ACTIVITY" << JAVAEOF
           package ${PACKAGE};
@@ -194,34 +199,36 @@ jobs:
           echo "=== MainActivity.java ==="
           cat "$MAIN_ACTIVITY"
 
-      # ──────────────────────────────────────────
-      # 11. مزامنة Capacitor
-      # ──────────────────────────────────────────
       - name: 🔄 Sync Capacitor
         run: |
           cd yalla-goal
           npx cap sync android
 
-      # ──────────────────────────────────────────
-      # 12. منح صلاحيات Gradle وبناء APK
-      # ──────────────────────────────────────────
       - name: 🔐 Grant Gradle Execute Permission
         run: chmod +x yalla-goal/android/gradlew
 
+      # ─── البناء الفعلي مع إظهار الخطأ كاملاً ───
       - name: 🏗️ Build Debug APK
         run: |
           cd yalla-goal/android
-          ./gradlew assembleDebug --stacktrace 2>&1 | tail -150
+          ./gradlew assembleDebug --stacktrace
 
-      # ──────────────────────────────────────────
-      # 13. رفع APK
-      # ──────────────────────────────────────────
-      - name: 🔍 Find APK
+      # ─── البحث عن APK بطريقة آمنة ───
+      - name: 🔍 Find and Verify APK
         run: |
-          APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | head -1)
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-          echo "✅ APK: $APK_PATH"
+          echo "=== Searching for APK files ==="
+          find yalla-goal/android -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+
+          APK_PATH=$(find yalla-goal/android -name "*.apk" -type f 2>/dev/null | head -1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "❌ ERROR: APK not found! Build may have failed."
+            exit 1
+          fi
+
+          echo "✅ APK found: $APK_PATH"
           ls -lh "$APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
 
       - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -233,8 +240,9 @@ jobs:
       - name: ✅ Build Summary
         run: |
           echo "=========================================="
-          echo "✅ يلا گول APK جاهز!"
+          echo "✅ يلا گول APK جاهز للتحميل!"
           echo "🌐 CORS: مُحلول نهائياً"
-          echo "📡 HTTP+HTTPS: مدعوم"
-          echo "🎬 HLS/M3U8: مدعوم"
+          echo "📡 HTTP + HTTPS: مدعوم"
+          echo "🎬 HLS / M3U8: مدعوم"
+          echo "APK: $APK_PATH"
           echo "=========================================="
