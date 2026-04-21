@@ -16,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20 # تم التحديث لأحدث نسخة مستقرة
 
       - name: Install Dependencies
         run: |
@@ -25,25 +25,17 @@ jobs:
           mkdir -p www
           cp index.html www/
 
-      - name: Initialize Capacitor Config
+      - name: Initialize Capacitor
         run: |
           cat <<EOF > capacitor.config.json
           {
             "appId": "com.ossama.yallagoal",
             "appName": "Yalla Goal",
             "webDir": "www",
-            "server": {
-              "androidScheme": "https",
-              "allowNavigation": ["*"]
-            },
-            "plugins": {
-              "CapacitorHttp": { "enabled": true }
-            }
+            "server": { "androidScheme": "https", "allowNavigation": ["*"] },
+            "plugins": { "CapacitorHttp": { "enabled": true } }
           }
           EOF
-
-      - name: Add Android Platform
-        run: |
           npx cap add android
           npx cap sync android
 
@@ -51,9 +43,10 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
+          distribution: 'zulu' # تم تغيير التوزيع لزيادة التوافق
+          # لا يوجد كاش هنا لضمان بناء نظيف
 
-      - name: Fix Android Permissions & Network
+      - name: Fix Permissions & Manifest
         run: |
           sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' android/app/src/main/AndroidManifest.xml
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
@@ -61,15 +54,16 @@ jobs:
       - name: Build Android APK
         run: |
           cd android
-          # تنظيف أي كاش قديم يدوياً
-          rm -rf .gradle
           chmod +x gradlew
-          # إجبار النظام على استخدام Java 17 المتوفر في البيئة الحالية
-          export JAVA_HOME=$JAVA_HOME_17_X64
-          ./gradlew assembleDebug --no-daemon
+          # تنظيف شامل للمجلدات المؤقتة قبل البدء
+          ./gradlew clean
+          # إيقاف الـ Daemon لتجنب أخطاء قفل الملفات Jar
+          ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Yalla-Goal-APK
+          name: Yalla-Goal-App
           path: android/app/build/outputs/apk/debug/app-debug.apk
