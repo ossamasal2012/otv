@@ -1,0 +1,130 @@
+name: 🏗️ Build Yalla Goal Windows (EXE)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # ══════════════════════════════════════════
+      # الخطوة 1 — إعداد بيئة Electron
+      # ══════════════════════════════════════════
+      - name: 🗂️ Setup Project Structure
+        shell: bash
+        run: |
+          mkdir -p win-app
+          # نسخ ملفك الأساسي
+          if [ -f "yallagoal.html" ]; then
+            cp yallagoal.html win-app/index.html
+          elif [ -f "index.html" ]; then
+            cp index.html win-app/index.html
+          else
+            echo "❌ ملف HTML غير موجود!" && exit 1
+          fi
+
+          # إنشاء ملف تشغيل Electron (main.js)
+          cat > win-app/main.js << 'EOF'
+          const { app, BrowserWindow, Menu } = require('electron');
+          const path = require('path');
+
+          function createWindow() {
+            const win = new BrowserWindow({
+              width: 1200,
+              height: 800,
+              title: "Yalla Goal - يلا گول",
+              icon: path.join(__dirname, 'icon.ico'),
+              webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true
+              }
+            });
+
+            // إخفاء القوائم العلوية لتصميم نظيف
+            Menu.setApplicationMenu(null);
+            
+            win.loadFile('index.html');
+            
+            // دعم روابط البث المباشر (CORS)
+            win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+              callback({ requestHeaders: { Origin: '*', ...details.requestHeaders } });
+            });
+          }
+
+          app.whenReady().then(createWindow);
+
+          app.on('window-all-closed', () => {
+            if (process.platform !== 'darwin') app.quit();
+          });
+          EOF
+
+      # ══════════════════════════════════════════
+      # الخطوة 2 — إعداد ملف التعريف (package.json)
+      # ══════════════════════════════════════════
+      - name: 📝 Create package.json
+        shell: bash
+        run: |
+          cat > win-app/package.json << 'EOF'
+          {
+            "name": "yalla-goal",
+            "version": "2.7.0",
+            "description": "Yalla Goal for Windows",
+            "main": "main.js",
+            "scripts": {
+              "package": "electron-builder --win portable"
+            },
+            "author": "Yalla Goal",
+            "build": {
+              "appId": "com.yallagoal.desktop",
+              "productName": "Yalla Goal",
+              "directories": { "output": "dist" },
+              "win": {
+                "target": "portable",
+                "icon": "icon.ico"
+              }
+            }
+          }
+          EOF
+
+      # ══════════════════════════════════════════
+      # الخطوة 3 — معالجة الأيقونة (ICO) للويندوز
+      # ══════════════════════════════════════════
+      - name: 🖼️ Setup Window Icon
+        shell: pwsh
+        run: |
+          # تحميل الأيقونة وتحويلها لنسخة الويندوز
+          Invoke-WebRequest -Uri "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -OutFile "win-app/icon.png"
+          # ملاحظة: في الويندوز الحقيقي يفضل ملف .ico، لكن electron-builder يمكنه تحويل png تلقائياً
+
+      - name: 📦 Install Build Tools
+        shell: bash
+        run: |
+          cd win-app
+          npm install electron electron-builder --save-dev
+
+      - name: 🏗️ Build EXE
+        shell: bash
+        run: |
+          cd win-app
+          npm run package
+
+      # ══════════════════════════════════════════
+      # الخطوة 4 — رفع الملف الناتج
+      # ══════════════════════════════════════════
+      - name: 📤 Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: YallaGoal-Windows-v2.7
+          path: win-app/dist/*.exe
