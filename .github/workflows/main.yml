@@ -32,45 +32,50 @@ jobs:
         run: |
           sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
             "build-tools;34.0.0" \
-            "platforms;android-34" \
-            "platform-tools"
+            "platforms;android-34"
 
       - name: 🖼️ Install ImageMagick
         run: sudo apt-get install -y imagemagick
 
       # ══════════════════════════════════════════
-      # الخطوة 1 — تجهيز ملفات الويب
+      # الخطوة 1 — تجهيز ملفات الويب (Yalla Goal)
       # ══════════════════════════════════════════
-      - name: 🗂️ Create Project Structure
+      - name: 🗂️ Create Project & www
         run: |
           mkdir -p yalla-goal/www
-          # نسخ ملف HTML المرسل (بافتراض أن اسمه yallagoal.html في المستودع)
-          # إذا كان الملف في المستودع باسم index.html فاستبدل yallagoal.html بـ index.html
+          # جلب ملف index.html
           if [ -f "yallagoal.html" ]; then
             cp yallagoal.html yalla-goal/www/index.html
           elif [ -f "index.html" ]; then
             cp index.html yalla-goal/www/index.html
+          else
+            echo "❌ ملف HTML غير موجود!" && exit 1
           fi
 
           cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
             "version": "2.7.0",
-            "scripts": { "build": "echo build-complete" }
+            "private": true,
+            "dependencies": {
+              "@capacitor/android": "^6.0.0",
+              "@capacitor/cli": "^6.0.0",
+              "@capacitor/core": "^6.0.0"
+            }
           }
           EOF
 
-      - name: 📥 Install Capacitor
+      - name: 📥 Install Dependencies
         run: |
           cd yalla-goal
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install
 
-      - name: ⚙️ Capacitor Config
+      - name: ⚙️ Capacitor Config (CORS & Navigation)
         run: |
           cat > yalla-goal/capacitor.config.json << 'EOF'
           {
             "appId": "com.yallagoal.app",
-            "appName": "YallaGoal",
+            "appName": "Yalla Goal",
             "webDir": "www",
             "server": {
               "androidScheme": "https",
@@ -79,7 +84,6 @@ jobs:
             },
             "android": {
               "allowMixedContent": true,
-              "captureInput": true,
               "webContentsDebuggingEnabled": false
             }
           }
@@ -91,35 +95,52 @@ jobs:
           npx cap add android
 
       # ══════════════════════════════════════════
-      # الخطوة 2 — المزامنة وتعديلات نظام أندرويد
+      # الخطوة 2 — حل مشكلة التضارب (Duplicate Class)
       # ══════════════════════════════════════════
-      - name: 🔄 Capacitor Sync
+      - name: 🔄 Capacitor Sync & Dependency Fix
         run: |
           cd yalla-goal
           npx cap sync android
+          
+          # تعديل ملف build.gradle الرئيسي لحل تضارب Kotlin
+          GRADLE_APP="android/app/build.gradle"
+          cat >> "$GRADLE_APP" << 'EOF'
 
-      - name: 🌐 Network Security Config
+          configurations.all {
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+              
+              resolutionStrategy {
+                  force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+              }
+          }
+          EOF
+
+      # ══════════════════════════════════════════
+      # الخطوة 3 — إعدادات الإنترنت والأمان (AndroidManifest)
+      # ══════════════════════════════════════════
+      - name: 📡 Network & Permissions Config
         run: |
+          # 1. Network Security Config
           mkdir -p yalla-goal/android/app/src/main/res/xml
           cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
               <base-config cleartextTrafficPermitted="true">
                   <trust-anchors>
-                      <certificates src="system"/>
-                      <certificates src="user"/>
+                      <certificates src="system" />
                   </trust-anchors>
               </base-config>
           </network-security-config>
           EOF
 
-      - name: 📝 Write AndroidManifest.xml
-        run: |
+          # 2. AndroidManifest (Internet & Full permissions)
           cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
               <application
                   android:allowBackup="true"
                   android:icon="@mipmap/ic_launcher"
@@ -145,75 +166,36 @@ jobs:
           </manifest>
           EOF
 
-      - name: 🛠️ Write MainActivity.java (Enhanced for Streaming)
-        run: |
-          MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
-          PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
-          
-          cat > "$MAIN_ACTIVITY" << JAVAEOF
-          package ${PACKAGE};
-          import android.os.Bundle;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import com.getcapacitor.BridgeActivity;
-
-          public class MainActivity extends BridgeActivity {
-              @Override
-              public void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  WebView webView = getBridge().getWebView();
-                  WebSettings s = webView.getSettings();
-                  s.setJavaScriptEnabled(true);
-                  s.setDomStorageEnabled(true);
-                  s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  s.setMediaPlaybackRequiresUserGesture(false);
-                  s.setUserAgentString("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
-              }
-          }
-          JAVAEOF
-
-      - name: 🔧 Fix app/build.gradle
-        run: |
-          cat >> yalla-goal/android/app/build.gradle << 'EOF'
-          configurations.all {
-              resolutionStrategy {
-                  force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
-              }
-          }
-          EOF
-
       # ══════════════════════════════════════════
-      # الخطوة 3 — توليد الأيقونات والبناء
+      # الخطوة 4 — معالجة الأيقونة (App Icon)
       # ══════════════════════════════════════════
       - name: 🖼️ Generate App Icons
         run: |
-          # سيتم استخدام رابط صورة عشوائية أو شعار افتراضي إذا لم يتوفر ملف icon.png
+          # استبدل هذا الرابط برابط أيقونتك الخاصة أو ضع ملف باسم icon.png في المستودع
           curl -L "https://cdn-icons-png.flaticon.com/512/5323/5323977.png" -o /tmp/icon.png
           BASE="yalla-goal/android/app/src/main/res"
+          
           declare -A SIZES=( ["mipmap-mdpi"]=48 ["mipmap-hdpi"]=72 ["mipmap-xhdpi"]=96 ["mipmap-xxhdpi"]=144 ["mipmap-xxxhdpi"]=192 )
+          
           for DIR in "${!SIZES[@]}"; do
             SIZE=${SIZES[$DIR]}
             mkdir -p "$BASE/$DIR"
+            # أيقونة مربعة
             convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} -background "#020617" "$BASE/$DIR/ic_launcher.png"
+            # أيقونة دائرية
             convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} -background "#020617" "$BASE/$DIR/ic_launcher_round.png"
           done
 
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
 
-      - name: 🏗️ Build Debug APK
+      - name: 🏗️ Build Final APK
         run: |
           cd yalla-goal/android
           ./gradlew assembleDebug
 
-      - name: 🔍 Find APK
-        run: |
-          APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | head -1)
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
-
-      - name: 📤 Upload APK Artifact
+      - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-v2.7-debug
-          path: ${{ env.APK_PATH }}
-          retention-days: 7
+          name: YallaGoal-Stable-v2.7
+          path: yalla-goal/android/app/build/outputs/apk/debug/app-debug.apk
