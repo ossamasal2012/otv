@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p win-app
-          cp yallagoal.html win-app/index.html
+          cp index.html win-app/index.html
 
           # ملف التشغيل البرمجي (Main JS)
           cat > win-app/main.js << 'EOF'
