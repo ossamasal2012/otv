@@ -172,7 +172,7 @@ jobs:
       - name: 🖼️ Generate App Icons
         run: |
           # استبدل هذا الرابط برابط أيقونتك الخاصة أو ضع ملف باسم icon.png في المستودع
-          curl -L "https://github.com/ossamasal2012/logo/blob/main/Screenshot%202026-04-21%201.52.19%20PM.png?raw=true" -o /tmp/icon.png
+          curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -o /tmp/icon.png
           BASE="yalla-goal/android/app/src/main/res"
           
           declare -A SIZES=( ["mipmap-mdpi"]=48 ["mipmap-hdpi"]=72 ["mipmap-xhdpi"]=96 ["mipmap-xxhdpi"]=144 ["mipmap-xxxhdpi"]=192 )
