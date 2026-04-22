@@ -19,18 +19,20 @@ jobs:
         with:
           node-version: "20"
 
+      # ══════════════════════════════════════════
+      # الخطوة 1 — إعداد بيئة التشغيل ودعم الإنترنت
+      # ══════════════════════════════════════════
       - name: 🗂️ Setup Project Structure
         shell: bash
         run: |
           mkdir -p win-app
-          # التأكد من جلب الملف الصحيح
           if [ -f "yallagoal.html" ]; then
             cp yallagoal.html win-app/index.html
           elif [ -f "index.html" ]; then
             cp index.html win-app/index.html
           fi
 
-          # إنشاء ملف main.js مع تعطيل قيود CORS تماماً
+          # إنشاء ملف تشغيل مع كسر قيود CORS ودعم الإنترنت الكامل
           cat > win-app/main.js << 'EOF'
           const { app, BrowserWindow, session } = require('electron');
           const path = require('path');
@@ -44,20 +46,25 @@ jobs:
               webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
-                webSecurity: false // تعطيل CORS والحماية الأساسية للمتصفح
+                webSecurity: false, // تعطيل حماية المتصفح للسماح بجلب البث من أي سيرفر
+                allowRunningInsecureContent: true // السماح بتشغيل روابط HTTP داخل التطبيق
               }
             });
 
-            // إزالة القائمة العلوية
             win.setMenuBarVisibility(false);
 
-            // اعتراض الطلبات وتعديل الـ Headers لحل مشاكل CORS بشكل جذري
+            // حل مشكلة الـ CORS للإنترنت: تعديل الـ Headers لإجبار السيرفرات على قبول الطلب
+            session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+              details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+              callback({ requestHeaders: details.requestHeaders });
+            });
+
             session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
               callback({
                 responseHeaders: {
                   ...details.responseHeaders,
                   'Access-Control-Allow-Origin': ['*'],
-                  'Access-Control-Allow-Methods': ['GET, PUT, POST, DELETE, OPTIONS']
+                  'Access-Control-Allow-Methods': ['GET, POST, OPTIONS']
                 }
               });
             });
@@ -69,6 +76,9 @@ jobs:
           app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
           EOF
 
+      # ══════════════════════════════════════════
+      # الخطوة 2 — إعدادات الأيقونة والبناء
+      # ══════════════════════════════════════════
       - name: 📝 Create package.json
         shell: bash
         run: |
@@ -85,7 +95,8 @@ jobs:
               "productName": "Yalla Goal",
               "win": {
                 "target": "portable",
-                "icon": "icon.ico"
+                "icon": "icon.ico",
+                "requestedExecutionLevel": "asInvoker" 
               }
             }
           }
@@ -94,7 +105,6 @@ jobs:
       - name: 🖼️ Setup Window Icon
         shell: pwsh
         run: |
-          # تحميل الأيقونة الخاصة بك
           Invoke-WebRequest -Uri "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -OutFile "win-app/icon.png"
 
       - name: 📦 Install Tools & Build
@@ -107,5 +117,5 @@ jobs:
       - name: 📤 Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-Windows-NoCORS
+          name: YallaGoal-Windows-Full-Internet
           path: win-app/dist/*.exe
