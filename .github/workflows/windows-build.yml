@@ -1,4 +1,4 @@
-name: 🏗️ Build Yalla Goal Windows (EXE)
+name: 🏗️ Build Yalla Goal Windows Setup
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Windows EXE
+    name: Build Windows Setup
     runs-on: windows-latest
 
     steps:
@@ -19,20 +19,13 @@ jobs:
         with:
           node-version: "20"
 
-      # ══════════════════════════════════════════
-      # الخطوة 1 — إعداد بيئة التشغيل ودعم الإنترنت
-      # ══════════════════════════════════════════
       - name: 🗂️ Setup Project Structure
         shell: bash
         run: |
           mkdir -p win-app
-          if [ -f "yallagoal.html" ]; then
-            cp yallagoal.html win-app/index.html
-          elif [ -f "index.html" ]; then
-            cp index.html win-app/index.html
-          fi
+          cp yallagoal.html win-app/index.html
 
-          # إنشاء ملف تشغيل مع كسر قيود CORS ودعم الإنترنت الكامل
+          # ملف التشغيل البرمجي (Main JS)
           cat > win-app/main.js << 'EOF'
           const { app, BrowserWindow, session } = require('electron');
           const path = require('path');
@@ -46,25 +39,18 @@ jobs:
               webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
-                webSecurity: false, // تعطيل حماية المتصفح للسماح بجلب البث من أي سيرفر
-                allowRunningInsecureContent: true // السماح بتشغيل روابط HTTP داخل التطبيق
+                webSecurity: false,
+                allowRunningInsecureContent: true
               }
             });
 
             win.setMenuBarVisibility(false);
 
-            // حل مشكلة الـ CORS للإنترنت: تعديل الـ Headers لإجبار السيرفرات على قبول الطلب
-            session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
-              details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-              callback({ requestHeaders: details.requestHeaders });
-            });
-
             session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
               callback({
                 responseHeaders: {
                   ...details.responseHeaders,
-                  'Access-Control-Allow-Origin': ['*'],
-                  'Access-Control-Allow-Methods': ['GET, POST, OPTIONS']
+                  'Access-Control-Allow-Origin': ['*']
                 }
               });
             });
@@ -76,10 +62,7 @@ jobs:
           app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
           EOF
 
-      # ══════════════════════════════════════════
-      # الخطوة 2 — إعدادات الأيقونة والبناء
-      # ══════════════════════════════════════════
-      - name: 📝 Create package.json
+      - name: 📝 Create package.json (Setup Config)
         shell: bash
         run: |
           cat > win-app/package.json << 'EOF'
@@ -88,15 +71,22 @@ jobs:
             "version": "2.7.0",
             "main": "main.js",
             "scripts": {
-              "package": "electron-builder --win portable"
+              "package": "electron-builder --win nsis"
             },
             "build": {
-              "appId": "com.yallagoal.desktop",
+              "appId": "com.yallagoal.app",
               "productName": "Yalla Goal",
+              "directories": { "output": "dist" },
               "win": {
-                "target": "portable",
-                "icon": "icon.ico",
-                "requestedExecutionLevel": "asInvoker" 
+                "target": "nsis",
+                "icon": "icon.ico"
+              },
+              "nsis": {
+                "oneClick": false,
+                "allowToChangeInstallationDirectory": true,
+                "createDesktopShortcut": true,
+                "createStartMenuShortcut": true,
+                "shortcutName": "Yalla Goal يلا گول"
               }
             }
           }
@@ -114,8 +104,8 @@ jobs:
           npm install electron electron-builder --save-dev
           npm run package
 
-      - name: 📤 Upload Windows EXE
+      - name: 📤 Upload Setup File
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-Windows-Full-Internet
+          name: YallaGoal-Windows-Setup
           path: win-app/dist/*.exe
