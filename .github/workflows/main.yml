@@ -167,24 +167,43 @@ jobs:
           EOF
 
       # ══════════════════════════════════════════
-      # الخطوة 4 — معالجة الأيقونة (App Icon)
+# الخطوة 4 — معالجة الأيقونة (App Icon) الشاملة
       # ══════════════════════════════════════════
-      - name: 🖼️ Generate App Icons
+      - name: 🖼️ Generate Comprehensive App Icons
         run: |
-          # استبدل هذا الرابط برابط أيقونتك الخاصة أو ضع ملف باسم icon.png في المستودع
+          # تحميل الأيقونة الخاصة بك
           curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -o /tmp/icon.png
+          
           BASE="yalla-goal/android/app/src/main/res"
           
-          declare -A SIZES=( ["mipmap-mdpi"]=48 ["mipmap-hdpi"]=72 ["mipmap-xhdpi"]=96 ["mipmap-xxhdpi"]=144 ["mipmap-xxxhdpi"]=192 )
+          # قائمة الأحجام المطلوبة
+          declare -A SIZES=( ["mdpi"]=48 ["hdpi"]=72 ["xhdpi"]=96 ["xxhdpi"]=144 ["xxxhdpi"]=192 )
           
-          for DIR in "${!SIZES[@]}"; do
-            SIZE=${SIZES[$DIR]}
-            mkdir -p "$BASE/$DIR"
-            # أيقونة مربعة
-            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} -background "#020617" "$BASE/$DIR/ic_launcher.png"
-            # أيقونة دائرية
-            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} -background "#020617" "$BASE/$DIR/ic_launcher_round.png"
+          for SUFFIX in "${!SIZES[@]}"; do
+            SIZE=${SIZES[$SUFFIX]}
+            DIR_MIPMAP="$BASE/mipmap-$SUFFIX"
+            DIR_DRAWABLE="$BASE/drawable-$SUFFIX"
+            mkdir -p "$DIR_MIPMAP"
+            mkdir -p "$DIR_DRAWABLE"
+
+            # 1. الأيقونات التقليدية (Legacy Icons)
+            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher.png"
+            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_round.png"
+
+            # 2. الأيقونات المتطورة (Adaptive Icons) - استبدال الطبقات
+            # سنجعل الخلفية بلون سادة والأمامية هي شعارك
+            convert /tmp/icon.png -resize ${SIZE}x${SIZE} -gravity center -background none -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_foreground.png"
+            
+            # إنشاء خلفية بلون تطبيقك (أزرق غامق كما في الكود)
+            convert -size ${SIZE}x${SIZE} xc:#020617 "$DIR_MIPMAP/ic_launcher_background.png"
           done
+
+          # 3. حذف أي ملفات XML قد تجبر النظام على استخدام الأيقونة الافتراضية
+          # هذه الخطوة تضمن أن النظام سيقرأ الصور الجديدة التي أنشأناها
+          find "$BASE" -name "ic_launcher.xml" -delete
+          find "$BASE" -name "ic_launcher_round.xml" -delete
+
+          echo "✅ تم تحديث جميع أنواع الأيقونات بنجاح"
 
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
