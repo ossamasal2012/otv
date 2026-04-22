@@ -1,6 +1,6 @@
-
-
-<!DOCTYPE html><html lang="ar" dir="rtl"><head>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>يلا گـــول | Yalla Goal </title>
@@ -44,23 +44,24 @@
             width: 100%;
             height: 100%;
             position: relative;
+            background: #000;
         }
+
+        .video-fit-contain { object-fit: contain !important; }
+        .video-fit-cover { object-fit: cover !important; }
+        .video-fit-fill { object-fit: fill !important; }
 
         .plyr {
             height: 100% !important;
             width: 100% !important;
         }
 
-        .custom-hide-controls .plyr__controls {
+        /* تحكم يدوي في الإخفاء */
+        .plyr--hide-manual-controls .plyr__controls,
+        .plyr--hide-manual-controls .plyr__caption {
             opacity: 0 !important;
             pointer-events: none !important;
-            transform: translateY(10px);
-        }
-
-        .custom-show-controls .plyr__controls {
-            opacity: 1 !important;
-            pointer-events: all !important;
-            transform: translateY(0);
+            visibility: hidden !important;
         }
 
         .overlay-screen {
@@ -83,36 +84,65 @@
             z-index: 40;
             display: none;
         }
+
+        /* زر الأبعاد المدمج داخل Plyr */
+        .plyr__controls .plyr__custom-tool {
+            order: 7; /* وضعه قبل زر ملء الشاشة */
+        }
+
+        .custom-aspect-btn {
+            background: rgba(16, 185, 129, 0.2) !important;
+            border: 1px solid rgba(16, 185, 129, 0.4) !important;
+            color: #10b981 !important;
+            padding: 2px 8px !important;
+            border-radius: 4px !important;
+            font-size: 10px !important;
+            font-weight: 800 !important;
+            text-transform: uppercase;
+            margin: 0 5px !important;
+            min-width: 45px;
+            text-align: center;
+        }
+
+        @media (min-width: 1536px) {
+            .aside-container {
+                width: 450px !important;
+            }
+        }
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
 
-    <aside class="w-full lg:w-80 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
-        <div class="p-5 border-b border-slate-900 hidden lg:block">
-            <h1 class="text-xl font-black text-emerald-500">يلا گـــول </h1>
-            <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">تطوير أُسامه - v2.3</p>
+    <aside class="aside-container w-full lg:w-80 xl:w-96 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
+        <div class="p-4 border-b border-slate-900 hidden lg:block text-center">
+            <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
+            <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-1">تطوير أُسامه - v2.7</p>
         </div>
 
-        <div class="p-4 shrink-0">
-            <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث سريع..."
-                class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-4 text-xs focus:outline-none focus:border-emerald-500 transition-all text-white">
+        <div class="p-3 shrink-0">
+            <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px]"></i>
+                <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث سريع..."
+                    class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 pr-10 text-xs focus:outline-none focus:border-emerald-500 transition-all text-white placeholder:text-slate-600">
+            </div>
         </div>
 
-        <div id="categoryMenu" class="px-4 pb-2 overflow-x-auto no-scrollbar flex gap-2 shrink-0"></div>
+        <div id="categoryMenu" class="px-3 pb-2 overflow-x-auto no-scrollbar flex gap-1.5 shrink-0"></div>
 
-<div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar"></div>   </aside>
+        <div id="channelsBox" class="flex-1 overflow-y-auto p-3 space-y-1 no-scrollbar"></div>
+    </aside>
 
-    <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[35vh] lg:h-full overflow-hidden">
+    <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[40vh] lg:h-full overflow-hidden">
         
         <div id="placeholderScreen" class="overlay-screen">
-            <div class="w-12 h-12 rounded-full border-2 border-slate-800 border-t-emerald-500 animate-spin"></div>
-            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">انتظار القناة...</span>
+            <div class="w-10 h-10 rounded-full border-2 border-slate-800 border-t-emerald-500 animate-spin"></div>
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">انتظار القناة...</span>
         </div>
 
         <div id="errorScreen" class="overlay-screen hidden text-center px-10">
-            <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-2"></i>
-            <h3 class="text-sm font-bold">خطأ في التشغيل</h3>
-            <p class="text-[10px] text-slate-500">المصدر غير متاح حالياً، جرب قناة أخرى</p>
+            <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-3"></i>
+            <h3 class="text-base font-bold">خطأ في التشغيل</h3>
+            <p class="text-[11px] text-slate-500">المصدر غير متاح حالياً</p>
         </div>
 
         <div id="dynamic-player-root"></div>
@@ -122,67 +152,61 @@
     </main>
 
     <script>
-        
-let myChannels = [];
-
-async function loadChannels() {
-    try {
-        // عرض تحميل مؤقت
-        document.getElementById('placeholderScreen').classList.remove('hidden');
-
-    const res = await fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json");
-        const data = await res.json();
-
-        myChannels = data;
-
-        renderMenu();
-        renderChannels();
-
-        // اخفاء التحميل بعد النجاح
-        document.getElementById('placeholderScreen').classList.add('hidden');
-
-    } catch (err) {
-        console.error("خطأ في تحميل القنوات", err);
-        document.getElementById('errorScreen').classList.remove('hidden');
-    }
-}
-
+        let myChannels = [];
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
-        let controlsVisible = true;
+        let currentAspectRatio = 0; // 0: Fit, 1: Zoom, 2: Fill
+        let controlsVisible = true; 
 
+        async function loadChannels() {
+            try {
+                document.getElementById('placeholderScreen').classList.remove('hidden');
+                const res = await fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json");
+                const data = await res.json();
+                myChannels = data;
+                renderMenu();
+                renderChannels();
+                document.getElementById('placeholderScreen').classList.add('hidden');
+            } catch (err) {
+                console.error("خطأ في تحميل القنوات", err);
+                document.getElementById('errorScreen').classList.remove('hidden');
+            }
+        }
 
         function renderMenu() {
             const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
             document.getElementById('categoryMenu').innerHTML = cats.map(c => `
-                <button onclick="filter('${c}')" class="px-3 py-1 rounded-lg text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap ${currentCat === c ? 'active-btn' : ''}">
+                <button onclick="filter('${c}')" class="px-3 py-1 rounded-md text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap hover:border-slate-700 ${currentCat === c ? 'active-btn' : ''}">
                     ${c}
                 </button>
             `).join('');
         }
 
-function renderChannels() {
-    const box = document.getElementById('channelsBox');
-    const filtered = myChannels.filter(c => {
-        const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
-        return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
-    });
+        function renderChannels() {
+            const box = document.getElementById('channelsBox');
+            const filtered = myChannels.filter(c => {
+                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
+                return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
+            });
 
-    box.innerHTML = filtered.map(ch => {
-        const isFav = favorites.includes(ch[0]);
-        return `
-        <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
-            class="channel-item bg-slate-900/40 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group">
-            <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-            <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-sm transition-all hover:scale-110"></i>
-            </button>
-        </div>`;
-    }).join('');
-}
+            box.innerHTML = filtered.map(ch => {
+                const isFav = favorites.includes(ch[0]);
+                return `
+                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
+                    class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+                    <div class="flex items-center gap-2">
+                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                        <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+                    </div>
+                    <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                    </button>
+                </div>`;
+            }).join('');
+        }
 
         function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
         function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
@@ -197,41 +221,57 @@ function renderChannels() {
             iframe.style.display = "none";
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
+            
+            currentAspectRatio = 0;
             controlsVisible = true;
         }
 
-        function setupToggleLogic() {
-            const plyrContainer = document.querySelector('.plyr');
-            if (!plyrContainer) return;
-            plyrContainer.classList.add('custom-show-controls');
-            plyrContainer.addEventListener('click', (e) => {
-                if (e.target.closest('.plyr__controls') || e.target.closest('.plyr__menu')) return;
-                controlsVisible = !controlsVisible;
-                plyrContainer.classList.toggle('custom-hide-controls', !controlsVisible);
-                plyrContainer.classList.toggle('custom-show-controls', controlsVisible);
+        // الوظيفة المحدثة لتبديل الأبعاد
+        function toggleAspectRatio(video) {
+            if (!video) return;
+            currentAspectRatio = (currentAspectRatio + 1) % 3;
+            video.classList.remove('video-fit-contain', 'video-fit-cover', 'video-fit-fill');
+            
+            const labels = ['Fit', 'Zoom', 'Fill'];
+            if (currentAspectRatio === 0) video.classList.add('video-fit-contain');
+            if (currentAspectRatio === 1) video.classList.add('video-fit-cover');
+            if (currentAspectRatio === 2) video.classList.add('video-fit-fill');
+            
+            // تحديث النص في كل الأزرار (لو وجد أكثر من واحد)
+            document.querySelectorAll('.custom-aspect-btn').forEach(btn => {
+                btn.innerText = labels[currentAspectRatio];
             });
         }
+
+        function manualToggleControls() {
+            if (!plyr) return;
+            controlsVisible = !controlsVisible;
+            updateControlsVisibility();
+        }
+
+        function updateControlsVisibility() {
+            const plyrContainer = document.querySelector('.plyr');
+            if (!plyrContainer) return;
+
+            if (controlsVisible) {
+                plyrContainer.classList.remove('plyr--hide-manual-controls');
+            } else {
+                plyrContainer.classList.add('plyr--hide-manual-controls');
+            }
+        }
+
         function toggleFavorite(event, name) {
-    event.stopImmediatePropagation(); // لمنع تشغيل القناة عند الضغط على النجمة
-    
-    const index = favorites.indexOf(name);
-    if (index > -1) {
-        favorites.splice(index, 1); // إزالة من المفضلة
-    } else {
-        favorites.push(name); // إضافة للمفضلة
-    }
-    
-    // حفظ التعديلات في المتصفح
-    localStorage.setItem('yalla_favs', JSON.stringify(favorites));
-    
-    // تحديث القائمة فوراً
-    renderChannels();
-}
+            event.stopImmediatePropagation();
+            const index = favorites.indexOf(name);
+            if (index > -1) favorites.splice(index, 1);
+            else favorites.push(name);
+            localStorage.setItem('yalla_favs', JSON.stringify(favorites));
+            renderChannels();
+        }
 
         function playChannel(url, type, name, el) {
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             el.classList.add('active-card');
-            
             cleanup();
 
             if (type === 'i') {
@@ -243,27 +283,84 @@ function renderChannels() {
                 const root = document.getElementById('dynamic-player-root');
                 const video = document.createElement('video');
                 video.id = "vPlayer";
-                video.className = "w-full h-full";
+                video.className = "w-full h-full video-fit-contain";
                 video.autoplay = true;
                 video.setAttribute('playsinline', '');
                 video.setAttribute('crossorigin', '');
                 root.appendChild(video);
 
-                const plyrOptions = {
-                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
-                    hideControls: false,
-                    clickToPlay: false
+                // النقر للتبديل اليدوي
+                root.onclick = (e) => {
+                    if (e.target.closest('.plyr__controls')) return;
+                    manualToggleControls();
                 };
 
-                if (Hls.isSupported()) {
+                const plyrOptions = {
+                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
+                    settings: ['quality', 'speed'],
+                    hideControls: false,
+                    clickToPlay: false,
+                    tooltips: { controls: false, seek: true },
+                    i18n: { quality: 'الجودة', speed: 'السرعة' }
+                };
+
+                const setupPlyr = () => {
+                    plyr = new Plyr(video, plyrOptions);
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                    controlsVisible = true;
+                    
+                    // منع الإخفاء التلقائي
+                    plyr.on('controlshidden', () => {
+                        if (controlsVisible) plyr.toggleControls(true);
+                    });
+
+                    // حقن زر الـ Aspect Ratio داخل عناصر تحكم Plyr
+                    const controls = document.querySelector('.plyr__controls');
+                    if (controls) {
+                        const aspectBtn = document.createElement('button');
+                        aspectBtn.type = 'button';
+                        aspectBtn.className = 'plyr__control custom-aspect-btn';
+                        aspectBtn.innerText = 'Fit';
+                        aspectBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            toggleAspectRatio(video);
+                        };
+                        
+                        // إضافة الزر في مكان مناسب (قبل زر ملء الشاشة)
+                        const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
+                        if (fullscreenBtn) {
+                            controls.insertBefore(aspectBtn, fullscreenBtn);
+                        } else {
+                            controls.appendChild(aspectBtn);
+                        }
+                    }
+                }
+
+                if (Hls.isSupported() && url.includes('.m3u8')) {
                     hls = new Hls();
                     hls.loadSource(url);
                     hls.attachMedia(video);
+                    
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        plyr = new Plyr(video, plyrOptions);
-                        document.getElementById('placeholderScreen').classList.add('hidden');
-                        setTimeout(setupToggleLogic, 500);
+                        const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
+                        const qualityOptions = [0, ...availableQualities];
+                        plyrOptions.quality = {
+                            default: 0,
+                            options: qualityOptions,
+                            forced: true,
+                            onChange: (q) => {
+                                if (q === 0) hls.currentLevel = -1;
+                                else {
+                                    hls.levels.forEach((level, idx) => {
+                                        if (level.height === q) hls.currentLevel = idx;
+                                    });
+                                }
+                            }
+                        };
+                        plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
+                        setupPlyr();
                     });
+
                     hls.on(Hls.Events.ERROR, (event, data) => {
                         if (data.fatal) {
                             document.getElementById('placeholderScreen').classList.add('hidden');
@@ -272,13 +369,12 @@ function renderChannels() {
                     });
                 } else {
                     video.src = url;
-                    plyr = new Plyr(video, plyrOptions);
-                    document.getElementById('placeholderScreen').classList.add('hidden');
-                    setTimeout(setupToggleLogic, 500);
+                    setupPlyr();
                 }
             }
         }
 
         loadChannels();
     </script>
-</body></html>
+</body>
+</html>
