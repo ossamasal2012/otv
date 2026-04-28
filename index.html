@@ -3,16 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>يلا گـــول | Yalla Goal </title>
+    <title>يلا گـــول | Yalla Goal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+
+        * { box-sizing: border-box; }
 
         body {
             font-family: 'Tajawal', sans-serif;
@@ -23,6 +24,207 @@
             margin: 0;
         }
 
+        /* ===== شاشة تسجيل الدخول ===== */
+        #loginScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: #020617;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        #loginScreen.hidden { display: none !important; }
+
+        .login-card {
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 1.25rem;
+            padding: 2.5rem 2rem;
+            width: 90%;
+            max-width: 360px;
+            box-shadow: 0 0 60px rgba(16, 185, 129, 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            animation: fadeInCard 0.5s ease;
+        }
+
+        @keyframes fadeInCard {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .login-title {
+            text-align: center;
+        }
+
+        .login-title h1 {
+            font-size: 2.2rem;
+            font-weight: 900;
+            color: #10b981;
+            letter-spacing: -0.5px;
+            margin: 0 0 4px;
+        }
+
+        .login-title p {
+            font-size: 0.7rem;
+            color: #475569;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .login-field label {
+            display: block;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #94a3b8;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-input-wrap {
+            position: relative;
+        }
+
+        .login-input-group {
+            display: flex;
+            align-items: center;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            border-radius: 0.6rem;
+            overflow: hidden;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .login-input-group:focus-within {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .login-input-group.error {
+            border-color: #ef4444;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+            animation: shake 0.35s ease;
+        }
+
+        .input-icon {
+            padding: 0 10px 0 12px;
+            color: #475569;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+
+        .login-input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            padding: 0.75rem 0;
+            font-size: 0.9rem;
+            font-family: 'Tajawal', sans-serif;
+            color: #f1f5f9;
+            outline: none;
+            direction: ltr;
+            text-align: center;
+            letter-spacing: 3px;
+            min-width: 0;
+        }
+
+        .eye-toggle {
+            padding: 0 12px 0 10px;
+            color: #475569;
+            font-size: 0.85rem;
+            cursor: pointer;
+            background: none;
+            border: none;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+            height: 100%;
+        }
+
+        .eye-toggle:hover { color: #10b981; }
+
+        /* ملاحظة الرابط */
+        .notice-box {
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            border-radius: 0.75rem;
+            padding: 0.85rem 1rem;
+            font-size: 0.72rem;
+            color: #fca5a5;
+            font-weight: 600;
+            line-height: 1.7;
+            text-align: center;
+        }
+
+        .notice-box strong {
+            color: #ef4444;
+            font-weight: 800;
+        }
+
+        .notice-box a {
+            color: #34d399;
+            font-weight: 800;
+            text-decoration: underline;
+            word-break: break-all;
+        }
+
+        .notice-box a:hover { color: #10b981; }
+
+        .login-input:focus {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .login-input.error {
+            /* error now handled on the group */
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+        }
+
+        #loginError {
+            font-size: 0.72rem;
+            color: #ef4444;
+            text-align: center;
+            font-weight: 700;
+            display: none;
+        }
+
+        #loginError.show { display: block; }
+
+        .login-btn {
+            width: 100%;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: 0.7rem;
+            padding: 0.8rem;
+            font-size: 1rem;
+            font-weight: 800;
+            font-family: 'Tajawal', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.5px;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+        }
+
+        .login-btn:active { transform: translateY(0); }
+
+        /* ===== نفس الستايل الأصلي ===== */
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -56,7 +258,6 @@
             width: 100% !important;
         }
 
-        /* تحكم يدوي في الإخفاء */
         .plyr--hide-manual-controls .plyr__controls,
         .plyr--hide-manual-controls .plyr__caption {
             opacity: 0 !important;
@@ -75,7 +276,7 @@
             background: #020617;
             gap: 1rem;
         }
-        
+
         #iPlayer {
             position: absolute;
             top: 0; left: 0;
@@ -83,11 +284,6 @@
             border: 0;
             z-index: 40;
             display: none;
-        }
-
-        /* زر الأبعاد المدمج داخل Plyr */
-        .plyr__controls .plyr__custom-tool {
-            order: 7; /* وضعه قبل زر ملء الشاشة */
         }
 
         .custom-aspect-btn {
@@ -105,14 +301,53 @@
         }
 
         @media (min-width: 1536px) {
-            .aside-container {
-                width: 450px !important;
-            }
+            .aside-container { width: 450px !important; }
         }
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
 
+    <!-- ===== شاشة تسجيل الدخول ===== -->
+    <div id="loginScreen">
+        <div class="login-card">
+            <div class="login-title">
+                <h1>يلا گـــول</h1>
+                <p>أدخل الرمز السري للدخول</p>
+            </div>
+
+            <!-- ملاحظة الرابط -->
+            <div class="notice-box">
+                <strong>⚠️ ملاحظة مهمة</strong><br>
+                للدخول إلى التطبيق ومشاهدة أكثر من <strong>250 قناة</strong> عربية وأجنبية،<br>
+                يجب إدخال الرمز السري <strong>(لأول مرة فقط)</strong><br>
+                ولأخذ الرمز السري افتح الرابط في المتصفح:<br>
+                <a href="https://yallagoal-key.netlify.app/" target="_blank" rel="noopener">
+                    https://yallagoal-key.netlify.app/
+                </a>
+            </div>
+
+            <div class="login-field">
+                <label>الرمز السري</label>
+                <div class="login-input-group" id="inputGroup">
+                    <span class="input-icon">🔒</span>
+                    <input type="password" id="pinInput" class="login-input" placeholder="••••••••••"
+                        maxlength="20" onkeydown="if(event.key==='Enter') doLogin()">
+                    <button type="button" class="eye-toggle" onclick="togglePin()" id="eyeBtn" title="إظهار/إخفاء">
+                        👁
+                    </button>
+                </div>
+            </div>
+
+            <p id="loginError">❌ الرمز السري غير صحيح، حاول مجدداً</p>
+
+            <button class="login-btn" onclick="doLogin()">
+                <i class="fa-solid fa-right-to-bracket ml-2"></i>دخول
+            </button>
+        </div>
+        <p style="color:#1e293b;font-size:0.65rem;font-weight:700;letter-spacing:2px;">تطوير أُسامه · v2.7</p>
+    </div>
+
+    <!-- ===== التطبيق الرئيسي ===== -->
     <aside class="aside-container w-full lg:w-80 xl:w-96 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
         <div class="p-4 border-b border-slate-900 hidden lg:block text-center">
             <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
@@ -128,12 +363,10 @@
         </div>
 
         <div id="categoryMenu" class="px-3 pb-2 overflow-x-auto no-scrollbar flex gap-1.5 shrink-0"></div>
-
         <div id="channelsBox" class="flex-1 overflow-y-auto p-3 space-y-1 no-scrollbar"></div>
     </aside>
 
     <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[40vh] lg:h-full overflow-hidden">
-        
         <div id="placeholderScreen" class="overlay-screen">
             <div class="w-10 h-10 rounded-full border-2 border-slate-800 border-t-emerald-500 animate-spin"></div>
             <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">انتظار القناة...</span>
@@ -146,20 +379,65 @@
         </div>
 
         <div id="dynamic-player-root"></div>
-
         <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
-
     </main>
 
     <script>
+        // ===== إظهار/إخفاء الرمز =====
+        function togglePin() {
+            const inp = document.getElementById('pinInput');
+            const btn = document.getElementById('eyeBtn');
+            if (inp.type === 'password') {
+                inp.type = 'text';
+                btn.innerText = '🙈';
+            } else {
+                inp.type = 'password';
+                btn.innerText = '👁';
+            }
+        }
+
+        // ===== نظام تسجيل الدخول =====
+        const SECRET_CODE = "ossamatt22";
+        const STORAGE_KEY = "yalla_authenticated";
+
+        function checkAuth() {
+            const isAuth = localStorage.getItem(STORAGE_KEY);
+            if (isAuth === "true") {
+                // المستخدم مسجّل مسبقاً، أخفِ شاشة الدخول مباشرة
+                document.getElementById('loginScreen').classList.add('hidden');
+                loadChannels();
+            }
+            // إذا لم يكن مسجّلاً، تبقى شاشة الدخول ظاهرة
+        }
+
+        function doLogin() {
+            const val = document.getElementById('pinInput').value.trim();
+            const inp = document.getElementById('pinInput');
+            const grp = document.getElementById('inputGroup');
+            const err = document.getElementById('loginError');
+
+            if (val === SECRET_CODE) {
+                localStorage.setItem(STORAGE_KEY, "true");
+                document.getElementById('loginScreen').classList.add('hidden');
+                loadChannels();
+            } else {
+                grp.classList.add('error');
+                err.classList.add('show');
+                setTimeout(() => { grp.classList.remove('error'); }, 600);
+                inp.value = "";
+                inp.focus();
+            }
+        }
+
+        // ===== منطق التطبيق الأصلي =====
         let myChannels = [];
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
-        let currentAspectRatio = 0; // 0: Fit, 1: Zoom, 2: Fill
-        let controlsVisible = true; 
+        let currentAspectRatio = 0;
+        let controlsVisible = true;
 
         async function loadChannels() {
             try {
@@ -195,7 +473,7 @@
             box.innerHTML = filtered.map(ch => {
                 const isFav = favorites.includes(ch[0]);
                 return `
-                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
+                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
                     class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
                     <div class="flex items-center gap-2">
                         <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
@@ -214,30 +492,24 @@
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
             if (plyr) { plyr.destroy(); plyr = null; }
-            const root = document.getElementById('dynamic-player-root');
-            root.innerHTML = "";
+            document.getElementById('dynamic-player-root').innerHTML = "";
             const iframe = document.getElementById('iPlayer');
             iframe.src = "about:blank";
             iframe.style.display = "none";
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
-            
             currentAspectRatio = 0;
             controlsVisible = true;
         }
 
-        // الوظيفة المحدثة لتبديل الأبعاد
         function toggleAspectRatio(video) {
             if (!video) return;
             currentAspectRatio = (currentAspectRatio + 1) % 3;
             video.classList.remove('video-fit-contain', 'video-fit-cover', 'video-fit-fill');
-            
             const labels = ['Fit', 'Zoom', 'Fill'];
             if (currentAspectRatio === 0) video.classList.add('video-fit-contain');
             if (currentAspectRatio === 1) video.classList.add('video-fit-cover');
             if (currentAspectRatio === 2) video.classList.add('video-fit-fill');
-            
-            // تحديث النص في كل الأزرار (لو وجد أكثر من واحد)
             document.querySelectorAll('.custom-aspect-btn').forEach(btn => {
                 btn.innerText = labels[currentAspectRatio];
             });
@@ -252,12 +524,8 @@
         function updateControlsVisibility() {
             const plyrContainer = document.querySelector('.plyr');
             if (!plyrContainer) return;
-
-            if (controlsVisible) {
-                plyrContainer.classList.remove('plyr--hide-manual-controls');
-            } else {
-                plyrContainer.classList.add('plyr--hide-manual-controls');
-            }
+            if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
+            else plyrContainer.classList.add('plyr--hide-manual-controls');
         }
 
         function toggleFavorite(event, name) {
@@ -289,7 +557,6 @@
                 video.setAttribute('crossorigin', '');
                 root.appendChild(video);
 
-                // النقر للتبديل اليدوي
                 root.onclick = (e) => {
                     if (e.target.closest('.plyr__controls')) return;
                     manualToggleControls();
@@ -308,13 +575,10 @@
                     plyr = new Plyr(video, plyrOptions);
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     controlsVisible = true;
-                    
-                    // منع الإخفاء التلقائي
                     plyr.on('controlshidden', () => {
                         if (controlsVisible) plyr.toggleControls(true);
                     });
 
-                    // حقن زر الـ Aspect Ratio داخل عناصر تحكم Plyr
                     const controls = document.querySelector('.plyr__controls');
                     if (controls) {
                         const aspectBtn = document.createElement('button');
@@ -325,36 +589,28 @@
                             e.stopPropagation();
                             toggleAspectRatio(video);
                         };
-                        
-                        // إضافة الزر في مكان مناسب (قبل زر ملء الشاشة)
                         const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
-                        if (fullscreenBtn) {
-                            controls.insertBefore(aspectBtn, fullscreenBtn);
-                        } else {
-                            controls.appendChild(aspectBtn);
-                        }
+                        if (fullscreenBtn) controls.insertBefore(aspectBtn, fullscreenBtn);
+                        else controls.appendChild(aspectBtn);
                     }
-                }
+                };
 
                 if (Hls.isSupported() && url.includes('.m3u8')) {
                     hls = new Hls();
                     hls.loadSource(url);
                     hls.attachMedia(video);
-                    
+
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
-                        const qualityOptions = [0, ...availableQualities];
                         plyrOptions.quality = {
                             default: 0,
-                            options: qualityOptions,
+                            options: [0, ...availableQualities],
                             forced: true,
                             onChange: (q) => {
                                 if (q === 0) hls.currentLevel = -1;
-                                else {
-                                    hls.levels.forEach((level, idx) => {
-                                        if (level.height === q) hls.currentLevel = idx;
-                                    });
-                                }
+                                else hls.levels.forEach((level, idx) => {
+                                    if (level.height === q) hls.currentLevel = idx;
+                                });
                             }
                         };
                         plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
@@ -374,7 +630,8 @@
             }
         }
 
-        loadChannels();
+        // ===== تشغيل التحقق عند البداية =====
+        checkAuth();
     </script>
 </body>
 </html>
