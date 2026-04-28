@@ -93,7 +93,7 @@ jobs:
         run: |
           cat > yalla-goal/capacitor.config.json << 'EOF'
           {
-            "appId": "com.yallagoal.app",
+            "appId": "com.ossamasal.player",
             "appName": "Yalla Goal",
             "webDir": "www",
             "server": {
