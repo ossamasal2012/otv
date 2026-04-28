@@ -43,6 +43,7 @@ jobs:
       - name: 🗂️ Create Project & www
         run: |
           mkdir -p yalla-goal/www
+
           # جلب ملف index.html
           if [ -f "yallagoal.html" ]; then
             cp yallagoal.html yalla-goal/www/index.html
@@ -52,6 +53,23 @@ jobs:
             echo "❌ ملف HTML غير موجود!" && exit 1
           fi
 
+          # ✅ فتح الروابط في المتصفح الخارجي
+          cat >> yalla-goal/www/index.html << 'JSEOF'
+          <script>
+            document.addEventListener('click', function(e) {
+              var target = e.target.closest('a');
+              if (target && target.href && target.href.startsWith('http')) {
+                e.preventDefault();
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+                  window.Capacitor.Plugins.Browser.open({ url: target.href });
+                } else {
+                  window.open(target.href, '_system');
+                }
+              }
+            });
+          </script>
+          JSEOF
+
           cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
@@ -59,6 +77,7 @@ jobs:
             "private": true,
             "dependencies": {
               "@capacitor/android": "^6.0.0",
+              "@capacitor/browser": "^6.0.0",
               "@capacitor/cli": "^6.0.0",
               "@capacitor/core": "^6.0.0"
             }
@@ -85,6 +104,11 @@ jobs:
             "android": {
               "allowMixedContent": true,
               "webContentsDebuggingEnabled": false
+            },
+            "plugins": {
+              "Browser": {
+                "presentationStyle": "fullscreen"
+              }
             }
           }
           EOF
@@ -101,7 +125,7 @@ jobs:
         run: |
           cd yalla-goal
           npx cap sync android
-          
+
           # تعديل ملف build.gradle الرئيسي لحل تضارب Kotlin
           GRADLE_APP="android/app/build.gradle"
           cat >> "$GRADLE_APP" << 'EOF'
@@ -109,7 +133,7 @@ jobs:
           configurations.all {
               exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
               exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
-              
+
               resolutionStrategy {
                   force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
               }
@@ -167,18 +191,18 @@ jobs:
           EOF
 
       # ══════════════════════════════════════════
-# الخطوة 4 — معالجة الأيقونة (App Icon) الشاملة
+      # الخطوة 4 — معالجة الأيقونة (App Icon) الشاملة
       # ══════════════════════════════════════════
       - name: 🖼️ Generate Comprehensive App Icons
         run: |
           # تحميل الأيقونة الخاصة بك
           curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -o /tmp/icon.png
-          
+
           BASE="yalla-goal/android/app/src/main/res"
-          
+
           # قائمة الأحجام المطلوبة
           declare -A SIZES=( ["mdpi"]=48 ["hdpi"]=72 ["xhdpi"]=96 ["xxhdpi"]=144 ["xxxhdpi"]=192 )
-          
+
           for SUFFIX in "${!SIZES[@]}"; do
             SIZE=${SIZES[$SUFFIX]}
             DIR_MIPMAP="$BASE/mipmap-$SUFFIX"
@@ -190,16 +214,14 @@ jobs:
             convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher.png"
             convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_round.png"
 
-            # 2. الأيقونات المتطورة (Adaptive Icons) - استبدال الطبقات
-            # سنجعل الخلفية بلون سادة والأمامية هي شعارك
+            # 2. الأيقونات المتطورة (Adaptive Icons)
             convert /tmp/icon.png -resize ${SIZE}x${SIZE} -gravity center -background none -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_foreground.png"
-            
-            # إنشاء خلفية بلون تطبيقك (أزرق غامق كما في الكود)
+
+            # إنشاء خلفية بلون تطبيقك (أزرق غامق)
             convert -size ${SIZE}x${SIZE} xc:#020617 "$DIR_MIPMAP/ic_launcher_background.png"
           done
 
           # 3. حذف أي ملفات XML قد تجبر النظام على استخدام الأيقونة الافتراضية
-          # هذه الخطوة تضمن أن النظام سيقرأ الصور الجديدة التي أنشأناها
           find "$BASE" -name "ic_launcher.xml" -delete
           find "$BASE" -name "ic_launcher_round.xml" -delete
 
