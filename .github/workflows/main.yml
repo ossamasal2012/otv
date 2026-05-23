@@ -37,9 +37,6 @@ jobs:
       - name: 🖼️ Install ImageMagick
         run: sudo apt-get install -y imagemagick
 
-      # ══════════════════════════════════════════
-      # الخطوة 1 — تجهيز ملفات الويب (Yalla Goal)
-      # ══════════════════════════════════════════
       - name: 🗂️ Create Project & www
         run: |
           mkdir -p yalla-goal/www
@@ -52,402 +49,295 @@ jobs:
             echo "❌ ملف HTML غير موجود!" && exit 1
           fi
 
-          # ✅ فتح الروابط في المتصفح الخارجي
-          cat >> yalla-goal/www/index.html << 'JSEOF'
-          <style>
-            /* ===== إصلاح شامل لجميع إصدارات أندرويد ===== */
-            /* إلغاء أي padding/margin يسببه الـ WebView للـ system bars */
-            :root {
-              --safe-area-inset-top: env(safe-area-inset-top, 0px);
-              --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
-              --safe-area-inset-left: env(safe-area-inset-left, 0px);
-              --safe-area-inset-right: env(safe-area-inset-right, 0px);
-            }
-            html, body {
-              margin: 0 !important;
-              padding: 0 !important;
-              width: 100% !important;
-              height: 100% !important;
-              overflow: hidden !important;
-              position: fixed !important;
-              top: 0 !important;
-              left: 0 !important;
-              right: 0 !important;
-              bottom: 0 !important;
-            }
-            /* تجاوز أي padding يضيفه Capacitor للـ safe area */
-            body {
-              padding-top: 0px !important;
-              padding-bottom: 0px !important;
-              padding-left: 0px !important;
-              padding-right: 0px !important;
-            }
-          </style>
-          <script>
-            // فتح الروابط في المتصفح الخارجي
-            document.addEventListener('click', function(e) {
-              var target = e.target.closest('a');
-              if (target && target.href && target.href.startsWith('http')) {
-                e.preventDefault();
-                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-                  window.Capacitor.Plugins.Browser.open({ url: target.href });
-                } else {
-                  window.open(target.href, '_system');
-                }
-              }
-            });
-
-            // ===== إصلاح أندرويد 14: إلغاء safe-area-inset عبر JS =====
-            document.addEventListener('DOMContentLoaded', function() {
-              // تعطيل أي viewport-fit قديم
-              var meta = document.querySelector('meta[name="viewport"]');
-              if (meta) {
-                var content = meta.getAttribute('content');
-                if (!content.includes('viewport-fit')) {
-                  meta.setAttribute('content', content + ', viewport-fit=cover');
-                }
-              } else {
-                var newMeta = document.createElement('meta');
-                newMeta.name = 'viewport';
-                newMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
-                document.head.appendChild(newMeta);
-              }
-
-              // إزالة أي padding يضيفه Capacitor ديناميكياً
-              function fixPadding() {
-                document.documentElement.style.setProperty('padding', '0', 'important');
-                document.body.style.setProperty('padding', '0', 'important');
-                document.body.style.setProperty('padding-top', '0px', 'important');
-                document.body.style.setProperty('padding-bottom', '0px', 'important');
-                document.body.style.setProperty('margin', '0', 'important');
-              }
-
-              fixPadding();
-              // مراقبة أي تغيير في الـ style يحاول إضافة padding
-              var observer = new MutationObserver(function(mutations) {
-                mutations.forEach(function(m) {
-                  if (m.attributeName === 'style') {
-                    fixPadding();
-                  }
-                });
-              });
-              observer.observe(document.body, { attributes: true });
-              observer.observe(document.documentElement, { attributes: true });
-            });
-          </script>
-          JSEOF
+          # حقن CSS+JS لإصلاح المشكلة من داخل HTML
+          cat >> yalla-goal/www/index.html << 'INJECT'
+<style>
+html,body{margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important;background:#000!important}
+</style>
+<script>
+// فتح الروابط خارجياً
+document.addEventListener('click',function(e){
+  var t=e.target.closest('a');
+  if(t&&t.href&&t.href.startsWith('http')){
+    e.preventDefault();
+    if(window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.Browser){
+      window.Capacitor.Plugins.Browser.open({url:t.href});
+    }else{window.open(t.href,'_system');}
+  }
+});
+// إزالة أي padding يضيفه Capacitor
+window.addEventListener('load',function(){
+  if(window.Capacitor){
+    document.documentElement.style.cssText='margin:0!important;padding:0!important;';
+    document.body.style.cssText='margin:0!important;padding:0!important;';
+    new MutationObserver(function(){
+      document.documentElement.style.setProperty('padding','0','important');
+      document.body.style.setProperty('padding','0','important');
+    }).observe(document.body,{attributes:true,attributeFilter:['style']});
+  }
+});
+</script>
+INJECT
 
           cat > yalla-goal/package.json << 'EOF'
-          {
-            "name": "yalla-goal",
-            "version": "2.7.0",
-            "private": true,
-            "dependencies": {
-              "@capacitor/android": "^6.0.0",
-              "@capacitor/browser": "^6.0.0",
-              "@capacitor/cli": "^6.0.0",
-              "@capacitor/core": "^6.0.0",
-              "@capacitor/status-bar": "^6.0.0"
-            }
-          }
-          EOF
+{
+  "name": "yalla-goal",
+  "version": "2.7.0",
+  "private": true,
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/browser": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0"
+  }
+}
+EOF
 
       - name: 📥 Install Dependencies
-        run: |
-          cd yalla-goal
-          npm install
+        run: cd yalla-goal && npm install
 
-      - name: ⚙️ Capacitor Config (CORS & Navigation)
+      - name: ⚙️ Capacitor Config
         run: |
           cat > yalla-goal/capacitor.config.json << 'EOF'
-          {
-            "appId": "com.ossamasal.player",
-            "appName": "Yalla Goal",
-            "webDir": "www",
-            "server": {
-              "androidScheme": "https",
-              "cleartext": true,
-              "allowNavigation": ["*"]
-            },
-            "android": {
-              "allowMixedContent": true,
-              "webContentsDebuggingEnabled": false,
-              "backgroundColor": "#020617",
-              "overrideUserAgent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-            },
-            "plugins": {
-              "Browser": {
-                "presentationStyle": "fullscreen"
-              },
-              "StatusBar": {
-                "style": "Dark",
-                "backgroundColor": "#020617",
-                "overlaysWebView": true
-              }
-            }
-          }
-          EOF
+{
+  "appId": "com.ossamasal.player",
+  "appName": "Yalla Goal",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  },
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#000000"
+  },
+  "plugins": {
+    "Browser": {"presentationStyle": "fullscreen"}
+  }
+}
+EOF
 
       - name: 🤖 Add Android Platform
-        run: |
-          cd yalla-goal
-          npx cap add android
+        run: cd yalla-goal && npx cap add android
 
-      # ══════════════════════════════════════════
-      # الخطوة 2 — حل مشكلة التضارب (Duplicate Class)
-      # ══════════════════════════════════════════
-      - name: 🔄 Capacitor Sync & Dependency Fix
+      - name: 🔄 Sync & Fix Dependencies
         run: |
           cd yalla-goal
           npx cap sync android
 
-          GRADLE_APP="android/app/build.gradle"
+          cat >> android/app/build.gradle << 'EOF'
 
-          # إضافة androidx.core لدعم WindowInsetsControllerCompat
-          sed -i '/dependencies {/a\\    implementation "androidx.core:core:1.12.0"' "$GRADLE_APP"
-          cat >> "$GRADLE_APP" << 'EOF'
+configurations.all {
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+    }
+}
+EOF
 
-          configurations.all {
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
-
-              resolutionStrategy {
-                  force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
-              }
-          }
-          EOF
-
-      # ══════════════════════════════════════════
-      # الخطوة 3 — إعدادات الإنترنت والأمان (AndroidManifest)
-      # ══════════════════════════════════════════
-      - name: 📡 Network & Permissions Config
+      - name: 📡 AndroidManifest & Network Security
         run: |
           mkdir -p yalla-goal/android/app/src/main/res/xml
           cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-              <base-config cleartextTrafficPermitted="true">
-                  <trust-anchors>
-                      <certificates src="system" />
-                  </trust-anchors>
-              </base-config>
-          </network-security-config>
-          EOF
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors><certificates src="system"/></trust-anchors>
+    </base-config>
+</network-security-config>
+EOF
 
           cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-              <application
-                  android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
-                  android:label="يلا گول"
-                  android:roundIcon="@mipmap/ic_launcher_round"
-                  android:supportsRtl="true"
-                  android:theme="@style/AppTheme"
-                  android:usesCleartextTraffic="true"
-                  android:networkSecurityConfig="@xml/network_security_config">
-                  <activity
-                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
-                      android:name=".MainActivity"
-                      android:label="يلا گول"
-                      android:theme="@style/AppTheme.NoActionBarLaunch"
-                      android:launchMode="singleTask"
-                      android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="يلا گول"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:name=".MainActivity"
+            android:label="يلا گول"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+EOF
 
-      # ══════════════════════════════════════════
-      # الخطوة 4 — تفعيل Immersive Mode (الشاشة الكاملة الحقيقية)
-      # يخفي: شريط الحالة + شريط الإيماءات + شريط التنقل تماماً
-      # ══════════════════════════════════════════
-      - name: 📱 Enable Full Immersive Mode (Hide Status & Navigation Bars)
+      # ==============================================================
+      # الحل الجذري: MainActivity بنهج edge-to-edge الصحيح
+      # المشكلة الحقيقية: أندرويد 14 يفرض gesture bar ولا يمكن إخفاؤه
+      # الحل: تمديد الـ WebView خلف الـ gesture bar بلون شفاف
+      # ==============================================================
+      - name: 📱 MainActivity - True Edge-to-Edge Fix
         run: |
           MAIN_ACTIVITY="yalla-goal/android/app/src/main/java/com/ossamasal/player/MainActivity.java"
 
           cat > "$MAIN_ACTIVITY" << 'EOF'
-          package com.ossamasal.player;
+package com.ossamasal.player;
 
-          import android.graphics.Color;
-          import android.os.Build;
-          import android.os.Bundle;
-          import android.view.View;
-          import android.view.Window;
-          import android.view.WindowInsets;
-          import android.view.WindowInsetsController;
-          import android.view.WindowManager;
-          import androidx.core.view.WindowCompat;
-          import androidx.core.view.WindowInsetsCompat;
-          import androidx.core.view.WindowInsetsControllerCompat;
-          import com.getcapacitor.BridgeActivity;
+import android.graphics.Color;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.view.WindowManager;
+import com.getcapacitor.BridgeActivity;
 
-          public class MainActivity extends BridgeActivity {
+public class MainActivity extends BridgeActivity {
 
-              @Override
-              public void onCreate(Bundle savedInstanceState) {
-                  Window window = getWindow();
-                  // يجب قبل super.onCreate لمنع وميض الأشرطة
-                  window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-                  window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
-                  window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
-                  window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR);
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                      window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-                      window.setStatusBarColor(Color.TRANSPARENT);
-                      window.setNavigationBarColor(Color.TRANSPARENT);
-                  }
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                      // أندرويد 10+: منع النظام من فرض اللون على navigation bar
-                      window.setNavigationBarContrastEnforced(false);
-                      window.setStatusBarContrastEnforced(false);
-                  }
-                  super.onCreate(savedInstanceState);
-                  WindowCompat.setDecorFitsSystemWindows(window, false);
-                  hideSystemUI();
-              }
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        // ====================================================
+        // يجب أن يكون هذا كله قبل super.onCreate()
+        // ====================================================
+        Window window = getWindow();
 
-              @Override
-              public void onWindowFocusChanged(boolean hasFocus) {
-                  super.onWindowFocusChanged(hasFocus);
-                  if (hasFocus) {
-                      hideSystemUI();
-                  }
-              }
+        // 1) السماح للمحتوى بالامتداد خلف أشرطة النظام
+        window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
 
-              @Override
-              public void onResume() {
-                  super.onResume();
-                  hideSystemUI();
-              }
+        // 2) جعل الأشرطة شفافة تماماً حتى يظهر المحتوى خلفها
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.TRANSPARENT);
+        }
 
-              private void hideSystemUI() {
-                  Window window = getWindow();
-                  View decorView = window.getDecorView();
+        // 3) منع النظام من تغيير لون الأشرطة (أندرويد 10+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.setNavigationBarContrastEnforced(false);
+            window.setStatusBarContrastEnforced(false);
+        }
 
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                      // ===== Android 11+ =====
-                      // WindowInsetsControllerCompat يعمل بشكل صحيح على Android 14
-                      WindowInsetsControllerCompat insetsController =
-                          WindowCompat.getInsetsController(window, decorView);
-                      if (insetsController != null) {
-                          insetsController.hide(WindowInsetsCompat.Type.systemBars());
-                          insetsController.hide(WindowInsetsCompat.Type.navigationBars());
-                          insetsController.hide(WindowInsetsCompat.Type.statusBars());
-                          insetsController.setSystemBarsBehavior(
-                              WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                          );
-                      }
-                      // طبقة ثانية للأمان
-                      WindowInsetsController direct = window.getInsetsController();
-                      if (direct != null) {
-                          direct.hide(WindowInsets.Type.systemBars());
-                          direct.hide(WindowInsets.Type.navigationBars());
-                          direct.setSystemBarsBehavior(
-                              WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                          );
-                      }
-                  } else {
-                      // ===== Android 10 وما دونه =====
-                      final int flags = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                          | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                          | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                          | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                          | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                          | View.SYSTEM_UI_FLAG_FULLSCREEN;
-                      decorView.setSystemUiVisibility(flags);
-                      window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-                      window.clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
-                      decorView.setOnSystemUiVisibilityChangeListener(visibility -> {
-                          if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
-                              decorView.postDelayed(() ->
-                                  decorView.setSystemUiVisibility(flags), 100);
-                          }
-                      });
-                  }
-              }
-          }
-          EOF
+        super.onCreate(savedInstanceState);
 
-          echo "✅ تم تفعيل Immersive Mode بنجاح"
+        // 4) بعد super: إخبار الـ decor بعدم ترك مساحة للأشرطة
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false);
+        }
 
-      # ══════════════════════════════════════════
-      # الخطوة 5 — إعداد styles.xml لإخفاء ActionBar والعنوان
-      # ══════════════════════════════════════════
-      - name: 🎨 Configure App Themes (No Title / No ActionBar)
+        hideSystemUI();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) hideSystemUI();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        hideSystemUI();
+    }
+
+    private void hideSystemUI() {
+        Window window = getWindow();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // أندرويد 11+: إخفاء الأشرطة مع السماح بظهورها مؤقتاً بالسحب
+            WindowInsetsController c = window.getInsetsController();
+            if (c != null) {
+                c.hide(WindowInsets.Type.statusBars());
+                c.hide(WindowInsets.Type.navigationBars());
+                c.setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                );
+            }
+        } else {
+            // أندرويد 10 وما دونه
+            View dv = window.getDecorView();
+            final int flags =
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN;
+            dv.setSystemUiVisibility(flags);
+            dv.setOnSystemUiVisibilityChangeListener(v -> {
+                if ((v & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                    dv.postDelayed(() -> dv.setSystemUiVisibility(flags), 100);
+                }
+            });
+        }
+    }
+}
+EOF
+
+      - name: 🎨 Styles - True Fullscreen Theme
         run: |
-          STYLES_DIR="yalla-goal/android/app/src/main/res/values"
-          mkdir -p "$STYLES_DIR"
+          mkdir -p yalla-goal/android/app/src/main/res/values
+          cat > yalla-goal/android/app/src/main/res/values/styles.xml << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#020617</item>
+        <item name="colorPrimaryDark">#000000</item>
+        <item name="colorAccent">#10b981</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <!-- المفتاح الرئيسي: يجعل المحتوى يمتد خلف أشرطة النظام -->
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o_mr1">shortEdges</item>
+    </style>
 
-          cat > "$STYLES_DIR/styles.xml" << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <!-- ثيم أساسي بدون ActionBar -->
-              <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-                  <item name="colorPrimary">#020617</item>
-                  <item name="colorPrimaryDark">#020617</item>
-                  <item name="colorAccent">#10b981</item>
-                  <item name="android:windowBackground">#020617</item>
-                  <item name="android:windowNoTitle">true</item>
-                  <item name="android:windowActionBar">false</item>
-              </style>
+    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">#000000</item>
+        <!-- شفافية كاملة للأشرطة -->
+        <item name="android:statusBarColor">#00000000</item>
+        <item name="android:navigationBarColor">#00000000</item>
+        <!-- تعطيل contrast enforcement -->
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
+        <item name="android:enforceStatusBarContrast" tools:targetApi="q">false</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="vanilla_ice_cream">true</item>
+    </style>
+</resources>
+EOF
 
-              <!-- ثيم شاشة التحميل: شاشة كاملة تماماً -->
-              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme">
-                  <item name="android:windowFullscreen">true</item>
-                  <item name="android:windowIsTranslucent">false</item>
-                  <item name="android:windowBackground">#020617</item>
-                  <item name="android:statusBarColor">#020617</item>
-                  <item name="android:navigationBarColor">#020617</item>
-              </style>
-          </resources>
-          EOF
+          # إضافة xmlns:tools للـ manifest
+          sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android"|xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"|' \
+            yalla-goal/android/app/src/main/res/values/styles.xml
 
-          echo "✅ تم ضبط الثيمات بنجاح"
-
-      # ══════════════════════════════════════════
-      # الخطوة 6 — معالجة الأيقونة (App Icon)
-      # ══════════════════════════════════════════
-      - name: 🖼️ Generate Comprehensive App Icons
+      - name: 🖼️ Generate App Icons
         run: |
           curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -o /tmp/icon.png
-
           BASE="yalla-goal/android/app/src/main/res"
-
-          declare -A SIZES=( ["mdpi"]=48 ["hdpi"]=72 ["xhdpi"]=96 ["xxhdpi"]=144 ["xxxhdpi"]=192 )
-
+          declare -A SIZES=(["mdpi"]=48 ["hdpi"]=72 ["xhdpi"]=96 ["xxhdpi"]=144 ["xxxhdpi"]=192)
           for SUFFIX in "${!SIZES[@]}"; do
             SIZE=${SIZES[$SUFFIX]}
-            DIR_MIPMAP="$BASE/mipmap-$SUFFIX"
-            DIR_DRAWABLE="$BASE/drawable-$SUFFIX"
-            mkdir -p "$DIR_MIPMAP"
-            mkdir -p "$DIR_DRAWABLE"
-
-            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher.png"
-            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_round.png"
-            convert /tmp/icon.png -resize ${SIZE}x${SIZE} -gravity center -background none -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_foreground.png"
-            convert -size ${SIZE}x${SIZE} xc:#020617 "$DIR_MIPMAP/ic_launcher_background.png"
+            mkdir -p "$BASE/mipmap-$SUFFIX"
+            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$BASE/mipmap-$SUFFIX/ic_launcher.png"
+            convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$BASE/mipmap-$SUFFIX/ic_launcher_round.png"
+            convert /tmp/icon.png -resize ${SIZE}x${SIZE} -gravity center -background none -extent ${SIZE}x${SIZE} "$BASE/mipmap-$SUFFIX/ic_launcher_foreground.png"
+            convert -size ${SIZE}x${SIZE} xc:#020617 "$BASE/mipmap-$SUFFIX/ic_launcher_background.png"
           done
-
           find "$BASE" -name "ic_launcher.xml" -delete
           find "$BASE" -name "ic_launcher_round.xml" -delete
-
-          echo "✅ تم تحديث جميع الأيقونات بنجاح"
 
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
 
-      - name: 🏗️ Build Final APK
-        run: |
-          cd yalla-goal/android
-          ./gradlew assembleDebug
+      - name: 🏗️ Build APK
+        run: cd yalla-goal/android && ./gradlew assembleDebug
 
       - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
