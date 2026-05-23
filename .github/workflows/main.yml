@@ -44,7 +44,6 @@ jobs:
         run: |
           mkdir -p yalla-goal/www
 
-          # جلب ملف index.html
           if [ -f "yallagoal.html" ]; then
             cp yallagoal.html yalla-goal/www/index.html
           elif [ -f "index.html" ]; then
@@ -126,7 +125,6 @@ jobs:
           cd yalla-goal
           npx cap sync android
 
-          # تعديل ملف build.gradle الرئيسي لحل تضارب Kotlin
           GRADLE_APP="android/app/build.gradle"
           cat >> "$GRADLE_APP" << 'EOF'
 
@@ -145,7 +143,6 @@ jobs:
       # ══════════════════════════════════════════
       - name: 📡 Network & Permissions Config
         run: |
-          # 1. Network Security Config
           mkdir -p yalla-goal/android/app/src/main/res/xml
           cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -158,7 +155,6 @@ jobs:
           </network-security-config>
           EOF
 
-          # 2. AndroidManifest (Internet & Full permissions)
           cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -191,16 +187,130 @@ jobs:
           EOF
 
       # ══════════════════════════════════════════
-      # الخطوة 4 — معالجة الأيقونة (App Icon) الشاملة
+      # الخطوة 4 — تفعيل Immersive Mode (الشاشة الكاملة الحقيقية)
+      # يخفي: شريط الحالة + شريط الإيماءات + شريط التنقل تماماً
+      # ══════════════════════════════════════════
+      - name: 📱 Enable Full Immersive Mode (Hide Status & Navigation Bars)
+        run: |
+          MAIN_ACTIVITY="yalla-goal/android/app/src/main/java/com/ossamasal/player/MainActivity.java"
+
+          cat > "$MAIN_ACTIVITY" << 'EOF'
+          package com.ossamasal.player;
+
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowInsets;
+          import android.view.WindowInsetsController;
+          import android.view.WindowManager;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  hideSystemUI();
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) {
+                      hideSystemUI();
+                  }
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  hideSystemUI();
+              }
+
+              private void hideSystemUI() {
+                  Window window = getWindow();
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                      // Android 11+ (API 30+): الطريقة الحديثة والمثالية
+                      window.setDecorFitsSystemWindows(false);
+                      WindowInsetsController controller = window.getInsetsController();
+                      if (controller != null) {
+                          controller.hide(WindowInsets.Type.systemBars());
+                          controller.setSystemBarsBehavior(
+                              WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                          );
+                      }
+                  } else {
+                      // Android 10 وما دونه: الطريقة القديمة
+                      View decorView = window.getDecorView();
+                      int flags = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                          | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                          | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                          | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                          | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                          | View.SYSTEM_UI_FLAG_FULLSCREEN;
+                      decorView.setSystemUiVisibility(flags);
+
+                      // إزالة شريط الحالة
+                      window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                      window.clearFlags(WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN);
+
+                      decorView.setOnSystemUiVisibilityChangeListener(visibility -> {
+                          if ((visibility & View.SYSTEM_UI_FLAG_FULLSCREEN) == 0) {
+                              decorView.setSystemUiVisibility(flags);
+                          }
+                      });
+                  }
+              }
+          }
+          EOF
+
+          echo "✅ تم تفعيل Immersive Mode بنجاح"
+
+      # ══════════════════════════════════════════
+      # الخطوة 5 — إعداد styles.xml لإخفاء ActionBar والعنوان
+      # ══════════════════════════════════════════
+      - name: 🎨 Configure App Themes (No Title / No ActionBar)
+        run: |
+          STYLES_DIR="yalla-goal/android/app/src/main/res/values"
+          mkdir -p "$STYLES_DIR"
+
+          cat > "$STYLES_DIR/styles.xml" << 'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <!-- ثيم أساسي بدون ActionBar -->
+              <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+                  <item name="colorPrimary">#020617</item>
+                  <item name="colorPrimaryDark">#020617</item>
+                  <item name="colorAccent">#10b981</item>
+                  <item name="android:windowBackground">#020617</item>
+                  <item name="android:windowNoTitle">true</item>
+                  <item name="android:windowActionBar">false</item>
+              </style>
+
+              <!-- ثيم شاشة التحميل: شاشة كاملة تماماً -->
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme">
+                  <item name="android:windowFullscreen">true</item>
+                  <item name="android:windowIsTranslucent">false</item>
+                  <item name="android:windowBackground">#020617</item>
+                  <item name="android:statusBarColor">#020617</item>
+                  <item name="android:navigationBarColor">#020617</item>
+              </style>
+          </resources>
+          EOF
+
+          echo "✅ تم ضبط الثيمات بنجاح"
+
+      # ══════════════════════════════════════════
+      # الخطوة 6 — معالجة الأيقونة (App Icon)
       # ══════════════════════════════════════════
       - name: 🖼️ Generate Comprehensive App Icons
         run: |
-          # تحميل الأيقونة الخاصة بك
           curl -L "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -o /tmp/icon.png
 
           BASE="yalla-goal/android/app/src/main/res"
 
-          # قائمة الأحجام المطلوبة
           declare -A SIZES=( ["mdpi"]=48 ["hdpi"]=72 ["xhdpi"]=96 ["xxhdpi"]=144 ["xxxhdpi"]=192 )
 
           for SUFFIX in "${!SIZES[@]}"; do
@@ -210,22 +320,16 @@ jobs:
             mkdir -p "$DIR_MIPMAP"
             mkdir -p "$DIR_DRAWABLE"
 
-            # 1. الأيقونات التقليدية (Legacy Icons)
             convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher.png"
             convert /tmp/icon.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_round.png"
-
-            # 2. الأيقونات المتطورة (Adaptive Icons)
             convert /tmp/icon.png -resize ${SIZE}x${SIZE} -gravity center -background none -extent ${SIZE}x${SIZE} "$DIR_MIPMAP/ic_launcher_foreground.png"
-
-            # إنشاء خلفية بلون تطبيقك (أزرق غامق)
             convert -size ${SIZE}x${SIZE} xc:#020617 "$DIR_MIPMAP/ic_launcher_background.png"
           done
 
-          # 3. حذف أي ملفات XML قد تجبر النظام على استخدام الأيقونة الافتراضية
           find "$BASE" -name "ic_launcher.xml" -delete
           find "$BASE" -name "ic_launcher_round.xml" -delete
 
-          echo "✅ تم تحديث جميع أنواع الأيقونات بنجاح"
+          echo "✅ تم تحديث جميع الأيقونات بنجاح"
 
       - name: 🔐 Grant Gradle Permission
         run: chmod +x yalla-goal/android/gradlew
