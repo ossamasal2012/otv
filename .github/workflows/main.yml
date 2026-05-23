@@ -54,7 +54,37 @@ jobs:
 
           # ✅ فتح الروابط في المتصفح الخارجي
           cat >> yalla-goal/www/index.html << 'JSEOF'
+          <style>
+            /* ===== إصلاح شامل لجميع إصدارات أندرويد ===== */
+            /* إلغاء أي padding/margin يسببه الـ WebView للـ system bars */
+            :root {
+              --safe-area-inset-top: env(safe-area-inset-top, 0px);
+              --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+              --safe-area-inset-left: env(safe-area-inset-left, 0px);
+              --safe-area-inset-right: env(safe-area-inset-right, 0px);
+            }
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 100% !important;
+              height: 100% !important;
+              overflow: hidden !important;
+              position: fixed !important;
+              top: 0 !important;
+              left: 0 !important;
+              right: 0 !important;
+              bottom: 0 !important;
+            }
+            /* تجاوز أي padding يضيفه Capacitor للـ safe area */
+            body {
+              padding-top: 0px !important;
+              padding-bottom: 0px !important;
+              padding-left: 0px !important;
+              padding-right: 0px !important;
+            }
+          </style>
           <script>
+            // فتح الروابط في المتصفح الخارجي
             document.addEventListener('click', function(e) {
               var target = e.target.closest('a');
               if (target && target.href && target.href.startsWith('http')) {
@@ -65,6 +95,44 @@ jobs:
                   window.open(target.href, '_system');
                 }
               }
+            });
+
+            // ===== إصلاح أندرويد 14: إلغاء safe-area-inset عبر JS =====
+            document.addEventListener('DOMContentLoaded', function() {
+              // تعطيل أي viewport-fit قديم
+              var meta = document.querySelector('meta[name="viewport"]');
+              if (meta) {
+                var content = meta.getAttribute('content');
+                if (!content.includes('viewport-fit')) {
+                  meta.setAttribute('content', content + ', viewport-fit=cover');
+                }
+              } else {
+                var newMeta = document.createElement('meta');
+                newMeta.name = 'viewport';
+                newMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+                document.head.appendChild(newMeta);
+              }
+
+              // إزالة أي padding يضيفه Capacitor ديناميكياً
+              function fixPadding() {
+                document.documentElement.style.setProperty('padding', '0', 'important');
+                document.body.style.setProperty('padding', '0', 'important');
+                document.body.style.setProperty('padding-top', '0px', 'important');
+                document.body.style.setProperty('padding-bottom', '0px', 'important');
+                document.body.style.setProperty('margin', '0', 'important');
+              }
+
+              fixPadding();
+              // مراقبة أي تغيير في الـ style يحاول إضافة padding
+              var observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(m) {
+                  if (m.attributeName === 'style') {
+                    fixPadding();
+                  }
+                });
+              });
+              observer.observe(document.body, { attributes: true });
+              observer.observe(document.documentElement, { attributes: true });
             });
           </script>
           JSEOF
@@ -78,7 +146,8 @@ jobs:
               "@capacitor/android": "^6.0.0",
               "@capacitor/browser": "^6.0.0",
               "@capacitor/cli": "^6.0.0",
-              "@capacitor/core": "^6.0.0"
+              "@capacitor/core": "^6.0.0",
+              "@capacitor/status-bar": "^6.0.0"
             }
           }
           EOF
@@ -102,11 +171,18 @@ jobs:
             },
             "android": {
               "allowMixedContent": true,
-              "webContentsDebuggingEnabled": false
+              "webContentsDebuggingEnabled": false,
+              "backgroundColor": "#020617",
+              "overrideUserAgent": "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
             },
             "plugins": {
               "Browser": {
                 "presentationStyle": "fullscreen"
+              },
+              "StatusBar": {
+                "style": "Dark",
+                "backgroundColor": "#020617",
+                "overlaysWebView": true
               }
             }
           }
@@ -221,9 +297,17 @@ jobs:
                   // يجب قبل super.onCreate لمنع وميض الأشرطة
                   window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
                   window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+                  window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
+                  window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                      window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
                       window.setStatusBarColor(Color.TRANSPARENT);
                       window.setNavigationBarColor(Color.TRANSPARENT);
+                  }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                      // أندرويد 10+: منع النظام من فرض اللون على navigation bar
+                      window.setNavigationBarContrastEnforced(false);
+                      window.setStatusBarContrastEnforced(false);
                   }
                   super.onCreate(savedInstanceState);
                   WindowCompat.setDecorFitsSystemWindows(window, false);
