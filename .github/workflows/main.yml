@@ -17,13 +17,13 @@ jobs:
         uses: actions/checkout@v4
 
       # ─────────────────────────────────────────────
-      # 2. Java 17
+      # 2. Java 21
       # ─────────────────────────────────────────────
-      - name: Set up Java 17
+      - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       # ─────────────────────────────────────────────
       # 3. Node.js (لبناء الـ Capacitor / Cordova)
@@ -545,6 +545,16 @@ jobs:
       # ─────────────────────────────────────────────
       # 18. Gradle Wrapper permissions
       # ─────────────────────────────────────────────
+      - name: Patch build.gradle Java compatibility
+        run: |
+          # تأكد من توافق sourceCompatibility مع Java 21
+          find cap-project/android -name "build.gradle" | xargs grep -l "JavaVersion" | while read f; do
+            sed -i "s|JavaVersion.VERSION_[0-9_]*|JavaVersion.VERSION_21|g" "$f"
+          done
+          # اضبط أيضاً في gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m" >> cap-project/android/gradle.properties
+          echo "✅ build.gradle Java compatibility fixed"
+
       - name: Fix Gradle wrapper permissions
         run: chmod +x cap-project/android/gradlew
 
