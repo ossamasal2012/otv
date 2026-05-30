@@ -1,50 +1,569 @@
-name: Build Yalla Goal APK
+name: Build M3U Player APK
 
 on:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  build-apk:
-    name: Build Android APK
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # ─────────────────────────────────────────────
+      # 1. Checkout
+      # ─────────────────────────────────────────────
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Setup Java 21
+      # ─────────────────────────────────────────────
+      # 2. Java 17
+      # ─────────────────────────────────────────────
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "21"
+          distribution: temurin
+          java-version: '17'
 
-      - name: Setup Android SDK
+      # ─────────────────────────────────────────────
+      # 3. Node.js (لبناء الـ Capacitor / Cordova)
+      # ─────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ─────────────────────────────────────────────
+      # 4. Android SDK
+      # ─────────────────────────────────────────────
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Build Tools
-        run: sdkmanager --sdk_root=$ANDROID_SDK_ROOT "build-tools;34.0.0" "platforms;android-34"
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
 
-      - name: Install ImageMagick
-        run: sudo apt-get install -y imagemagick
+      - name: Install Android build tools
+        run: |
+          sdkmanager "platform-tools" \
+                     "platforms;android-34" \
+                     "build-tools;34.0.0" \
+                     "ndk;25.2.9519653"
 
-      - name: Build Setup
-        run: bash build.sh
+      # ─────────────────────────────────────────────
+      # 5. تثبيت Capacitor CLI و أدوات البناء
+      # ─────────────────────────────────────────────
+      - name: Install Capacitor CLI & dependencies
+        run: |
+          npm install -g @capacitor/cli@latest
+          npm install -g cordova   # احتياطي
 
-      - name: Grant Gradle Permission
-        run: chmod +x yalla-goal/android/gradlew
+      # ─────────────────────────────────────────────
+      # 6. تجهيز مشروع Capacitor
+      # ─────────────────────────────────────────────
+      - name: Initialise Capacitor project
+        run: |
+          mkdir -p cap-project/www
+          cd cap-project
 
-      - name: Build APK
-        run: cd yalla-goal/android && ./gradlew assembleDebug
+          # ── package.json ──────────────────────────
+          cat > package.json << 'PKG'
+          {
+            "name": "m3u-player",
+            "version": "1.0.0",
+            "description": "M3U Streaming Player",
+            "main": "index.js",
+            "dependencies": {
+              "@capacitor/core": "^6.0.0",
+              "@capacitor/android": "^6.0.0",
+              "@capacitor/app": "^6.0.0"
+            }
+          }
+          PKG
 
+          npm install
+
+          # ── capacitor.config.json ─────────────────
+          # server.url مفعّل أثناء التطوير فقط؛ للإنتاج نستخدم الملفات المحلية
+          cat > capacitor.config.json << 'CAP'
+          {
+            "appId": "com.m3uplayer.app",
+            "appName": "M3U Player",
+            "webDir": "www",
+            "android": {
+              "allowMixedContent": true,
+              "captureInput": true,
+              "webContentsDebuggingEnabled": false
+            },
+            "plugins": {
+              "CapacitorHttp": {
+                "enabled": true
+              }
+            },
+            "server": {
+              "androidScheme": "https",
+              "cleartext": true,
+              "allowNavigation": ["*"]
+            }
+          }
+          CAP
+
+      # ─────────────────────────────────────────────
+      # 7. نسخ index.html → www/
+      # ─────────────────────────────────────────────
+      - name: Copy web assets
+        run: |
+          # إذا كان index.html في جذر المستودع
+          cp index.html cap-project/www/index.html 2>/dev/null || true
+
+          # إنشاء index.html احتياطي إن لم يوجد الأصلي
+          if [ ! -f "cap-project/www/index.html" ]; then
+            cp -r * cap-project/www/ 2>/dev/null || true
+          fi
+
+      # ─────────────────────────────────────────────
+      # 8. تعديل index.html لإضافة Service Worker
+      #    وـ CORS Proxy داخل الصفحة
+      # ─────────────────────────────────────────────
+      - name: Patch index.html – inject CORS + Fullscreen meta
+        run: |
+          HTML="cap-project/www/index.html"
+
+          # أضف meta tags للـ fullscreen وإخفاء واجهة المتصفح
+          META='  <meta name="mobile-web-app-capable" content="yes">\n\
+            <meta name="apple-mobile-web-app-capable" content="yes">\n\
+            <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n\
+            <meta name="theme-color" content="#000000">\n\
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">'
+
+          # أضف سكريبت CORS Proxy + registerServiceWorker
+          SCRIPT='  <script>\n\
+            // ── CORS Proxy Interceptor ───────────────────────────────\n\
+            (function() {\n\
+              const PROXY = "https://corsproxy.io/?";\n\
+              const _open = XMLHttpRequest.prototype.open;\n\
+              XMLHttpRequest.prototype.open = function(method, url, ...args) {\n\
+                if (typeof url === "string" &&\n\
+                    url.startsWith("http") &&\n\
+                    !url.includes(location.hostname) &&\n\
+                    !url.includes("corsproxy.io")) {\n\
+                  url = PROXY + encodeURIComponent(url);\n\
+                }\n\
+                return _open.call(this, method, url, ...args);\n\
+              };\n\
+              const _fetch = window.fetch;\n\
+              window.fetch = function(input, init) {\n\
+                let url = (input instanceof Request) ? input.url : String(input);\n\
+                if (url.startsWith("http") &&\n\
+                    !url.includes(location.hostname) &&\n\
+                    !url.includes("corsproxy.io")) {\n\
+                  input = PROXY + encodeURIComponent(url);\n\
+                }\n\
+                return _fetch.call(this, input, init);\n\
+              };\n\
+            })();\n\
+            // ── Service Worker Registration ─────────────────────────\n\
+            if ("serviceWorker" in navigator) {\n\
+              navigator.serviceWorker.register("/sw.js").catch(() => {});\n\
+            }\n\
+          </script>'
+
+          # أدخل داخل <head> مباشرة بعد <head>
+          sed -i "s|<head>|<head>\n${META}\n${SCRIPT}|I" "$HTML"
+
+          echo "✅ Patched index.html"
+          head -60 "$HTML"
+
+      # ─────────────────────────────────────────────
+      # 9. Service Worker – CORS Bypass Headers
+      # ─────────────────────────────────────────────
+      - name: Create Service Worker (sw.js)
+        run: |
+          cat > cap-project/www/sw.js << 'SW'
+          const PROXY = "https://corsproxy.io/?";
+
+          self.addEventListener("install", e => self.skipWaiting());
+          self.addEventListener("activate", e => e.waitUntil(clients.claim()));
+
+          self.addEventListener("fetch", event => {
+            const req = event.request;
+            const url = req.url;
+
+            // تجاوز الطلبات المحلية
+            if (!url.startsWith("http") || url.includes(self.location.hostname)) return;
+
+            // تجاوز الطلبات التي تحتوي على بروتوكول خاص
+            if (url.startsWith("blob:") || url.startsWith("data:")) return;
+
+            // CORS bypass عبر proxy
+            const proxiedUrl = PROXY + encodeURIComponent(url);
+
+            event.respondWith(
+              fetch(proxiedUrl, {
+                method: req.method,
+                headers: {
+                  "User-Agent": "Mozilla/5.0",
+                  "Accept": req.headers.get("Accept") || "*/*",
+                  "Range": req.headers.get("Range") || "",
+                },
+                mode: "cors",
+                credentials: "omit",
+              })
+              .then(res => {
+                const headers = new Headers(res.headers);
+                headers.set("Access-Control-Allow-Origin", "*");
+                headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+                headers.set("Access-Control-Allow-Headers", "*");
+                return new Response(res.body, {
+                  status: res.status,
+                  statusText: res.statusText,
+                  headers,
+                });
+              })
+              .catch(() => fetch(req))   // fallback للطلب الأصلي
+            );
+          });
+          SW
+          echo "✅ sw.js created"
+
+      # ─────────────────────────────────────────────
+      # 10. إضافة Android Platform
+      # ─────────────────────────────────────────────
+      - name: Add Android platform
+        working-directory: cap-project
+        run: npx cap add android
+
+      # ─────────────────────────────────────────────
+      # 11. تخصيص AndroidManifest.xml
+      #     • INTERNET + Network State permissions
+      #     • usesCleartextTraffic
+      #     • Fullscreen / Immersive على جميع الإصدارات
+      # ─────────────────────────────────────────────
+      - name: Patch AndroidManifest.xml
+        run: |
+          MANIFEST="cap-project/android/app/src/main/AndroidManifest.xml"
+
+          # أضف الصلاحيات فوق <application
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET" />\n\
+            <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n\
+            <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n\
+            <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />\n\
+            <application|' "$MANIFEST"
+
+          # اضبط خصائص application
+          sed -i 's|android:label="@string/app_name"|android:label="@string/app_name"\n\
+                android:usesCleartextTraffic="true"\n\
+                android:networkSecurityConfig="@xml/network_security_config"|' "$MANIFEST"
+
+          # اضبط Activity لتكون Fullscreen / Immersive على API < 30
+          sed -i 's|android:theme="@style/AppTheme"|android:theme="@style/AppTheme.NoActionBarFullscreen"|' "$MANIFEST"
+
+          echo "✅ AndroidManifest patched"
+          cat "$MANIFEST"
+
+      # ─────────────────────────────────────────────
+      # 12. Network Security Config – السماح بكل HTTP/S
+      # ─────────────────────────────────────────────
+      - name: Create network_security_config.xml
+        run: |
+          mkdir -p cap-project/android/app/src/main/res/xml
+          cat > cap-project/android/app/src/main/res/xml/network_security_config.xml << 'NSC'
+          <?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+            <base-config cleartextTrafficPermitted="true">
+              <trust-anchors>
+                <certificates src="system" />
+                <certificates src="user" />
+              </trust-anchors>
+            </base-config>
+            <domain-config cleartextTrafficPermitted="true">
+              <domain includeSubdomains="true">*</domain>
+            </domain-config>
+          </network-security-config>
+          NSC
+          echo "✅ network_security_config.xml created"
+
+      # ─────────────────────────────────────────────
+      # 13. Fullscreen Theme لكل إصدارات Android
+      # ─────────────────────────────────────────────
+      - name: Patch themes for Fullscreen Immersive
+        run: |
+          # ── values/themes.xml (API < 30) ──────────
+          THEME_DIR="cap-project/android/app/src/main/res/values"
+          mkdir -p "$THEME_DIR"
+
+          # أضف الـ theme في نهاية الملف الموجود أو أنشئه
+          if [ -f "$THEME_DIR/themes.xml" ]; then
+            sed -i 's|</resources>||' "$THEME_DIR/themes.xml"
+          else
+            echo '<resources>' > "$THEME_DIR/themes.xml"
+          fi
+
+          cat >> "$THEME_DIR/themes.xml" << 'THEME'
+            <!-- Fullscreen Immersive Theme -->
+            <style name="AppTheme.NoActionBarFullscreen" parent="Theme.AppCompat.NoActionBar">
+              <item name="android:windowFullscreen">true</item>
+              <item name="android:windowContentOverlay">@null</item>
+              <item name="android:windowBackground">@color/black</item>
+              <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+              <item name="android:statusBarColor">@android:color/transparent</item>
+              <item name="android:navigationBarColor">@android:color/transparent</item>
+              <item name="android:windowTranslucentStatus">true</item>
+              <item name="android:windowTranslucentNavigation">true</item>
+            </style>
+          </resources>
+          THEME
+
+          # ── values/colors.xml (أضف اللون الأسود) ──
+          if [ ! -f "$THEME_DIR/colors.xml" ]; then
+            cat > "$THEME_DIR/colors.xml" << 'CLR'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <color name="black">#000000</color>
+          </resources>
+          CLR
+          fi
+
+          # ── values-v30/themes.xml (API 30+ WindowInsetsController) ──
+          V30="cap-project/android/app/src/main/res/values-v30"
+          mkdir -p "$V30"
+          cat > "$V30/themes.xml" << 'THEMEV30'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+            <style name="AppTheme.NoActionBarFullscreen" parent="Theme.AppCompat.NoActionBar">
+              <item name="android:windowFullscreen">true</item>
+              <item name="android:windowBackground">@color/black</item>
+              <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+              <item name="android:statusBarColor">@android:color/transparent</item>
+              <item name="android:navigationBarColor">@android:color/transparent</item>
+              <item name="android:windowTranslucentStatus">true</item>
+              <item name="android:windowTranslucentNavigation">true</item>
+              <item name="android:enforceNavigationBarContrast">false</item>
+              <item name="android:enforceStatusBarContrast">false</item>
+            </style>
+          </resources>
+          THEMEV30
+
+          echo "✅ Themes patched"
+
+      # ─────────────────────────────────────────────
+      # 14. تعديل MainActivity.java لـ Immersive Fullscreen
+      #     على Runtime لجميع الإصدارات
+      # ─────────────────────────────────────────────
+      - name: Patch MainActivity for Immersive Fullscreen
+        run: |
+          MAIN=$(find cap-project/android -name "MainActivity.java" | head -1)
+          echo "Found MainActivity: $MAIN"
+
+          cat > "$MAIN" << 'JAVA'
+          package com.m3uplayer.app;
+
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowInsets;
+          import android.view.WindowInsetsController;
+          import android.view.WindowManager;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+
+            @Override
+            public void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              applyFullscreen();
+              enableWebViewCORS();
+            }
+
+            @Override
+            public void onWindowFocusChanged(boolean hasFocus) {
+              super.onWindowFocusChanged(hasFocus);
+              if (hasFocus) applyFullscreen();
+            }
+
+            private void applyFullscreen() {
+              Window window = getWindow();
+
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+ : WindowInsetsController
+                window.setDecorFitsSystemWindows(false);
+                WindowInsetsController ctrl = window.getInsetsController();
+                if (ctrl != null) {
+                  ctrl.hide(WindowInsets.Type.statusBars()
+                          | WindowInsets.Type.navigationBars());
+                  ctrl.setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+              } else {
+                // API 16-29 : Immersive Sticky
+                View decorView = window.getDecorView();
+                decorView.setSystemUiVisibility(
+                  View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                  | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                  | View.SYSTEM_UI_FLAG_FULLSCREEN
+                );
+                window.setFlags(
+                  WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                  WindowManager.LayoutParams.FLAG_FULLSCREEN
+                );
+              }
+
+              // إخفاء notch / cutout
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                window.getAttributes().layoutInDisplayCutoutMode =
+                  WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+              }
+            }
+
+            private void enableWebViewCORS() {
+              try {
+                WebView webView = getBridge().getWebView();
+                WebSettings settings = webView.getSettings();
+
+                settings.setJavaScriptEnabled(true);
+                settings.setDomStorageEnabled(true);
+                settings.setAllowFileAccess(true);
+                settings.setAllowContentAccess(true);
+                settings.setAllowFileAccessFromFileURLs(true);
+                settings.setAllowUniversalAccessFromFileURLs(true);
+                settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                settings.setMediaPlaybackRequiresUserGesture(false);
+                settings.setLoadWithOverviewMode(true);
+                settings.setUseWideViewPort(true);
+                settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+                settings.setBuiltInZoomControls(false);
+                settings.setSupportZoom(false);
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                  android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+                }
+
+                WebView.setWebContentsDebuggingEnabled(false);
+              } catch (Exception e) {
+                e.printStackTrace();
+              }
+            }
+          }
+          JAVA
+          echo "✅ MainActivity.java patched"
+
+      # ─────────────────────────────────────────────
+      # 15. WebViewClient مخصص لـ CORS على مستوى Android
+      # ─────────────────────────────────────────────
+      - name: Create CORSWebViewClient.java
+        run: |
+          PKG_DIR=$(find cap-project/android -name "MainActivity.java" | head -1 | xargs dirname)
+          cat > "$PKG_DIR/CORSWebViewClient.java" << 'CORSJAVA'
+          package com.m3uplayer.app;
+
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebView;
+          import com.getcapacitor.BridgeWebViewClient;
+          import java.io.InputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.util.HashMap;
+          import java.util.Map;
+
+          public class CORSWebViewClient extends BridgeWebViewClient {
+
+            public CORSWebViewClient(com.getcapacitor.Bridge bridge) {
+              super(bridge);
+            }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+              String url = request.getUrl().toString();
+
+              // تجاوز الطلبات المحلية
+              if (!url.startsWith("http")) {
+                return super.shouldInterceptRequest(view, request);
+              }
+
+              try {
+                HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setRequestMethod(request.getMethod());
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(15000);
+                conn.setInstanceFollowRedirects(true);
+
+                // أضف الـ Headers الأصلية
+                for (Map.Entry<String, String> entry : request.getRequestHeaders().entrySet()) {
+                  conn.setRequestProperty(entry.getKey(), entry.getValue());
+                }
+                conn.setRequestProperty("User-Agent",
+                  "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36");
+                conn.setRequestProperty("Origin", "null");
+
+                int status = conn.getResponseCode();
+                InputStream stream = (status >= 400) ? conn.getErrorStream() : conn.getInputStream();
+                String mimeType = conn.getContentType();
+                if (mimeType == null) mimeType = "text/plain";
+                if (mimeType.contains(";")) mimeType = mimeType.split(";")[0].trim();
+                String encoding = "utf-8";
+
+                Map<String, String> headers = new HashMap<>();
+                headers.put("Access-Control-Allow-Origin", "*");
+                headers.put("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
+                headers.put("Access-Control-Allow-Headers", "*");
+                headers.put("Access-Control-Expose-Headers", "*");
+
+                return new WebResourceResponse(mimeType, encoding, status,
+                  status == 200 ? "OK" : "Error", headers, stream);
+
+              } catch (Exception e) {
+                return super.shouldInterceptRequest(view, request);
+              }
+            }
+          }
+          CORSJAVA
+          echo "✅ CORSWebViewClient.java created"
+
+      # ─────────────────────────────────────────────
+      # 16. ربط CORSWebViewClient بـ MainActivity
+      # ─────────────────────────────────────────────
+      - name: Wire CORSWebViewClient into MainActivity
+        run: |
+          MAIN=$(find cap-project/android -name "MainActivity.java" | head -1)
+          # أضف السطر داخل onCreate بعد super.onCreate
+          sed -i 's|enableWebViewCORS();|enableWebViewCORS();\n      getBridge().setWebViewClient(new CORSWebViewClient(getBridge()));|' "$MAIN"
+          echo "✅ CORSWebViewClient wired"
+
+      # ─────────────────────────────────────────────
+      # 17. مزامنة الـ web assets إلى android
+      # ─────────────────────────────────────────────
+      - name: Sync Capacitor
+        working-directory: cap-project
+        run: npx cap sync android
+
+      # ─────────────────────────────────────────────
+      # 18. Gradle Wrapper permissions
+      # ─────────────────────────────────────────────
+      - name: Fix Gradle wrapper permissions
+        run: chmod +x cap-project/android/gradlew
+
+      # ─────────────────────────────────────────────
+      # 19. Build Debug APK
+      # ─────────────────────────────────────────────
+      - name: Build APK (Debug)
+        working-directory: cap-project/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          JAVA_HOME: ${{ env.JAVA_HOME }}
+
+      # ─────────────────────────────────────────────
+      # 20. رفع الـ APK كـ Artifact
+      # ─────────────────────────────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-Stable-v2.7
-          path: yalla-goal/android/app/build/outputs/apk/debug/app-debug.apk
+          name: m3u-player-debug
+          path: cap-project/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
