@@ -3869,33 +3869,6 @@ jobs:
       # ─────────────────────────────────────────────
       # 10. إعداد أيقونات Android بجميع الأحجام
       # ─────────────────────────────────────────────
-      - name: Generate Android icons
-        run: |
-          sudo apt-get install -y imagemagick -q
-
-          ICON_SRC="cap-project/www/icons/icon.png"
-          MIPMAP_BASE="cap-project/android/app/src/main/res"
-
-          if [ -f "$ICON_SRC" ]; then
-            declare -A SIZES=(
-              ["mipmap-mdpi"]=48
-              ["mipmap-hdpi"]=72
-              ["mipmap-xhdpi"]=96
-              ["mipmap-xxhdpi"]=144
-              ["mipmap-xxxhdpi"]=192
-            )
-            for dir in "${!SIZES[@]}"; do
-              size="${SIZES[$dir]}"
-              mkdir -p "$MIPMAP_BASE/$dir"
-              convert "$ICON_SRC" -resize "${size}x${size}" \
-                "$MIPMAP_BASE/$dir/ic_launcher.png"
-              convert "$ICON_SRC" -resize "${size}x${size}" \
-                "$MIPMAP_BASE/$dir/ic_launcher_round.png"
-            done
-            echo "✅ Icons generated"
-          else
-            echo "⚠️ Skipping icon generation"
-          fi
 
       # ─────────────────────────────────────────────
       # 11. AndroidManifest.xml
@@ -4308,6 +4281,42 @@ jobs:
       - name: Sync Capacitor
         working-directory: cap-project
         run: npx cap sync android
+
+      # ─────────────────────────────────────────────
+      # Generate icons AFTER sync (sync would overwrite res/)
+      # ─────────────────────────────────────────────
+      - name: Generate Android icons
+        run: |
+          sudo apt-get install -y imagemagick -q 2>&1 | tail -1
+
+          ICON_SRC="cap-project/www/icons/icon.png"
+          MIPMAP_BASE="cap-project/android/app/src/main/res"
+
+          echo "Icon source: $ICON_SRC"
+          ls -lh "$ICON_SRC" || { echo "❌ Icon not found!"; exit 1; }
+
+          for FOLDER_SIZE in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
+            FOLDER="${FOLDER_SIZE%%:*}"
+            SIZE="${FOLDER_SIZE##*:}"
+            mkdir -p "$MIPMAP_BASE/$FOLDER"
+            convert "$ICON_SRC" \
+              -resize "${SIZE}x${SIZE}" \
+              -background none \
+              -gravity center \
+              -extent "${SIZE}x${SIZE}" \
+              "$MIPMAP_BASE/$FOLDER/ic_launcher.png"
+            convert "$ICON_SRC" \
+              -resize "${SIZE}x${SIZE}" \
+              -background none \
+              -gravity center \
+              -extent "${SIZE}x${SIZE}" \
+              "$MIPMAP_BASE/$FOLDER/ic_launcher_round.png"
+            echo "✅ $FOLDER (${SIZE}px)"
+          done
+
+          echo "All icons generated:"
+          find "$MIPMAP_BASE" -name "ic_launcher*.png" | sort
+
 
       # ─────────────────────────────────────────────
       # 18. تصحيح Java compatibility في build.gradle
