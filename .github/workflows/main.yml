@@ -4287,18 +4287,37 @@ jobs:
       # ─────────────────────────────────────────────
       - name: Generate Android icons (all formats)
         run: |
-          sudo apt-get install -y imagemagick python3-pip -q 2>&1 | tail -1
-
-          ICON_SRC="cap-project/www/icons/icon.png"
-          RES="cap-project/android/app/src/main/res"
-
-          ls -lh "$ICON_SRC" || { echo "Icon not found!"; exit 1; }
+          sudo apt-get install -y imagemagick -q 2>&1 | tail -1
+          ls -lh cap-project/www/icons/icon.png || { echo "Icon not found!"; exit 1; }
 
           python3 << 'PYICON'
-          import subprocess, os
+          import subprocess, os, re, glob, shutil
 
-          src  = "cap-project/www/icons/icon.png"
-          res  = "cap-project/android/app/src/main/res"
+          src = "cap-project/www/icons/icon.png"
+          res = "cap-project/android/app/src/main/res"
+
+          # ── 1. احذف كل ملفات الأيقونة القديمة التي أنشأها Capacitor ──
+          # هذا هو سبب المشكلة: Capacitor يضع ic_launcher.xml يشير لـ foreground/background
+          # وعند تشغيله يظهر الـ default لأن foreground فارغ أو خاطئ
+          for pattern in [
+            f"{res}/mipmap-anydpi-v26/ic_launcher.xml",
+            f"{res}/mipmap-anydpi-v26/ic_launcher_round.xml",
+            f"{res}/values/ic_launcher_background.xml",
+          ]:
+            if os.path.exists(pattern):
+              os.remove(pattern)
+              print(f"Deleted: {pattern}")
+
+          # احذف مجلد anydpi-v26 بالكامل إن أصبح فارغاً
+          anydpi = f"{res}/mipmap-anydpi-v26"
+          if os.path.isdir(anydpi):
+            shutil.rmtree(anydpi)
+            print(f"Deleted dir: {anydpi}")
+
+          def run_convert(args):
+            r = subprocess.run(["convert"] + args, capture_output=True)
+            if r.returncode != 0:
+              print("WARN convert:", r.stderr.decode()[:200])
 
           sizes = [
             ("mipmap-mdpi",    48),
@@ -4308,78 +4327,67 @@ jobs:
             ("mipmap-xxxhdpi", 192),
           ]
 
-          def convert(args):
-            r = subprocess.run(["convert"] + args, capture_output=True)
-            if r.returncode != 0:
-              print("convert error:", r.stderr.decode())
-
+          # ── 2. ولّد PNG فقط — بدون adaptive XML ──
           for folder, sz in sizes:
             d = f"{res}/{folder}"
             os.makedirs(d, exist_ok=True)
 
-            # ic_launcher.png — خلفية بيضاء
-            convert([src, "-resize", f"{sz}x{sz}",
-                     "-background", "white", "-gravity", "center",
-                     "-extent", f"{sz}x{sz}", f"{d}/ic_launcher.png"])
+            # احذف ic_launcher_foreground القديم إن وُجد
+            fg = f"{d}/ic_launcher_foreground.png"
+            if os.path.exists(fg):
+              os.remove(fg)
 
-            # ic_launcher_round.png — نفس الـ launcher (بسيط وموثوق)
-            convert([src, "-resize", f"{sz}x{sz}",
-                     "-background", "white", "-gravity", "center",
-                     "-extent", f"{sz}x{sz}", f"{d}/ic_launcher_round.png"])
+            # ic_launcher.png — الأيقونة الرئيسية بخلفية بيضاء
+            run_convert([
+              src,
+              "-resize", f"{sz}x{sz}^",
+              "-gravity", "center",
+              "-background", "white",
+              "-extent", f"{sz}x{sz}",
+              f"{d}/ic_launcher.png"
+            ])
 
-            # ic_launcher_foreground.png — شفاف للـ adaptive
-            convert([src, "-resize", f"{sz}x{sz}",
-                     "-background", "none", "-gravity", "center",
-                     "-extent", f"{sz}x{sz}", f"{d}/ic_launcher_foreground.png"])
+            # ic_launcher_round.png — نفس الصورة (مستديرة ستُطبَّق بواسطة Android)
+            run_convert([
+              src,
+              "-resize", f"{sz}x{sz}^",
+              "-gravity", "center",
+              "-background", "white",
+              "-extent", f"{sz}x{sz}",
+              f"{d}/ic_launcher_round.png"
+            ])
 
-            print(f"  {folder} ({sz}px) done")
+            sz_file = os.path.getsize(f"{d}/ic_launcher.png")
+            print(f"  {folder} ({sz}px) → {sz_file} bytes")
 
-          # adaptive icon XMLs (API 26+)
-          anydpi = f"{res}/mipmap-anydpi-v26"
-          os.makedirs(anydpi, exist_ok=True)
-
-          adaptive_xml = '''<?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-            <background android:drawable="@color/ic_launcher_background"/>
-            <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-          </adaptive-icon>'''
-
-          for name in ["ic_launcher.xml", "ic_launcher_round.xml"]:
-            with open(f"{anydpi}/{name}", "w") as f:
-              f.write(adaptive_xml)
-
-          # colors.xml
-          vals = f"{res}/values"
-          os.makedirs(vals, exist_ok=True)
-          colors_path = f"{vals}/colors.xml"
-
-          # احذف ic_launcher_background.xml الذي ينشئه Capacitor تلقائياً
-          # لأننا سنضعه في colors.xml فقط لتجنب Duplicate resources
-          bg_xml = f"{res}/values/ic_launcher_background.xml"
-          if os.path.exists(bg_xml):
-            os.remove(bg_xml)
-            print("Removed duplicate ic_launcher_background.xml")
-
+          # ── 3. تأكد أن colors.xml لا يحتوي تكراراً ──
+          colors_path = f"{res}/values/colors.xml"
           if os.path.exists(colors_path):
             with open(colors_path) as f:
               col = f.read()
-            # احذف ic_launcher_background إن وُجد ثم أضفه من جديد بشكل نظيف
-            import re
             col = re.sub(r'\s*<color name="ic_launcher_background">[^<]*</color>', '', col)
-            col = col.replace("</resources>",
-              '    <color name="ic_launcher_background">#FFFFFF</color>\n</resources>')
             with open(colors_path, "w") as f:
               f.write(col)
-          else:
-            with open(colors_path, "w") as f:
-              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
-                      '  <color name="ic_launcher_background">#FFFFFF</color>\n'
-                      '</resources>\n')
+            print("Cleaned colors.xml")
 
-          import glob
-          files = glob.glob(f"{res}/**/ic_launcher*", recursive=True)
-          print(f"Total icon files: {len(files)}")
-          print("All icons generated successfully!")
+          # ── 4. تحقق نهائي ──
+          files = glob.glob(f"{res}/**/ic_launcher*.png", recursive=True)
+          print(f"\nTotal PNG icon files: {len(files)}")
+          for f in sorted(files):
+            print(f"  {f}")
+
+          # تأكد لا يوجد أي XML للأيقونة
+          xml_files = glob.glob(f"{res}/**/ic_launcher*.xml", recursive=True)
+          if xml_files:
+            print(f"WARNING: Found XML icon files (will override PNG):")
+            for x in xml_files:
+              print(f"  {x}")
+              os.remove(x)
+              print(f"  → Deleted!")
+          else:
+            print("No XML icon files found (correct!)")
+
+          print("Done!")
           PYICON
 
       # ─────────────────────────────────────────────
