@@ -47,14 +47,13 @@ jobs:
           sdkmanager "platform-tools" \
                      "platforms;android-34" \
                      "build-tools;34.0.0"
-
       # ─────────────────────────────────────────────
       # 5. تثبيت Capacitor
       # ─────────────────────────────────────────────
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli@latest
 
-# ─────────────────────────────────────────────
+      # ─────────────────────────────────────────────
       # 6. تجهيز مشروع Capacitor
       # ─────────────────────────────────────────────
       - name: Initialise Capacitor project
@@ -65,7 +64,7 @@ jobs:
           cat > package.json << 'PKG'
           {
             "name": "yalla-gol",
-            "version": "1.2.0",
+            "version": "1.0.0",
             "description": "يلا گول - M3U Streaming Player",
             "main": "index.js",
             "dependencies": {
@@ -92,12 +91,6 @@ jobs:
               "androidScheme": "https",
               "cleartext": true,
               "allowNavigation": ["*"]
-            },
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 0,
-                "launchAutoHide": true
-              }
             }
           }
           CAP
@@ -4396,16 +4389,13 @@ jobs:
           print("Done!")
           PYICON
 
+
+# ─────────────────────────────────────────────
+      # 18. Fix build.gradle
       # ─────────────────────────────────────────────
-      # 18. تصحيح Java compatibility في build.gradle
-      # ─────────────────────────────────────────────
-      - name: Fix Java compatibility in build.gradle
+      - name: Fix gradle properties
         run: |
-          find cap-project/android -name "build.gradle" | while read f; do
-            sed -i "s|JavaVersion.VERSION_[0-9_]*|JavaVersion.VERSION_21|g" "$f"
-          done
-          # زيادة ذاكرة Gradle
-          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m" \
+          echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m" \
             >> cap-project/android/gradle.properties
           echo "android.useAndroidX=true" \
             >> cap-project/android/gradle.properties
@@ -4416,6 +4406,30 @@ jobs:
       # ─────────────────────────────────────────────
       - name: Fix Gradle wrapper permissions
         run: chmod +x cap-project/android/gradlew
+
+      # ─────────────────────────────────────────────
+      # 💡 الخطوة السحرية الجديدة: إلغاء شاشة البداية نهائياً
+      # ─────────────────────────────────────────────
+      - name: Disable Splash Screen
+        run: |
+          CONFIG_FILE="cap-project/android/app/src/main/assets/capacitor.config.json"
+          if [ -f "$CONFIG_FILE" ]; then
+            node -e "
+              const fs = require('fs');
+              let config = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
+              config.plugins = config.plugins || {};
+              config.plugins.SplashScreen = {
+                launchShowDuration: 0,
+                showSpinner: false,
+                splashFullScreen: false,
+                splashImmersive: false
+              };
+              fs.writeFileSync('$CONFIG_FILE', JSON.stringify(config, null, 2));
+            "
+            echo "✅ تم إلغاء الواجهة (Splash Screen) بنجاح."
+          else
+            echo "⚠️ لم يتم العثور على ملف الإعدادات داخل مجلد الأندرويد."
+          fi
 
       # ─────────────────────────────────────────────
       # 20. بناء APK
@@ -4443,4 +4457,4 @@ jobs:
         with:
           name: yalla-gol-apk
           path: cap-project/android/app/build/outputs/apk/debug/yalla-gol.apk
-          retention-days: 30
+          retention-days: 7
