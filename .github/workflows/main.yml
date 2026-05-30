@@ -4285,38 +4285,93 @@ jobs:
       # ─────────────────────────────────────────────
       # Generate icons AFTER sync (sync would overwrite res/)
       # ─────────────────────────────────────────────
-      - name: Generate Android icons
+      - name: Generate Android icons (all formats)
         run: |
-          sudo apt-get install -y imagemagick -q 2>&1 | tail -1
+          sudo apt-get install -y imagemagick python3-pip -q 2>&1 | tail -1
 
           ICON_SRC="cap-project/www/icons/icon.png"
-          MIPMAP_BASE="cap-project/android/app/src/main/res"
+          RES="cap-project/android/app/src/main/res"
 
-          echo "Icon source: $ICON_SRC"
-          ls -lh "$ICON_SRC" || { echo "❌ Icon not found!"; exit 1; }
+          ls -lh "$ICON_SRC" || { echo "Icon not found!"; exit 1; }
 
-          for FOLDER_SIZE in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
-            FOLDER="${FOLDER_SIZE%%:*}"
-            SIZE="${FOLDER_SIZE##*:}"
-            mkdir -p "$MIPMAP_BASE/$FOLDER"
-            convert "$ICON_SRC" \
-              -resize "${SIZE}x${SIZE}" \
-              -background none \
-              -gravity center \
-              -extent "${SIZE}x${SIZE}" \
-              "$MIPMAP_BASE/$FOLDER/ic_launcher.png"
-            convert "$ICON_SRC" \
-              -resize "${SIZE}x${SIZE}" \
-              -background none \
-              -gravity center \
-              -extent "${SIZE}x${SIZE}" \
-              "$MIPMAP_BASE/$FOLDER/ic_launcher_round.png"
-            echo "✅ $FOLDER (${SIZE}px)"
-          done
+          python3 << 'PYICON'
+          import subprocess, os
 
-          echo "All icons generated:"
-          find "$MIPMAP_BASE" -name "ic_launcher*.png" | sort
+          src  = "cap-project/www/icons/icon.png"
+          res  = "cap-project/android/app/src/main/res"
 
+          sizes = [
+            ("mipmap-mdpi",    48),
+            ("mipmap-hdpi",    72),
+            ("mipmap-xhdpi",   96),
+            ("mipmap-xxhdpi",  144),
+            ("mipmap-xxxhdpi", 192),
+          ]
+
+          def convert(args):
+            r = subprocess.run(["convert"] + args, capture_output=True)
+            if r.returncode != 0:
+              print("convert error:", r.stderr.decode())
+
+          for folder, sz in sizes:
+            d = f"{res}/{folder}"
+            os.makedirs(d, exist_ok=True)
+
+            # ic_launcher.png — خلفية بيضاء
+            convert([src, "-resize", f"{sz}x{sz}",
+                     "-background", "white", "-gravity", "center",
+                     "-extent", f"{sz}x{sz}", f"{d}/ic_launcher.png"])
+
+            # ic_launcher_round.png — نفس الـ launcher (بسيط وموثوق)
+            convert([src, "-resize", f"{sz}x{sz}",
+                     "-background", "white", "-gravity", "center",
+                     "-extent", f"{sz}x{sz}", f"{d}/ic_launcher_round.png"])
+
+            # ic_launcher_foreground.png — شفاف للـ adaptive
+            convert([src, "-resize", f"{sz}x{sz}",
+                     "-background", "none", "-gravity", "center",
+                     "-extent", f"{sz}x{sz}", f"{d}/ic_launcher_foreground.png"])
+
+            print(f"  {folder} ({sz}px) done")
+
+          # adaptive icon XMLs (API 26+)
+          anydpi = f"{res}/mipmap-anydpi-v26"
+          os.makedirs(anydpi, exist_ok=True)
+
+          adaptive_xml = '''<?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@color/ic_launcher_background"/>
+            <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>'''
+
+          for name in ["ic_launcher.xml", "ic_launcher_round.xml"]:
+            with open(f"{anydpi}/{name}", "w") as f:
+              f.write(adaptive_xml)
+
+          # colors.xml
+          vals = f"{res}/values"
+          os.makedirs(vals, exist_ok=True)
+          colors_path = f"{vals}/colors.xml"
+
+          if os.path.exists(colors_path):
+            with open(colors_path) as f:
+              col = f.read()
+            if "ic_launcher_background" not in col:
+              col = col.replace("</resources>",
+                "    <color name=\"ic_launcher_background\">#FFFFFF</color>\n</resources>")
+              with open(colors_path, "w") as f:
+                f.write(col)
+          else:
+            with open(colors_path, "w") as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
+                      '  <color name="ic_launcher_background">#FFFFFF</color>\n'
+                      '</resources>\n')
+
+          import glob
+          files = glob.glob(f"{res}/**/ic_launcher*", recursive=True)
+          print(f"Total icon files: {len(files)}")
+          print("All icons generated successfully!")
+          PYICON
 
       # ─────────────────────────────────────────────
       # 18. تصحيح Java compatibility في build.gradle
