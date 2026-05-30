@@ -4353,14 +4353,23 @@ jobs:
           os.makedirs(vals, exist_ok=True)
           colors_path = f"{vals}/colors.xml"
 
+          # احذف ic_launcher_background.xml الذي ينشئه Capacitor تلقائياً
+          # لأننا سنضعه في colors.xml فقط لتجنب Duplicate resources
+          bg_xml = f"{res}/values/ic_launcher_background.xml"
+          if os.path.exists(bg_xml):
+            os.remove(bg_xml)
+            print("Removed duplicate ic_launcher_background.xml")
+
           if os.path.exists(colors_path):
             with open(colors_path) as f:
               col = f.read()
-            if "ic_launcher_background" not in col:
-              col = col.replace("</resources>",
-                "    <color name=\"ic_launcher_background\">#FFFFFF</color>\n</resources>")
-              with open(colors_path, "w") as f:
-                f.write(col)
+            # احذف ic_launcher_background إن وُجد ثم أضفه من جديد بشكل نظيف
+            import re
+            col = re.sub(r'\s*<color name="ic_launcher_background">[^<]*</color>', '', col)
+            col = col.replace("</resources>",
+              '    <color name="ic_launcher_background">#FFFFFF</color>\n</resources>')
+            with open(colors_path, "w") as f:
+              f.write(col)
           else:
             with open(colors_path, "w") as f:
               f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
