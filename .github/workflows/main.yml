@@ -54,7 +54,7 @@ jobs:
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli@latest
 
-      # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
       # 6. تجهيز مشروع Capacitor
       # ─────────────────────────────────────────────
       - name: Initialise Capacitor project
@@ -65,7 +65,7 @@ jobs:
           cat > package.json << 'PKG'
           {
             "name": "yalla-gol",
-            "version": "1.0.0",
+            "version": "1.2.0",
             "description": "يلا گول - M3U Streaming Player",
             "main": "index.js",
             "dependencies": {
@@ -92,6 +92,12 @@ jobs:
               "androidScheme": "https",
               "cleartext": true,
               "allowNavigation": ["*"]
+            },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 0,
+                "launchAutoHide": true
+              }
             }
           }
           CAP
@@ -3865,44 +3871,6 @@ jobs:
       - name: Add Android platform
         working-directory: cap-project
         run: npx cap add android
-        # ─────────────────────────────────────────────
-      # تعديل إعدادات Capacitor لتعطيل الشاشة البيضاء
-      # ─────────────────────────────────────────────
-      - name: Configure Capacitor Splash Screen
-        run: |
-          if [ -f "cap-project/capacitor.config.json" ]; then
-            # إذا كان الملف بصيغة JSON، نقوم بتحديثه بإضافة إعدادات الـ Plugins
-            node -e "
-              const fs = require('fs');
-              const config = JSON.parse(fs.readFileSync('cap-project/capacitor.config.json', 'utf8'));
-              config.plugins = {
-                SplashScreen: {
-                  launchShowDuration: 0,
-                  launchAutoHide: true
-                }
-              };
-              fs.writeFileSync('cap-project/capacitor.config.json', JSON.stringify(config, null, 2));
-            "
-            echo "✅ Updated capacitor.config.json"
-          elif [ -f "cap-project/capacitor.config.ts" ]; then
-            # إذا كان الملف بصيغة TypeScript، نقوم باستبدال الإعدادات أو تعديلها
-            node -e "
-              const fs = require('fs');
-              let content = fs.readFileSync('cap-project/capacitor.config.ts', 'utf8');
-              if (content.includes('plugins:')) {
-                // إذا كانت كلمة plugins موجودة مسبقاً (تجنباً للتكرار)
-                console.log('Plugins already exist, skipping direct replacement');
-              } else {
-                // إضافة إعدادات الـ SplashScreen قبل القوس الأخير للمصفوفة
-                content = content.replace(/};\s*export\s+default\s+config;/, '  plugins: {\n    SplashScreen: {\n      launchShowDuration: 0,\n      launchAutoHide: true,\n    },\n  },\n};\nexport default config;');
-                fs.writeFileSync('cap-project/capacitor.config.ts', content);
-                console.log('✅ Updated capacitor.config.ts');
-              }
-            "
-          else
-            echo "⚠️ Configuration file not found yet"
-          fi
-        
 
       # ─────────────────────────────────────────────
       # 10. إعداد أيقونات Android بجميع الأحجام
