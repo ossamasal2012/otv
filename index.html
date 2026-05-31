@@ -58,7 +58,9 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .login-title { text-align: center; }
+        .login-title {
+            text-align: center;
+        }
 
         .login-title h1 {
             font-size: 2.2rem;
@@ -82,6 +84,10 @@
             font-weight: 700;
             color: #94a3b8;
             margin-bottom: 0.5rem;
+        }
+
+        .login-input-wrap {
+            position: relative;
         }
 
         .login-input-group {
@@ -144,6 +150,7 @@
 
         .eye-toggle:hover { color: #10b981; }
 
+        /* ملاحظة الرابط */
         .notice-box {
             background: rgba(239, 68, 68, 0.08);
             border: 1px solid rgba(239, 68, 68, 0.35);
@@ -156,7 +163,10 @@
             text-align: center;
         }
 
-        .notice-box strong { color: #ef4444; font-weight: 800; }
+        .notice-box strong {
+            color: #ef4444;
+            font-weight: 800;
+        }
 
         .notice-box a {
             color: #34d399;
@@ -166,6 +176,15 @@
         }
 
         .notice-box a:hover { color: #10b981; }
+
+        .login-input:focus {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .login-input.error {
+            /* error now handled on the group */
+        }
 
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
@@ -205,7 +224,7 @@
 
         .login-btn:active { transform: translateY(0); }
 
-        /* ===== القنوات ===== */
+        /* ===== نفس الستايل الأصلي ===== */
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -281,44 +300,6 @@
             text-align: center;
         }
 
-        /* ===== زر العودة في المشغل ===== */
-        #playerBackBtn {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            z-index: 200;
-            display: none;
-            align-items: center;
-            gap: 6px;
-            background: rgba(0, 0, 0, 0.65);
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 8px;
-            padding: 6px 12px;
-            color: #fff;
-            font-family: 'Tajawal', sans-serif;
-            font-size: 13px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: opacity 0.3s ease, background 0.2s;
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
-            pointer-events: auto;
-        }
-
-        #playerBackBtn:hover {
-            background: rgba(16, 185, 129, 0.7);
-            border-color: rgba(16, 185, 129, 0.8);
-        }
-
-        #playerBackBtn.controls-hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-
-        #playerBackBtn i {
-            font-size: 14px;
-        }
-
         @media (min-width: 1536px) {
             .aside-container { width: 450px !important; }
         }
@@ -334,6 +315,7 @@
                 <p>أدخل الرمز السري للدخول</p>
             </div>
 
+            <!-- ملاحظة الرابط -->
             <div class="notice-box">
                 <strong>⚠️ ملاحظة مهمة</strong><br>
                 للدخول إلى التطبيق ومشاهدة أكثر من <strong>250 قناة</strong> عربية وأجنبية،<br>
@@ -350,7 +332,9 @@
                     <span class="input-icon">🔒</span>
                     <input type="password" id="pinInput" class="login-input" placeholder="••••••••••"
                         maxlength="20" onkeydown="if(event.key==='Enter') doLogin()">
-                    <button type="button" class="eye-toggle" onclick="togglePin()" id="eyeBtn" title="إظهار/إخفاء">👁</button>
+                    <button type="button" class="eye-toggle" onclick="togglePin()" id="eyeBtn" title="إظهار/إخفاء">
+                        👁
+                    </button>
                 </div>
             </div>
 
@@ -396,12 +380,6 @@
 
         <div id="dynamic-player-root"></div>
         <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
-
-        <!-- ===== زر العودة ===== -->
-        <button id="playerBackBtn" onclick="exitFullscreenPlayer()">
-            <i class="fa-solid fa-arrow-right"></i>
-            <span>عودة</span>
-        </button>
     </main>
 
     <script>
@@ -409,8 +387,13 @@
         function togglePin() {
             const inp = document.getElementById('pinInput');
             const btn = document.getElementById('eyeBtn');
-            if (inp.type === 'password') { inp.type = 'text'; btn.innerText = '🙈'; }
-            else { inp.type = 'password'; btn.innerText = '👁'; }
+            if (inp.type === 'password') {
+                inp.type = 'text';
+                btn.innerText = '🙈';
+            } else {
+                inp.type = 'password';
+                btn.innerText = '👁';
+            }
         }
 
         // ===== نظام تسجيل الدخول =====
@@ -418,10 +401,13 @@
         const STORAGE_KEY = "yalla_authenticated";
 
         function checkAuth() {
-            if (localStorage.getItem(STORAGE_KEY) === "true") {
+            const isAuth = localStorage.getItem(STORAGE_KEY);
+            if (isAuth === "true") {
+                // المستخدم مسجّل مسبقاً، أخفِ شاشة الدخول مباشرة
                 document.getElementById('loginScreen').classList.add('hidden');
                 loadChannels();
             }
+            // إذا لم يكن مسجّلاً، تبقى شاشة الدخول ظاهرة
         }
 
         function doLogin() {
@@ -443,7 +429,7 @@
             }
         }
 
-        // ===== منطق التطبيق =====
+        // ===== منطق التطبيق الأصلي =====
         let myChannels = [];
         let hls = null;
         let plyr = null;
@@ -503,39 +489,6 @@
         function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
         function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
 
-        // ===== زر العودة: يحاكي تصغير الشاشة الكاملة =====
-        function exitFullscreenPlayer() {
-            if (document.fullscreenElement) {
-                document.exitFullscreen();
-            } else if (document.webkitFullscreenElement) {
-                document.webkitExitFullscreen();
-            } else if (document.mozFullScreenElement) {
-                document.mozCancelFullScreen();
-            } else {
-                // إذا لم يكن في وضع ملء الشاشة، نقوم بتصغير المشغل عبر plyr
-                if (plyr) {
-                    plyr.fullscreen.exit();
-                }
-            }
-        }
-
-        // ===== إظهار/إخفاء زر العودة مع عناصر المشغل =====
-        function setBackBtnVisible(visible) {
-            const btn = document.getElementById('playerBackBtn');
-            if (visible) {
-                btn.style.display = 'flex';
-                btn.classList.remove('controls-hidden');
-            } else {
-                btn.classList.add('controls-hidden');
-            }
-        }
-
-        function hideBackBtn() {
-            const btn = document.getElementById('playerBackBtn');
-            btn.style.display = 'none';
-            btn.classList.remove('controls-hidden');
-        }
-
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
             if (plyr) { plyr.destroy(); plyr = null; }
@@ -547,7 +500,6 @@
             document.getElementById('placeholderScreen').classList.remove('hidden');
             currentAspectRatio = 0;
             controlsVisible = true;
-            hideBackBtn();
         }
 
         function toggleAspectRatio(video) {
@@ -572,13 +524,8 @@
         function updateControlsVisibility() {
             const plyrContainer = document.querySelector('.plyr');
             if (!plyrContainer) return;
-            if (controlsVisible) {
-                plyrContainer.classList.remove('plyr--hide-manual-controls');
-                setBackBtnVisible(true);
-            } else {
-                plyrContainer.classList.add('plyr--hide-manual-controls');
-                setBackBtnVisible(false);
-            }
+            if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
+            else plyrContainer.classList.add('plyr--hide-manual-controls');
         }
 
         function toggleFavorite(event, name) {
@@ -600,7 +547,6 @@
                 iframe.style.display = "block";
                 iframe.src = url;
                 document.getElementById('placeholderScreen').classList.add('hidden');
-                // لا نظهر زر العودة للـ iframe
             } else {
                 const root = document.getElementById('dynamic-player-root');
                 const video = document.createElement('video');
@@ -613,7 +559,6 @@
 
                 root.onclick = (e) => {
                     if (e.target.closest('.plyr__controls')) return;
-                    if (e.target.closest('#playerBackBtn')) return;
                     manualToggleControls();
                 };
 
@@ -630,21 +575,8 @@
                     plyr = new Plyr(video, plyrOptions);
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     controlsVisible = true;
-
-                    // إظهار زر العودة
-                    setBackBtnVisible(true);
-
                     plyr.on('controlshidden', () => {
                         if (controlsVisible) plyr.toggleControls(true);
-                    });
-
-                    // مزامنة زر العودة مع حالة ملء الشاشة
-                    plyr.on('enterfullscreen', () => {
-                        setBackBtnVisible(controlsVisible);
-                    });
-
-                    plyr.on('exitfullscreen', () => {
-                        setBackBtnVisible(controlsVisible);
                     });
 
                     const controls = document.querySelector('.plyr__controls');
@@ -689,7 +621,6 @@
                         if (data.fatal) {
                             document.getElementById('placeholderScreen').classList.add('hidden');
                             document.getElementById('errorScreen').classList.remove('hidden');
-                            hideBackBtn();
                         }
                     });
                 } else {
@@ -698,14 +629,6 @@
                 }
             }
         }
-
-        // مزامنة زر العودة مع تغيير ملء الشاشة من الخارج (زر الجهاز / ESC)
-        document.addEventListener('fullscreenchange', () => {
-            if (plyr) setBackBtnVisible(controlsVisible);
-        });
-        document.addEventListener('webkitfullscreenchange', () => {
-            if (plyr) setBackBtnVisible(controlsVisible);
-        });
 
         // ===== تشغيل التحقق عند البداية =====
         checkAuth();
