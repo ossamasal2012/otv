@@ -3826,6 +3826,18 @@ jobs:
           import os; print("Icon:", os.path.getsize("cap-project/www/icons/icon.png"), "bytes")
           PYEOF
 
+      - name: Inject HTML splash screen
+        run: |
+          node -e "
+            const fs=require('fs'),path='cap-project/www/index.html';
+            if(!fs.existsSync(path)){console.log('no html');process.exit(0);}
+            const sp=Buffer.from('PHN0eWxlIGlkPSJzcGxfcyI+CiNzcGx7cG9zaXRpb246Zml4ZWQ7dG9wOjA7bGVmdDowO3dpZHRoOjEwMCU7aGVpZ2h0OjEwMCU7YmFja2dyb3VuZDojMGEwYTFhO2Rpc3BsYXk6ZmxleDtmbGV4LWRpcmVjdGlvbjpjb2x1bW47YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpjZW50ZXI7ei1pbmRleDo5OTk5OTt0cmFuc2l0aW9uOm9wYWNpdHkgLjVzfQojc3BsLmhpZGV7b3BhY2l0eTowO3BvaW50ZXItZXZlbnRzOm5vbmV9CiNzcGwgaW1ne3dpZHRoOjEzMHB4O2hlaWdodDoxMzBweDtib3JkZXItcmFkaXVzOjI2cHg7Ym94LXNoYWRvdzowIDhweCAzMnB4IHJnYmEoMCwxMjAsMjU1LC40KTthbmltYXRpb246c3AgMS41cyBlYXNlLWluLW91dCBpbmZpbml0ZX0KI3NwbCBoMXtjb2xvcjojZmZmO2ZvbnQtc2l6ZToyNnB4O2ZvbnQtd2VpZ2h0OjcwMDttYXJnaW46MTZweCAwIDZweDtmb250LWZhbWlseTpBcmlhbCxzYW5zLXNlcmlmfQojc3BsIHB7Y29sb3I6IzY2Njtmb250LXNpemU6MTNweDttYXJnaW46MCAwIDI4cHg7Zm9udC1mYW1pbHk6QXJpYWwsc2Fucy1zZXJpZn0KI3NwbF9ie3dpZHRoOjE4MHB4O2hlaWdodDo0cHg7YmFja2dyb3VuZDojMTExO2JvcmRlci1yYWRpdXM6NHB4O292ZXJmbG93OmhpZGRlbn0KI3NwbF9me2hlaWdodDoxMDAlO3dpZHRoOjA7YmFja2dyb3VuZDpsaW5lYXItZ3JhZGllbnQoOTBkZWcsIzAwNTVmZiwjMDBiYmZmKTtib3JkZXItcmFkaXVzOjRweDt0cmFuc2l0aW9uOndpZHRoIC4zc30KQGtleWZyYW1lcyBzcHswJSwxMDAle3RyYW5zZm9ybTpzY2FsZSgxKX01MCV7dHJhbnNmb3JtOnNjYWxlKDEuMDcpfX0KPC9zdHlsZT4KPGRpdiBpZD0ic3BsIj4KPGltZyBzcmM9Imljb25zL2ljb24ucG5nIiBvbmVycm9yPSJ0aGlzLnN0eWxlLmRpc3BsYXk9J25vbmUnIj4KPGgxPtmK2YTYpyDar9mI2YQ8L2gxPgo8cD7YrNin2LHZiiDYp9mE2KrYrdmF2YrZhC4uLjwvcD4KPGRpdiBpZD0ic3BsX2IiPjxkaXYgaWQ9InNwbF9mIj48L2Rpdj48L2Rpdj4KPC9kaXY+CjxzY3JpcHQ+IWZ1bmN0aW9uKCl7dmFyIGY9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInNwbF9mIikscz1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic3BsIikscD0wO3ZhciBpdj1zZXRJbnRlcnZhbChmdW5jdGlvbigpe3ArPU1hdGgucmFuZG9tKCkqMTI7aWYocD44OClwPTg4O2Yuc3R5bGUud2lkdGg9cCsiJSJ9LDI1MCk7ZnVuY3Rpb24gaGlkZSgpe2NsZWFySW50ZXJ2YWwoaXYpO2Yuc3R5bGUud2lkdGg9IjEwMCUiO3NldFRpbWVvdXQoZnVuY3Rpb24oKXtzLmNsYXNzTGlzdC5hZGQoImhpZGUiKTtzZXRUaW1lb3V0KGZ1bmN0aW9uKCl7aWYocylzLnJlbW92ZSgpO3ZhciBzdD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic3BsX3MiKTtpZihzdClzdC5yZW1vdmUoKX0sNjAwKX0sNDAwKX1pZihkb2N1bWVudC5yZWFkeVN0YXRlPT09ImNvbXBsZXRlIiloaWRlKCk7ZWxzZSB3aW5kb3cuYWRkRXZlbnRMaXN0ZW5lcigibG9hZCIsaGlkZSk7c2V0VGltZW91dChoaWRlLDgwMDApfSgpOzwvc2NyaXB0Pg==','base64').toString('utf8');
+            let t=fs.readFileSync(path,'utf8');
+            t=/<body/i.test(t)?t.replace(/<body([^>]*)>/i,'<body$1>\\n'+sp):sp+'\\n'+t;
+            fs.writeFileSync(path,t,'utf8');
+            console.log('splash injected');
+          "
+
       - name: Add Android platform
         working-directory: cap-project
         run: npx cap add android
