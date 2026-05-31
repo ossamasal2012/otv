@@ -8,65 +8,41 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      # ─────────────────────────────────────────────
-      # 1. Checkout
-      # ─────────────────────────────────────────────
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ─────────────────────────────────────────────
-      # 2. Java 21
-      # ─────────────────────────────────────────────
       - name: Set up Java 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
 
-      # ─────────────────────────────────────────────
-      # 3. Node.js 22
-      # ─────────────────────────────────────────────
-      - name: Set up Node.js
+      - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
 
-      # ─────────────────────────────────────────────
-      # 4. Android SDK
-      # ─────────────────────────────────────────────
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
-
-      - name: Install Android build tools
+      - name: Accept licenses and install SDK
         run: |
-          sdkmanager "platform-tools" \
-                     "platforms;android-34" \
-                     "build-tools;34.0.0"
-      # ─────────────────────────────────────────────
-      # 5. تثبيت Capacitor
-      # ─────────────────────────────────────────────
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
       - name: Install Capacitor CLI
         run: npm install -g @capacitor/cli@latest
 
-      # ─────────────────────────────────────────────
-      # 6. تجهيز مشروع Capacitor
-      # ─────────────────────────────────────────────
-      - name: Initialise Capacitor project
+      - name: Init Capacitor project
         run: |
           mkdir -p cap-project/www
           cd cap-project
-
-          cat > package.json << 'PKG'
+          cat > package.json << PKG
           {
             "name": "yalla-gol",
             "version": "1.0.0",
-            "description": "يلا گول - M3U Streaming Player",
-            "main": "index.js",
             "dependencies": {
               "@capacitor/core": "^6.0.0",
               "@capacitor/android": "^6.0.0",
@@ -74,18 +50,20 @@ jobs:
             }
           }
           PKG
-
           npm install
-
-          cat > capacitor.config.json << 'CAP'
+          cat > capacitor.config.json << CAP
           {
             "appId": "com.yallagol.app",
             "appName": "يلا گول",
             "webDir": "www",
             "android": {
-              "allowMixedContent": true,
-              "captureInput": true,
-              "webContentsDebuggingEnabled": false
+              "allowMixedContent": true
+            },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 0,
+                "launchAutoHide": true
+              }
             },
             "server": {
               "androidScheme": "https",
@@ -95,27 +73,17 @@ jobs:
           }
           CAP
 
-      # ─────────────────────────────────────────────
-      # 7. نسخ index.html → www/
-      # ─────────────────────────────────────────────
       - name: Copy web assets
         run: |
-          if [ -f "index.html" ]; then
-            cp index.html cap-project/www/index.html
-          fi
-          # نسخ أي assets أخرى (css, js, images)
+          [ -f index.html ] && cp index.html cap-project/www/index.html || true
           for f in *.css *.js *.png *.jpg *.svg; do
             [ -f "$f" ] && cp "$f" cap-project/www/ 2>/dev/null || true
           done
-          ls -la cap-project/www/
 
-      # ─────────────────────────────────────────────
-      # 8. أيقونة التطبيق (مضمّنة - بدون تنزيل)
-      # ─────────────────────────────────────────────
       - name: Embed app icon
         run: |
           mkdir -p cap-project/www/icons
-          python3 - << 'PYEOF'
+          python3 - << PYEOF
           import base64
           b64 = (
             "iVBORw0KGgoAAAANSUhEUgAAAgAAAAHjCAIAAADaIjAcAACAAElEQVR42sT9ebB0yXUfiP3OybxV9ZZv" \
@@ -3858,134 +3826,69 @@ jobs:
           import os; print("Icon:", os.path.getsize("cap-project/www/icons/icon.png"), "bytes")
           PYEOF
 
-      # ─────────────────────────────────────────────
-      # 9. إضافة Android Platform
-      # ─────────────────────────────────────────────
       - name: Add Android platform
         working-directory: cap-project
         run: npx cap add android
 
-      # ─────────────────────────────────────────────
-      # 10. إعداد أيقونات Android بجميع الأحجام
-      # ─────────────────────────────────────────────
-
-      # ─────────────────────────────────────────────
-      # 11. AndroidManifest.xml
-      # ─────────────────────────────────────────────
-      - name: Patch AndroidManifest.xml
+      - name: Patch AndroidManifest
         run: |
-          MANIFEST="cap-project/android/app/src/main/AndroidManifest.xml"
-
-          # أضف الصلاحيات (Capacitor يضيف INTERNET مسبقاً لذا نتحقق أولاً)
-          if ! grep -q "ACCESS_NETWORK_STATE" "$MANIFEST"; then
-            sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />\n    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />|' "$MANIFEST"
+          M="cap-project/android/app/src/main/AndroidManifest.xml"
+          if ! grep -q "ACCESS_NETWORK_STATE" "$M"; then
+            sed -i 's|<uses-permission android:name="android.permission.INTERNET" />|<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />|' "$M"
           fi
+          sed -i 's|android:label="@string/app_name"|android:label="@string/app_name"\n        android:usesCleartextTraffic="true"\n        android:networkSecurityConfig="@xml/network_security_config"|' "$M"
+          sed -i 's|android:theme="@style/[^"]*"|android:theme="@style/FullscreenTheme"|' "$M"
 
-          # usesCleartextTraffic + networkSecurityConfig
-          sed -i 's|android:label="@string/app_name"|android:label="@string/app_name"\n        android:usesCleartextTraffic="true"\n        android:networkSecurityConfig="@xml/network_security_config"|' "$MANIFEST"
-
-          # Fullscreen theme
-          sed -i 's|android:theme="@style/AppTheme"|android:theme="@style/FullscreenTheme"|' "$MANIFEST"
-
-          echo "✅ Manifest patched"
-          cat "$MANIFEST"
-
-      # ─────────────────────────────────────────────
-      # 12. network_security_config.xml
-      # ─────────────────────────────────────────────
       - name: Create network_security_config.xml
         run: |
           mkdir -p cap-project/android/app/src/main/res/xml
-          cat > cap-project/android/app/src/main/res/xml/network_security_config.xml << 'NSC'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-            <base-config cleartextTrafficPermitted="true">
-              <trust-anchors>
-                <certificates src="system" />
-                <certificates src="user" />
-              </trust-anchors>
-            </base-config>
-          </network-security-config>
-          NSC
-          echo "✅ network_security_config.xml created"
+          printf "%s" '<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/><certificates src="user"/></trust-anchors></base-config></network-security-config>' > cap-project/android/app/src/main/res/xml/network_security_config.xml
 
-      # ─────────────────────────────────────────────
-      # 13. Fullscreen Themes لكل إصدارات Android
-      # ─────────────────────────────────────────────
-      - name: Create Fullscreen themes
+      - name: Create themes (Fullscreen + no splash)
         run: |
-          # values (API < 30)
-          VALUES="cap-project/android/app/src/main/res/values"
-          mkdir -p "$VALUES"
-
-          cat > "$VALUES/fullscreen_themes.xml" << 'THEME'
+          RES="cap-project/android/app/src/main/res"
+          for DIR in values values-v28 values-v30; do
+            mkdir -p "$RES/$DIR"
+            cat > "$RES/$DIR/fullscreen_themes.xml" << THEME
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
             <style name="FullscreenTheme" parent="Theme.AppCompat.NoActionBar">
               <item name="android:windowFullscreen">true</item>
-              <item name="android:windowContentOverlay">@null</item>
               <item name="android:windowBackground">@android:color/black</item>
               <item name="android:statusBarColor">@android:color/transparent</item>
               <item name="android:navigationBarColor">@android:color/transparent</item>
               <item name="android:windowTranslucentStatus">true</item>
               <item name="android:windowTranslucentNavigation">true</item>
+            </style>
+            <style name="LaunchTheme" parent="Theme.AppCompat.NoActionBar">
+              <item name="android:windowBackground">@android:color/black</item>
+              <item name="android:windowFullscreen">true</item>
+            </style>
+            <style name="NormalTheme" parent="Theme.AppCompat.NoActionBar">
+              <item name="android:windowBackground">@android:color/black</item>
             </style>
           </resources>
           THEME
+          done
 
-          # values-v28 (Notch support)
-          mkdir -p cap-project/android/app/src/main/res/values-v28
-          cat > cap-project/android/app/src/main/res/values-v28/fullscreen_themes.xml << 'THEME28'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <style name="FullscreenTheme" parent="Theme.AppCompat.NoActionBar">
-              <item name="android:windowFullscreen">true</item>
-              <item name="android:windowBackground">@android:color/black</item>
-              <item name="android:statusBarColor">@android:color/transparent</item>
-              <item name="android:navigationBarColor">@android:color/transparent</item>
-              <item name="android:windowTranslucentStatus">true</item>
-              <item name="android:windowTranslucentNavigation">true</item>
-              <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-            </style>
-          </resources>
-          THEME28
+          # launch_background = شاشة سوداء فارغة
+          for DIR in drawable drawable-v21; do
+            mkdir -p "$RES/$DIR"
+            printf "%s" '<?xml version="1.0" encoding="utf-8"?><layer-list xmlns:android="http://schemas.android.com/apk/res/android"><item android:drawable="@android:color/black"/></layer-list>' > "$RES/$DIR/launch_background.xml"
+          done
 
-          # values-v30 (API 30+ WindowInsetsController)
-          mkdir -p cap-project/android/app/src/main/res/values-v30
-          cat > cap-project/android/app/src/main/res/values-v30/fullscreen_themes.xml << 'THEME30'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <style name="FullscreenTheme" parent="Theme.AppCompat.NoActionBar">
-              <item name="android:windowFullscreen">true</item>
-              <item name="android:windowBackground">@android:color/black</item>
-              <item name="android:statusBarColor">@android:color/transparent</item>
-              <item name="android:navigationBarColor">@android:color/transparent</item>
-              <item name="android:windowTranslucentStatus">true</item>
-              <item name="android:windowTranslucentNavigation">true</item>
-              <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
-              <item name="android:enforceNavigationBarContrast">false</item>
-              <item name="android:enforceStatusBarContrast">false</item>
-            </style>
-          </resources>
-          THEME30
+      - name: Write strings.xml
+        run: |
+          mkdir -p cap-project/android/app/src/main/res/values
+          printf "%s" '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">يلا گول</string></resources>' > cap-project/android/app/src/main/res/values/strings.xml
 
-          echo "✅ Fullscreen themes created"
-
-      # ─────────────────────────────────────────────
-      # 14. MainActivity.java
-      #     - Fullscreen Immersive (API 16-29 + API 30+)
-      #     - WebView settings كاملة
-      #     - CORSWebViewClient مدمج
-      # ─────────────────────────────────────────────
-      - name: Write MainActivity.java with CORS + Fullscreen
+      - name: Write MainActivity.java
         run: |
           MAIN=$(find cap-project/android -name "MainActivity.java" | head -1)
-          PKG_DIR=$(dirname "$MAIN")
-          echo "Writing to: $MAIN"
-
-          cat > "$MAIN" << 'JAVA'
-          package com.yallagol.app;
-
+          ACTUAL_PKG=$(grep -o "applicationId \"[^\"]*\"" cap-project/android/app/build.gradle | grep -o "\"[^\"]*\"" | tr -d '"' | head -1)
+          PKG=${ACTUAL_PKG:-com.yallagol.app}
+          cat > "$MAIN" << JAVA
+          package $PKG;
           import android.graphics.Color;
           import android.os.Build;
           import android.os.Bundle;
@@ -4006,455 +3909,134 @@ jobs:
           import java.net.URL;
           import java.util.HashMap;
           import java.util.Map;
-
           public class MainActivity extends BridgeActivity {
-
-            @Override
-            public void onCreate(Bundle savedInstanceState) {
-              // إخفاء شريط العنوان قبل super
+            @Override public void onCreate(Bundle s) {
               requestWindowFeature(Window.FEATURE_NO_TITLE);
-              getWindow().setFlags(
-                WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                WindowManager.LayoutParams.FLAG_FULLSCREEN
-              );
-              super.onCreate(savedInstanceState);
-              applyImmersiveFullscreen();
+              getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);
+              super.onCreate(s);
+              applyFullscreen();
               setupWebView();
             }
-
-            @Override
-            public void onWindowFocusChanged(boolean hasFocus) {
-              super.onWindowFocusChanged(hasFocus);
-              if (hasFocus) applyImmersiveFullscreen();
-            }
-
-            @Override
-            public void onResume() {
-              super.onResume();
-              applyImmersiveFullscreen();
-            }
-
-            // ── Fullscreen لكل إصدارات Android ──────────────────────
-            private void applyImmersiveFullscreen() {
-              Window window = getWindow();
-              window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // Android 11+ (API 30+)
-                window.setDecorFitsSystemWindows(false);
-                WindowInsetsController ctrl = window.getInsetsController();
-                if (ctrl != null) {
-                  ctrl.hide(
-                    WindowInsets.Type.statusBars() |
-                    WindowInsets.Type.navigationBars() |
-                    WindowInsets.Type.systemBars()
-                  );
-                  ctrl.setSystemBarsBehavior(
-                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                  );
-                }
-                window.setStatusBarColor(Color.TRANSPARENT);
-                window.setNavigationBarColor(Color.TRANSPARENT);
+            @Override public void onWindowFocusChanged(boolean h) { super.onWindowFocusChanged(h); if(h) applyFullscreen(); }
+            @Override public void onResume() { super.onResume(); applyFullscreen(); }
+            private void applyFullscreen() {
+              Window w = getWindow();
+              w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+              if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                w.setDecorFitsSystemWindows(false);
+                WindowInsetsController c = w.getInsetsController();
+                if(c!=null) { c.hide(WindowInsets.Type.statusBars()|WindowInsets.Type.navigationBars()); c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); }
+                w.setStatusBarColor(Color.TRANSPARENT); w.setNavigationBarColor(Color.TRANSPARENT);
               } else {
-                // Android 4.1 - 10 (API 16-29)
-                View decorView = window.getDecorView();
-                int flags = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                  | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                  | View.SYSTEM_UI_FLAG_FULLSCREEN;
-                decorView.setSystemUiVisibility(flags);
+                w.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|View.SYSTEM_UI_FLAG_LAYOUT_STABLE|View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_FULLSCREEN);
               }
-
-              // Notch / Display Cutout (API 28+)
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                WindowManager.LayoutParams params = window.getAttributes();
-                params.layoutInDisplayCutoutMode =
-                  WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-                window.setAttributes(params);
-              }
+              if(Build.VERSION.SDK_INT>=28) { w.getAttributes().layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES; w.setAttributes(w.getAttributes()); }
             }
-
-            // ── WebView إعدادات شاملة ────────────────────────────────
             private void setupWebView() {
               try {
-                WebView webView = getBridge().getWebView();
-                WebSettings s = webView.getSettings();
-
-                s.setJavaScriptEnabled(true);
-                s.setDomStorageEnabled(true);
-                s.setDatabaseEnabled(true);
-                s.setAllowFileAccess(true);
-                s.setAllowContentAccess(true);
-                // هذان السطران هما المفتاح الحقيقي لـ CORS داخل APK
-                s.setAllowFileAccessFromFileURLs(true);
-                s.setAllowUniversalAccessFromFileURLs(true);
+                WebView wv = getBridge().getWebView();
+                WebSettings s = wv.getSettings();
+                s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);
+                s.setAllowFileAccess(true); s.setAllowContentAccess(true);
+                s.setAllowFileAccessFromFileURLs(true); s.setAllowUniversalAccessFromFileURLs(true);
                 s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 s.setMediaPlaybackRequiresUserGesture(false);
-                s.setLoadWithOverviewMode(true);
-                s.setUseWideViewPort(true);
                 s.setCacheMode(WebSettings.LOAD_NO_CACHE);
-                s.setBuiltInZoomControls(false);
-                s.setSupportZoom(false);
-                s.setTextZoom(100);
-                s.setUserAgentString(
-                  "Mozilla/5.0 (Linux; Android 11; Mobile) " +
-                  "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                  "Chrome/120.0.0.0 Mobile Safari/537.36"
-                );
-
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                  android.webkit.CookieManager cm =
-                    android.webkit.CookieManager.getInstance();
-                  cm.setAcceptCookie(true);
-                  cm.setAcceptThirdPartyCookies(webView, true);
-                }
-
-                // ربط WebViewClient المخصص للـ CORS
-                getBridge().setWebViewClient(new CORSBypassClient(getBridge()));
-
-              } catch (Exception e) {
-                e.printStackTrace();
-              }
+                s.setUserAgentString("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36");
+                if(Build.VERSION.SDK_INT>=21) { android.webkit.CookieManager cm=android.webkit.CookieManager.getInstance(); cm.setAcceptCookie(true); cm.setAcceptThirdPartyCookies(wv,true); }
+                getBridge().setWebViewClient(new CORSClient(getBridge()));
+              } catch(Exception e) { e.printStackTrace(); }
             }
-
-            // ── CORS Bypass Client ─────────────────────────────────
-            // يعترض كل طلب HTTP على مستوى Android Native
-            // ويضيف Headers الـ CORS يدوياً — هذا هو الحل الوحيد الصحيح داخل APK
-            class CORSBypassClient extends BridgeWebViewClient {
-
-              CORSBypassClient(com.getcapacitor.Bridge bridge) {
-                super(bridge);
-              }
-
-              @Override
-              public WebResourceResponse shouldInterceptRequest(
-                  WebView view, WebResourceRequest request) {
-
-                String url = request.getUrl().toString();
-                String method = request.getMethod();
-
-                // OPTIONS preflight → ردّ فوري بـ CORS headers
-                if ("OPTIONS".equalsIgnoreCase(method)) {
-                  return buildCORSResponse(null, "text/plain", 204);
-                }
-
-                // تجاوز الموارد المحلية (capacitor://, file://, data:)
-                if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                  return super.shouldInterceptRequest(view, request);
-                }
-
-                // تجاوز طلبات capacitor نفسه
-                if (url.contains("capacitor://") || url.contains("localhost")) {
-                  return super.shouldInterceptRequest(view, request);
-                }
-
+            class CORSClient extends BridgeWebViewClient {
+              CORSClient(com.getcapacitor.Bridge b) { super(b); }
+              @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
+                String url = r.getUrl().toString();
+                if("OPTIONS".equalsIgnoreCase(r.getMethod())) return cors(null,"text/plain",204);
+                if(!url.startsWith("http")) return super.shouldInterceptRequest(v,r);
+                if(url.contains("localhost")||url.contains("capacitor://")) return super.shouldInterceptRequest(v,r);
                 try {
-                  HttpURLConnection conn = (HttpURLConnection)
-                    new URL(url).openConnection();
-                  conn.setRequestMethod(method);
-                  conn.setConnectTimeout(20000);
-                  conn.setReadTimeout(20000);
-                  conn.setInstanceFollowRedirects(true);
-                  conn.setDoInput(true);
-
-                  // نقل headers الأصلية
-                  for (Map.Entry<String, String> h :
-                       request.getRequestHeaders().entrySet()) {
-                    String key = h.getKey();
-                    // تجاوز الـ headers التي تسبب مشاكل
-                    if (!key.equalsIgnoreCase("Origin") &&
-                        !key.equalsIgnoreCase("Referer")) {
-                      conn.setRequestProperty(key, h.getValue());
-                    }
-                  }
-                  conn.setRequestProperty("User-Agent",
-                    "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36");
-                  conn.setRequestProperty("Accept", "*/*");
-                  conn.setRequestProperty("Accept-Encoding", "identity");
-
-                  conn.connect();
-
-                  int status = conn.getResponseCode();
-                  if (status < 0) status = 200;
-
-                  InputStream stream;
-                  try {
-                    stream = conn.getInputStream();
-                  } catch (Exception ex) {
-                    stream = conn.getErrorStream();
-                    if (stream == null) {
-                      stream = new ByteArrayInputStream(new byte[0]);
-                    }
-                  }
-
-                  String mimeType = conn.getContentType();
-                  if (mimeType == null) mimeType = guessMime(url);
-                  if (mimeType.contains(";"))
-                    mimeType = mimeType.split(";")[0].trim();
-
-                  return buildCORSResponse(stream, mimeType, status);
-
-                } catch (Exception e) {
-                  // fallback: اتركه للـ WebView الأصلي
-                  return super.shouldInterceptRequest(view, request);
-                }
+                  HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();
+                  c.setRequestMethod(r.getMethod()); c.setConnectTimeout(20000); c.setReadTimeout(20000); c.setInstanceFollowRedirects(true);
+                  for(Map.Entry<String,String> h:r.getRequestHeaders().entrySet()) { if(!h.getKey().equalsIgnoreCase("Origin")) c.setRequestProperty(h.getKey(),h.getValue()); }
+                  c.setRequestProperty("User-Agent","Mozilla/5.0"); c.setRequestProperty("Accept","*/*");
+                  c.connect();
+                  int st=c.getResponseCode(); if(st<0) st=200;
+                  InputStream is; try { is=c.getInputStream(); } catch(Exception e) { is=c.getErrorStream(); if(is==null) is=new ByteArrayInputStream(new byte[0]); }
+                  String mt=c.getContentType(); if(mt==null) mt=mime(url); if(mt.contains(";")) mt=mt.split(";")[0].trim();
+                  return cors(is,mt,st);
+                } catch(Exception e) { return super.shouldInterceptRequest(v,r); }
               }
-
-              private WebResourceResponse buildCORSResponse(
-                  InputStream stream, String mime, int status) {
-                Map<String, String> headers = new HashMap<>();
-                headers.put("Access-Control-Allow-Origin", "*");
-                headers.put("Access-Control-Allow-Methods",
-                  "GET, POST, PUT, DELETE, HEAD, OPTIONS");
-                headers.put("Access-Control-Allow-Headers", "*");
-                headers.put("Access-Control-Expose-Headers", "*");
-                headers.put("Access-Control-Max-Age", "86400");
-                if (stream == null)
-                  stream = new ByteArrayInputStream(new byte[0]);
-                String reason = (status >= 200 && status < 300) ? "OK" : "Error";
-                return new WebResourceResponse(
-                  mime, "utf-8", status, reason, headers, stream);
+              private WebResourceResponse cors(InputStream is,String m,int st) {
+                Map<String,String> h=new HashMap<>();
+                h.put("Access-Control-Allow-Origin","*"); h.put("Access-Control-Allow-Methods","GET,POST,HEAD,OPTIONS"); h.put("Access-Control-Allow-Headers","*");
+                if(is==null) is=new ByteArrayInputStream(new byte[0]);
+                return new WebResourceResponse(m,"utf-8",st,st<400?"OK":"Err",h,is);
               }
-
-              private String guessMime(String url) {
-                url = url.toLowerCase();
-                if (url.contains(".m3u8")) return "application/vnd.apple.mpegurl";
-                if (url.contains(".m3u"))  return "audio/x-mpegurl";
-                if (url.contains(".ts"))   return "video/MP2T";
-                if (url.contains(".mp4"))  return "video/mp4";
-                if (url.contains(".json")) return "application/json";
-                if (url.contains(".xml"))  return "text/xml";
+              private String mime(String u) {
+                u=u.toLowerCase();
+                if(u.contains(".m3u8")) return "application/vnd.apple.mpegurl";
+                if(u.contains(".m3u")) return "audio/x-mpegurl";
+                if(u.contains(".ts")) return "video/MP2T";
+                if(u.contains(".mp4")) return "video/mp4";
                 return "application/octet-stream";
               }
             }
           }
           JAVA
 
-          echo "✅ MainActivity.java written"
-          wc -l "$MAIN"
-
-      # ─────────────────────────────────────────────
-      # 15. تصحيح package name في MainActivity
-      # ─────────────────────────────────────────────
-      - name: Fix package name in MainActivity
-        run: |
-          MAIN=$(find cap-project/android -name "MainActivity.java" | head -1)
-          # الحصول على الـ package الفعلي من المشروع
-          ACTUAL_PKG=$(grep -r "applicationId" cap-project/android/app/build.gradle \
-            | grep -o '"[^"]*"' | tr -d '"' | head -1)
-          echo "Actual package: $ACTUAL_PKG"
-          if [ -n "$ACTUAL_PKG" ] && [ "$ACTUAL_PKG" != "com.yallagol.app" ]; then
-            sed -i "s|package com.yallagol.app;|package $ACTUAL_PKG;|g" "$MAIN"
-            echo "✅ Package updated to: $ACTUAL_PKG"
-          fi
-
-          # تحديث applicationId في build.gradle
-          sed -i 's|applicationId "[^"]*"|applicationId "com.yallagol.app"|' \
-            cap-project/android/app/build.gradle || true
-
-      # ─────────────────────────────────────────────
-      # 16. strings.xml — اسم التطبيق
-      # ─────────────────────────────────────────────
-      - name: Set app name to يلا گول
-        run: |
-          STRINGS="cap-project/android/app/src/main/res/values/strings.xml"
-          if [ -f "$STRINGS" ]; then
-            sed -i 's|<string name="app_name">.*</string>|<string name="app_name">يلا گول</string>|' \
-              "$STRINGS"
-          else
-            mkdir -p "$(dirname $STRINGS)"
-            cat > "$STRINGS" << 'STR'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-            <string name="app_name">يلا گول</string>
-          </resources>
-          STR
-          fi
-          echo "✅ App name set to يلا گول"
-
-      # ─────────────────────────────────────────────
-      # 17. مزامنة Capacitor
-      # ─────────────────────────────────────────────
       - name: Sync Capacitor
         working-directory: cap-project
         run: npx cap sync android
 
-      # ─────────────────────────────────────────────
-      # Generate icons AFTER sync (sync would overwrite res/)
-      # ─────────────────────────────────────────────
-      - name: Generate Android icons (all formats)
+      - name: Generate PNG icons and remove XML adaptive icons
         run: |
           sudo apt-get install -y imagemagick -q 2>&1 | tail -1
-          ls -lh cap-project/www/icons/icon.png || { echo "Icon not found!"; exit 1; }
+          RES="cap-project/android/app/src/main/res"
+          SRC="cap-project/www/icons/icon.png"
 
-          python3 << 'PYICON'
-          import subprocess, os, re, glob, shutil
+          # احذف كل XML أيقونات Capacitor التي تتجاهل PNG
+          rm -rf "$RES/mipmap-anydpi-v26"
+          rm -f  "$RES/values/ic_launcher_background.xml"
 
-          src = "cap-project/www/icons/icon.png"
-          res = "cap-project/android/app/src/main/res"
+          # ولّد PNG لكل الكثافات
+          for ENTRY in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
+            DIR="${ENTRY%%:*}"
+            SZ="${ENTRY##*:}"
+            mkdir -p "$RES/$DIR"
+            # احذف foreground القديم
+            rm -f "$RES/$DIR/ic_launcher_foreground.png"
+            # ولّد الأيقونة
+            convert "$SRC" -resize "${SZ}x${SZ}^" -gravity center -background white -extent "${SZ}x${SZ}" "$RES/$DIR/ic_launcher.png"
+            convert "$SRC" -resize "${SZ}x${SZ}^" -gravity center -background white -extent "${SZ}x${SZ}" "$RES/$DIR/ic_launcher_round.png"
+            echo "  $DIR (${SZ}px)"
+          done
 
-          # ── 1. احذف كل ملفات الأيقونة القديمة التي أنشأها Capacitor ──
-          # هذا هو سبب المشكلة: Capacitor يضع ic_launcher.xml يشير لـ foreground/background
-          # وعند تشغيله يظهر الـ default لأن foreground فارغ أو خاطئ
-          for pattern in [
-            f"{res}/mipmap-anydpi-v26/ic_launcher.xml",
-            f"{res}/mipmap-anydpi-v26/ic_launcher_round.xml",
-            f"{res}/values/ic_launcher_background.xml",
-          ]:
-            if os.path.exists(pattern):
-              os.remove(pattern)
-              print(f"Deleted: {pattern}")
-
-          # احذف مجلد anydpi-v26 بالكامل إن أصبح فارغاً
-          anydpi = f"{res}/mipmap-anydpi-v26"
-          if os.path.isdir(anydpi):
-            shutil.rmtree(anydpi)
-            print(f"Deleted dir: {anydpi}")
-
-          def run_convert(args):
-            r = subprocess.run(["convert"] + args, capture_output=True)
-            if r.returncode != 0:
-              print("WARN convert:", r.stderr.decode()[:200])
-
-          sizes = [
-            ("mipmap-mdpi",    48),
-            ("mipmap-hdpi",    72),
-            ("mipmap-xhdpi",   96),
-            ("mipmap-xxhdpi",  144),
-            ("mipmap-xxxhdpi", 192),
-          ]
-
-          # ── 2. ولّد PNG فقط — بدون adaptive XML ──
-          for folder, sz in sizes:
-            d = f"{res}/{folder}"
-            os.makedirs(d, exist_ok=True)
-
-            # احذف ic_launcher_foreground القديم إن وُجد
-            fg = f"{d}/ic_launcher_foreground.png"
-            if os.path.exists(fg):
-              os.remove(fg)
-
-            # ic_launcher.png — الأيقونة الرئيسية بخلفية بيضاء
-            run_convert([
-              src,
-              "-resize", f"{sz}x{sz}^",
-              "-gravity", "center",
-              "-background", "white",
-              "-extent", f"{sz}x{sz}",
-              f"{d}/ic_launcher.png"
-            ])
-
-            # ic_launcher_round.png — نفس الصورة (مستديرة ستُطبَّق بواسطة Android)
-            run_convert([
-              src,
-              "-resize", f"{sz}x{sz}^",
-              "-gravity", "center",
-              "-background", "white",
-              "-extent", f"{sz}x{sz}",
-              f"{d}/ic_launcher_round.png"
-            ])
-
-            sz_file = os.path.getsize(f"{d}/ic_launcher.png")
-            print(f"  {folder} ({sz}px) → {sz_file} bytes")
-
-          # ── 3. تأكد أن colors.xml لا يحتوي تكراراً ──
-          colors_path = f"{res}/values/colors.xml"
-          if os.path.exists(colors_path):
-            with open(colors_path) as f:
-              col = f.read()
-            col = re.sub(r'\s*<color name="ic_launcher_background">[^<]*</color>', '', col)
-            with open(colors_path, "w") as f:
-              f.write(col)
-            print("Cleaned colors.xml")
-
-          # ── 4. تحقق نهائي ──
-          files = glob.glob(f"{res}/**/ic_launcher*.png", recursive=True)
-          print(f"\nTotal PNG icon files: {len(files)}")
-          for f in sorted(files):
-            print(f"  {f}")
-
-          # تأكد لا يوجد أي XML للأيقونة
-          xml_files = glob.glob(f"{res}/**/ic_launcher*.xml", recursive=True)
-          if xml_files:
-            print(f"WARNING: Found XML icon files (will override PNG):")
-            for x in xml_files:
-              print(f"  {x}")
-              os.remove(x)
-              print(f"  → Deleted!")
-          else:
-            print("No XML icon files found (correct!)")
-
-          print("Done!")
-          PYICON
-
-
-# ─────────────────────────────────────────────
-      # 18. Fix build.gradle
-      # ─────────────────────────────────────────────
-      - name: Fix gradle properties
-        run: |
-          echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m" \
-            >> cap-project/android/gradle.properties
-          echo "android.useAndroidX=true" \
-            >> cap-project/android/gradle.properties
-          echo "✅ build.gradle fixed"
-
-      # ─────────────────────────────────────────────
-      # 19. صلاحيات Gradle wrapper
-      # ─────────────────────────────────────────────
-      - name: Fix Gradle wrapper permissions
-        run: chmod +x cap-project/android/gradlew
-
-      # ─────────────────────────────────────────────
-      # 💡 الخطوة السحرية الجديدة: إلغاء شاشة البداية نهائياً
-      # ─────────────────────────────────────────────
-      - name: Disable Splash Screen
-        run: |
-          CONFIG_FILE="cap-project/android/app/src/main/assets/capacitor.config.json"
-          if [ -f "$CONFIG_FILE" ]; then
-            node -e "
-              const fs = require('fs');
-              let config = JSON.parse(fs.readFileSync('$CONFIG_FILE', 'utf8'));
-              config.plugins = config.plugins || {};
-              config.plugins.SplashScreen = {
-                launchShowDuration: 0,
-                showSpinner: false,
-                splashFullScreen: false,
-                splashImmersive: false
-              };
-              fs.writeFileSync('$CONFIG_FILE', JSON.stringify(config, null, 2));
-            "
-            echo "✅ تم إلغاء الواجهة (Splash Screen) بنجاح."
-          else
-            echo "⚠️ لم يتم العثور على ملف الإعدادات داخل مجلد الأندرويد."
+          # تنظيف colors.xml من ic_launcher_background المكررة
+          COLORS="$RES/values/colors.xml"
+          if [ -f "$COLORS" ]; then
+            grep -v "ic_launcher_background" "$COLORS" > /tmp/colors_clean.xml && mv /tmp/colors_clean.xml "$COLORS"
           fi
 
-      # ─────────────────────────────────────────────
-      # 20. بناء APK
-      # ─────────────────────────────────────────────
-      - name: Build APK (Debug)
+          echo "Icons done:"
+          find "$RES" -name "ic_launcher*.png" | sort
+
+      - name: Fix Java compatibility
+        run: |
+          find cap-project/android -name "build.gradle" -exec sed -i "s|JavaVersion.VERSION_[0-9_]*|JavaVersion.VERSION_21|g" {} +
+          echo "org.gradle.jvmargs=-Xmx4g" >> cap-project/android/gradle.properties
+
+      - name: Build APK
         working-directory: cap-project/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
-      # ─────────────────────────────────────────────
-      # 21. إعادة تسمية APK
-      # ─────────────────────────────────────────────
-      - name: Rename APK
-        run: |
-          mv cap-project/android/app/build/outputs/apk/debug/app-debug.apk \
-             cap-project/android/app/build/outputs/apk/debug/yalla-gol.apk || true
-
-      # ─────────────────────────────────────────────
-      # 22. رفع APK
-      # ─────────────────────────────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: yalla-gol-apk
-          path: cap-project/android/app/build/outputs/apk/debug/yalla-gol.apk
-          retention-days: 7
+          path: cap-project/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
