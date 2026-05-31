@@ -79,31 +79,13 @@ jobs:
           for f in *.css *.js *.png *.jpg *.svg; do
             [ -f "$f" ] && cp "$f" cap-project/www/ 2>/dev/null || true
           done
-          # 1. تثبيت أداة توليد الأيقونات الرسمية من Capacitor
-      - name: Install Capacitor Assets tool
-        run: npm install -g @capacitor/assets
 
-      # 2. نسخ ملف الأيقونة الأساسي إلى داخل مجلد المشروع
-      - name: Prepare Asset Source
-        run: |
-          if [ -f icon.png ]; then
-            cp icon.png cap-project/icon.png
-          else
-            echo "⚠️ لم يتم العثور على ملف icon.png في المجلد الرئيسي للمستودع!"
-          fi
-
-      # 3. تشغيل الأداة لتوليد الأيقونات في مجلدات أندرويد تلقائياً
-      - name: Generate Android Icons
-        run: |
-          cd cap-project
-          npx capacitor-assets generate --android 
-          
       - name: Inject HTML splash screen
         run: |
           node -e "
             const fs=require('fs'),path='cap-project/www/index.html';
             if(!fs.existsSync(path)){console.log('no html');process.exit(0);}
-            const sp=Buffer.from('PHN0eWxlIGlkPSJzcGxfcyI+CiNzcGx7cG9zaXRpb246Zml4ZWQ7dG9wOjA7bGVmdDowO3dpZHRoOjEwMCU7aGVpZ2h0OjEwMCU7YmFja2dyb3VuZDojMGEwYTFhO2Rpc3BsYXk6ZmxleDtmbGV4LWRpcmVjdGlvbjpjb2x1bW47YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpjZW50ZXI7ei1pbmRleDo5OTk5OTt0cmFuc2l0aW9uOm9wYWNpdHkgLjVzfQojc3BsLmhpZGV7b3BhY2l0eTowO3BvaW50ZXItZXZlbnRzOm5vbmV9CiNzcGwgaW1ne3dpZHRoOjEzMHB4O2hlaWdodDoxMzBweDtib3JkZXItcmFkaXVzOjI2cHg7Ym94LXNoYWRvdzowIDhweCAzMnB4IHJnYmEoMCwxMjAsMjU1LC40KTthbmltYXRpb246c3AgMS41cyBlYXNlLWluLW91dCBpbmZpbml0ZX0KI3NwbCBoMXtjb2xvcjojZmZmO2ZvbnQtc2l6ZToyNnB4O2ZvbnQtd2VpZ2h0OjcwMDttYXJnaW46MTZweCAwIDZweDtmb250LWZhbWlseTpBcmlhbCxzYW5zLXNlcmlmfQojc3BsIHB7Y29sb3I6I2FhYTtmb250LXNpemU6MTNweDttYXJnaW46MCAwIDI4cHg7Zm9udC1mYW1pbHk6QXJpYWwsc2Fucy1zZXJpZn0KI3NwbF9ie3dpZHRoOjE4MHB4O2hlaWdodDo0cHg7YmFja2dyb3VuZDojMTExO2JvcmRlci1yYWRpdXM6NHB4O292ZXJmbG93OmhpZGRlbn0KI3NwbF9me2hlaWdodDoxMDAlO3dpZHRoOjA7YmFja2dyb3VuZDpsaW5lYXItZ3JhZGllbnQoOTBkZWcsIzAwNTVmZiwjMDBiYmZmKTtib3JkZXItcmFkaXVzOjRweDt0cmFuc2l0aW9uOndpZHRoIC4xcyBsaW5lYXJ9CkBrZXlmcmFtZXMgc3B7MCUsMTAwJXt0cmFuc2Zvcm06c2NhbGUoMSl9NTAle3RyYW5zZm9ybTpzY2FsZSgxLjA3KX19Cjwvc3R5bGU+CjxkaXYgaWQ9InNwbCI+CjxpbWcgc3JjPSJpY29ucy9pY29uLnBuZyIgb25lcnJvcj0idGhpcy5zdHlsZS5kaXNwbGF5PSdub25lJyI+CjxoMT7ZitmE2Kcg2q/ZiNmEPC9oMT4KPHA+2KzYp9ix2Yog2KfZhNiq2K3ZhdmK2YQuLi48L3A+CjxkaXYgaWQ9InNwbF9iIj48ZGl2IGlkPSJzcGxfZiI+PC9kaXY+PC9kaXY+CjwvZGl2Pgo8c2NyaXB0PiFmdW5jdGlvbigpewp2YXIgZj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic3BsX2YiKSxzPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJzcGwiKTsKdmFyIHN0YXJ0PURhdGUubm93KCksZHVyPTMwMDA7CnZhciBpdj1zZXRJbnRlcnZhbChmdW5jdGlvbigpewogIHZhciBwY3Q9TWF0aC5taW4oKERhdGUubm93KCktc3RhcnQpL2R1cioxMDAsMTAwKTsKICBmLnN0eWxlLndpZHRoPXBjdCsiJSI7CiAgaWYocGN0Pj0xMDApe2NsZWFySW50ZXJ2YWwoaXYpO3NldFRpbWVvdXQoaGlkZSwxMDApO30KfSwzMCk7CmZ1bmN0aW9uIGhpZGUoKXsKICBzLmNsYXNzTGlzdC5hZGQoImhpZGUiKTsKICBzZXRUaW1lb3V0KGZ1bmN0aW9uKCl7aWYocylzLnJlbW92ZSgpO3ZhciBzdD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic3BsX3MiKTtpZihzdClzdC5yZW1vdmUoKTt9LDYwMCk7Cn0KfSgpOzwvc2NyaXB0Pg==','base64').toString('utf8');
+            const sp=Buffer.from('PHN0eWxlIGlkPSJzcGxfcyI+CiNzcGx7cG9zaXRpb246Zml4ZWQ7dG9wOjA7bGVmdDowO3dpZHRoOjEwMCU7aGVpZ2h0OjEwMCU7YmFja2dyb3VuZDojMGEwYTFhO2Rpc3BsYXk6ZmxleDtmbGV4LWRpcmVjdGlvbjpjb2x1bW47YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpjZW50ZXI7ei1pbmRleDo5OTk5OTt0cmFuc2l0aW9uOm9wYWNpdHkgLjVzfQojc3BsLmhpZGV7b3BhY2l0eTowO3BvaW50ZXItZXZlbnRzOm5vbmV9CiNzcGwgaW1ne3dpZHRoOjEzMHB4O2hlaWdodDoxMzBweDtib3JkZXItcmFkaXVzOjI2cHg7Ym94LXNoYWRvdzowIDhweCAzMnB4IHJnYmEoMCwxMjAsMjU1LC40KTthbmltYXRpb246c3AgMS41cyBlYXNlLWluLW91dCBpbmZpbml0ZX0KI3NwbCBoMXtjb2xvcjojZmZmO2ZvbnQtc2l6ZToyNnB4O2ZvbnQtd2VpZ2h0OjcwMDttYXJnaW46MTZweCAwIDZweDtmb250LWZhbWlseTpBcmlhbCxzYW5zLXNlcmlmfQojc3BsIHB7Y29sb3I6I2FhYTtmb250LXNpemU6MTNweDttYXJnaW46MCAwIDI4cHg7Zm9udC1mYW1pbHk6QXJpYWwsc2Fucy1zZXJpZn0KI3NwbF9ie3dpZHRoOjE4MHB4O2hlaWdodDo0cHg7YmFja2dyb3VuZDojMTExO2JvcmRlci1yYWRpdXM6NHB4O292ZXJmbG93OmhpZGRlbn0KI3NwbF9me2hlaWdodDoxMDAlO3dpZHRoOjA7YmFja2dyb3VuZDpsaW5lYXItZ3JhZGllbnQoOTBkZWcsIzAwNTVmZiwjMDBiYmZmKTtib3JkZXItcmFkaXVzOjRweDt0cmFuc2l0aW9uOndpZHRoIC4xcyBsaW5lYXJ9CkBrZXlmcmFtZXMgc3B7MCUsMTAwJXt0cmFuc2Zvcm06c2NhbGUoMSl9NTAle3RyYW5zZm9ybTpzY2FsZSgxLjA3KX19Cjwvc3R5bGU+CjxkaXYgaWQ9InNwbCI+CjxpbWcgc3JjPSJpY29ucy9pY29uLnBuZyIgb25lcnJvcj0idGhpcy5zdHlsZS5kaXNwbGF5PSdub25lJyI+CjxoMT7ZitmE2Kcg2q/ZiNmEPC9oMT4KPHA+2KzYp9ix2Yog2KfZhNiq2K3ZhdmK2YQuLi48L3A+CjxkaXYgaWQ9InNwbF9iIj48ZGl2IGlkPSJzcGxfZiI+PC9kaXY+PC9kaXY+CjwvZGl2Pgo8c2NyaXB0PiFmdW5jdGlvbigpewp2YXIgZj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic3BsX2YiKSxzPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJzcGwiKTsKdmFyIHN0YXJ0PUThdGUubm93KCksZHVyPTMwMDA7CnZhciBpdj1zZXRJbnRlcnZhbChmdW5jdGlvbigpewogIHZhciBwY3Q9TWF0aC5taW4oRefhdGUubm93KCktc3RhcnQpL2R1cioxMDAsMTAwKTsKICBmLnN0eWxlLndpZHRoPXBjdCsiJSI7CiAgaWYocGN0Pj0xMDApe2NsZWFySW50ZXJ2YWwoaXYpO3NldFRpbWVvdXQoaGlkZSwxMDApO30KfSwzMCk7CmZ1bmN0aW9uIGhpZGUoKXsKICBzLmNsYXNzTGlzdC5hZGQoImhpZGUiKTsKICBzZXRUaW1lb3V0KGZ1bmN0aW9uKCl7aWYocylzLnJlbW92ZSgpO3ZhciBzdD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgic3BsX3MiKTtpZihzdClzdC5yZW1vdmUoKTt9LDYwMCk7Cn0KfSgpOzwvc2NyaXB0Pg==','base64').toString('utf8');
             let t=fs.readFileSync(path,'utf8');
             t=/<body/i.test(t)?t.replace(/<body([^>]*)>/i,'<body$1>\\n'+sp):sp+'\\n'+t;
             fs.writeFileSync(path,t,'utf8');
@@ -272,37 +254,24 @@ jobs:
         working-directory: cap-project
         run: npx cap sync android
 
-      - name: Generate PNG icons and remove XML adaptive icons
+      # --- توليد الأيقونات التكيفية بأداة الـ Assets بعد تجهيز مجلد أندرويد بالكامل ---
+      - name: Install Capacitor Assets tool
+        run: npm install -g @capacitor/assets
+
+      - name: Generate Adaptive Icons
         run: |
-          sudo apt-get install -y imagemagick -q 2>&1 | tail -1
-          RES="cap-project/android/app/src/main/res"
-          SRC="cap-project/www/icons/icon.png"
-
-          # احذف كل XML أيقونات Capacitor التي تتجاهل PNG
-          rm -rf "$RES/mipmap-anydpi-v26"
-          rm -f  "$RES/values/ic_launcher_background.xml"
-
-          # ولّد PNG لكل الكثافات
-          for ENTRY in "mipmap-mdpi:48" "mipmap-hdpi:72" "mipmap-xhdpi:96" "mipmap-xxhdpi:144" "mipmap-xxxhdpi:192"; do
-            DIR="${ENTRY%%:*}"
-            SZ="${ENTRY##*:}"
-            mkdir -p "$RES/$DIR"
-            # احذف foreground القديم
-            rm -f "$RES/$DIR/ic_launcher_foreground.png"
-            # ولّد الأيقونة
-            convert "$SRC" -resize "${SZ}x${SZ}^" -gravity center -background white -extent "${SZ}x${SZ}" "$RES/$DIR/ic_launcher.png"
-            convert "$SRC" -resize "${SZ}x${SZ}^" -gravity center -background white -extent "${SZ}x${SZ}" "$RES/$DIR/ic_launcher_round.png"
-            echo "  $DIR (${SZ}px)"
-          done
-
-          # تنظيف colors.xml من ic_launcher_background المكررة
-          COLORS="$RES/values/colors.xml"
-          if [ -f "$COLORS" ]; then
-            grep -v "ic_launcher_background" "$COLORS" > /tmp/colors_clean.xml && mv /tmp/colors_clean.xml "$COLORS"
+          # تأكد من وجود ملف icon.png في جذر المستودع الأصلي
+          if [ -f icon.png ]; then
+            cp icon.png cap-project/icon.png
+            cd cap-project
+            npx capacitor-assets generate --android
+          elif [ -f cap-project/www/icon.png ]; then
+            cp cap-project/www/icon.png cap-project/icon.png
+            cd cap-project
+            npx capacitor-assets generate --android
+          else
+            echo "⚠️ لم يتم العثور على أيقونة باسم icon.png في الجذر أو داخل www!"
           fi
-
-          echo "Icons done:"
-          find "$RES" -name "ic_launcher*.png" | sort
 
       - name: Fix Java compatibility
         run: |
