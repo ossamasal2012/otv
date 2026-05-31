@@ -255,23 +255,32 @@ jobs:
         run: npx cap sync android
 
       # --- توليد الأيقونات التكيفية بأداة الـ Assets بعد تجهيز مجلد أندرويد بالكامل ---
+# --- توليد الأيقونات التكيفية بأداة الـ Assets ---
       - name: Install Capacitor Assets tool
         run: npm install -g @capacitor/assets
 
       - name: Generate Adaptive Icons
         run: |
-          # تأكد من وجود ملف icon.png في جذر المستودع الأصلي
-          if [ -f icon.png ]; then
-            cp icon.png cap-project/icon.png
-            cd cap-project
-            npx capacitor-assets generate --android
-          elif [ -f cap-project/www/icon.png ]; then
-            cp cap-project/www/icon.png cap-project/icon.png
-            cd cap-project
-            npx capacitor-assets generate --android
+          cd cap-project
+          # إنشاء مجلد assets الذي تبحث عنه الأداة رسمياً
+          mkdir -p assets
+          
+          # نسخ الأيقونة إلى المكان الصحيح الذي تتوقعه الأداة وبالمسميات الرسمية
+          if [ -f ../icon.png ]; then
+            cp ../icon.png assets/icon-only.png
+            cp ../icon.png assets/icon-foreground.png
+            cp ../icon.png assets/icon-background.png
+          elif [ -f www/icon.png ]; then
+            cp www/icon.png assets/icon-only.png
+            cp www/icon.png assets/icon-foreground.png
+            cp www/icon.png assets/icon-background.png
           else
-            echo "⚠️ لم يتم العثور على أيقونة باسم icon.png في الجذر أو داخل www!"
+            echo "⚠️ لم يتم العثور على أيقونة باسم icon.png!"
+            exit 1
           fi
+          
+          # تشغيل الأداة مع إجبارها على استخدام المجلد المحلي وتوليد أيقونات أندرويد
+          npx capacitor-assets generate --android --assetPath assets
 
       - name: Fix Java compatibility
         run: |
