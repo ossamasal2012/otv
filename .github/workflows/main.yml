@@ -3880,7 +3880,7 @@ jobs:
       - name: Write strings.xml
         run: |
           mkdir -p cap-project/android/app/src/main/res/values
-          printf "%s" '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">يلا گول</string></resources>' > cap-project/android/app/src/main/res/values/strings.xml
+          printf "%s" '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">يلا گول</string><string name="title_activity_main">يلا گول</string><string name="package_name">com.yallagol.app</string><string name="custom_url_scheme">com.yallagol.app</string></resources>' > cap-project/android/app/src/main/res/values/strings.xml
 
       - name: Write MainActivity.java
         run: |
