@@ -83,13 +83,16 @@ jobs:
         }
         EOF
 
-        # تعديل كود الـ Java الرئيسي في الأندرويد لإخفاء أشرطة النظام والإشعارات فوراً (ملء الشاشة الحقيقي)
+        # تعديل كود الـ Java الرئيسي في الأندرويد لإخفاء أشرطة النظام والإشعارات فوراً (ملء الشاشة الحقيقي لجميع الإصدارات)
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
-        cat <<EOF > $MAIN_ACTIVITY
+        cat <<'EOF' > $MAIN_ACTIVITY
         package com.yallagoal.app;
 
+        import android.os.Build;
         import android.os.Bundle;
         import android.view.View;
+        import android.view.WindowInsets;
+        import android.view.WindowInsetsController;
         import android.view.WindowManager;
         import com.getcapacitor.BridgeActivity;
 
@@ -98,16 +101,51 @@ jobs:
             protected void onCreate(Bundle savedInstanceState) {
                 super.onCreate(savedInstanceState);
                 
-                // إخفاء شريط الإشعارات (Status Bar)
+                // 1. إخفاء شريط الحالة العلوي بالطريقة العامة
                 getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                                     WindowManager.LayoutParams.FLAG_FULLSCREEN);
                 
-                // تفعيل وضع ملء الشاشة الغامر لإخفاء الإيماءات وأزرار التنقل (Immersive Mode)
-                View decorView = getWindow().getDecorView();
-                int uiOptions = View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                              | View.SYSTEM_UI_FLAG_FULLSCREEN
-                              | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-                decorView.setSystemUiVisibility(uiOptions);
+                // 2. التحكم الشامل بملء الشاشة حسب إصدار الأندرويد
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // الأنظمة الحديثة (أندرويد 11، 12، 13، 14، 15+)
+                    final WindowInsetsController controller = getWindow().getInsetsController();
+                    if (controller != null) {
+                        // إخفاء شريط الإشعارات وشريط التنقل/الإيماءات السفلي تماماً
+                        controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                        // جعل الإخفاء ثابتاً بحيث لا يظهر إلا بسحب المستخدم للشاشة من الحافة (Sticky)
+                        controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    }
+                } else {
+                    // الأنظمة القديمة (أندرويد 10 وما قبله)
+                    View decorView = getWindow().getDecorView();
+                    int uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                  | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                  | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+                    decorView.setSystemUiVisibility(uiOptions);
+                }
+            }
+            
+            // إعادة تطبيق الاختفاء التلقائي حتى لو خرج المستخدم من التطبيق وعاد إليه
+            @Override
+            public void onWindowFocusChanged(boolean hasFocus) {
+                super.onWindowFocusChanged(hasFocus);
+                if (hasFocus) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        final WindowInsetsController controller = getWindow().getInsetsController();
+                        if (controller != null) {
+                            controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                        }
+                    } else {
+                        getWindow().getDecorView().setSystemUiVisibility(
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                            View.SYSTEM_UI_FLAG_FULLSCREEN |
+                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        );
+                    }
+                }
             }
         }
         EOF
