@@ -37,15 +37,20 @@ jobs:
         npx cap init "يلا گول" "com.yallagoal.app" --web-dir=www
         npx cap add android
 
-        # التعديل الفوري لنسخة Gradle داخل المجلد فور إنشائه مباشرة
+        # 1. التعديل الفوري لنسخة Gradle داخل المجلد فور إنشائه مباشرة إلى 8.7
         PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
         if [ -f "$PROPERTIES_FILE" ]; then
           sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
           echo "==== تم تحديث ملف الخصائص بنجاح إلى إصدار 8.7 ===="
-          cat $PROPERTIES_FILE
-        else
-          echo "==== خطأ: لم يتم العثور على ملف gradle-wrapper.properties في المسار المحدد ===="
-          exit 1
+        fi
+
+        # 2. الحل السحري لخطأ الفانيلا: رفع الـ SDK إلى إصدار 35 ليدعم أندرويد 15 بالكامل
+        VARIABLES_FILE="android/variables.gradle"
+        if [ -f "$VARIABLES_FILE" ]; then
+          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 35/g' $VARIABLES_FILE
+          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 35/g' $VARIABLES_FILE
+          echo "==== تم تحديث الـ SDK إلى إصدار 35 بنجاح ===="
+          cat $VARIABLES_FILE
         fi
 
     - name: Configure Fullscreen & Disable Default Splash Screen
