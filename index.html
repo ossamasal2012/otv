@@ -303,9 +303,111 @@
         @media (min-width: 1536px) {
             .aside-container { width: 450px !important; }
         }
+        /* ===== شاشة التحميل الفخمة ===== */
+        #loadingSplashScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 10000; /* أعلى من شاشة تسجيل الدخول */
+            background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+            transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .splash-logo-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: pulseGlow 2s infinite ease-in-out;
+        }
+
+        /* حلقة مضيئة دائرية حول الشعار */
+        .splash-circle {
+            position: absolute;
+            width: 130px;
+            height: 130px;
+            border: 2px dashed rgba(16, 185, 129, 0.4);
+            border-top-color: #10b981;
+            border-bottom-color: #10b981;
+            border-radius: 50%;
+            animation: spinCircle 4s linear infinite;
+        }
+
+        .splash-logo {
+            width: 90px;
+            height: 90px;
+            object-fit: contain;
+            filter: drop-shadow(0 0 15px rgba(16, 185, 129, 0.6));
+            z-index: 10;
+        }
+
+        .splash-title {
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+            text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+            margin: 0;
+        }
+
+        .splash-loader-bar {
+            width: 140px;
+            height: 4px;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .splash-progress {
+            position: absolute;
+            height: 100%;
+            width: 50%;
+            background: linear-gradient(90deg, #10b981, #34d399);
+            border-radius: 10px;
+            animation: lineProgress 1.5s infinite ease-in-out;
+        }
+
+        @keyframes spinCircle {
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% { transform: scale(1); filter: drop-shadow(0 0 15px rgba(16, 185, 129, 0.4)); }
+            50% { transform: scale(1.04); filter: drop-shadow(0 0 25px rgba(16, 185, 129, 0.7)); }
+        }
+
+        @keyframes lineProgress {
+            0% { left: -50%; }
+            50% { left: 100%; }
+            100% { left: 100%; }
+        }
+
+        /* فئة لإخفاء الشاشة بسلاسة */
+        .splash-fade-out {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: scale(1.05);
+        }
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
+    <!-- ===== شاشة التحميل الفخمة للموقع ===== -->
+    <div id="loadingSplashScreen">
+        <div class="splash-logo-container">
+            <div class="splash-circle"></div>
+            <!-- شعار التطبيق بناءً على رابط السيرفر الخاص بك -->
+            <img src="https://raw.githubusercontent.com/ossamasal2012/otv/main/icon.png" alt="Yalla Goal" class="splash-logo" onerror="this.src='https://i.imgur.com/8mdt9Eg.png'">
+        </div>
+        <h2 class="splash-title">يلا گـــول</h2>
+        <div class="splash-loader-bar">
+            <div class="splash-progress"></div>
+        </div>
+    </div>
 
     <!-- ===== شاشة تسجيل الدخول ===== -->
     <div id="loginScreen">
@@ -632,6 +734,17 @@
 
         // ===== تشغيل التحقق عند البداية =====
         checkAuth();
+        // إخفاء شاشة التحميل الفخمة بعد ثانيتين تلقائياً وبسلاسة
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const splash = document.getElementById('loadingSplashScreen');
+                if (splash) {
+                    splash.classList.add('splash-fade-out');
+                    // إزالتها تماماً من واجهة الدوم بعد انتهاء الأنيميشن
+                    setTimeout(() => splash.remove(), 600);
+                }
+            }, 2000); 
+        });
     </script>
 </body>
 </html>
