@@ -115,7 +115,8 @@ jobs:
       run: |
         cd android
         chmod +x ./gradlew
-        ./gradlew assembleDebug
+        # بناء نظيف تماماً وإيقاف الـ Daemon لتجنب مشاكل تعارض ملفات الـ Jar
+        ./gradlew assembleDebug --no-daemon --no-build-cache --refresh-dependencies
 
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
