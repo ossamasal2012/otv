@@ -62,95 +62,183 @@ jobs:
           echo "==== تم توحيد إصدار كوتلن بنجاح لمنع التكرار ===="
         fi
 
-    - name: Configure Fullscreen & Disable Default Splash Screen
+    - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        # تعديل ملف الإعدادات لتعطيل الـ Splash الافتراضية البيضاء
-        cat <<EOF > capacitor.config.json
-        {
-          "appId": "com.yallagoal.app",
-          "appName": "يلا گول",
-          "webDir": "www",
-          "server": {
-            "androidScheme": "https",
-            "allowNavigation": ["*"]
-          },
-          "plugins": {
-            "SplashScreen": {
-              "launchShowDuration": 0,
-              "launchAutoHide": true
-            }
-          }
-        }
-        EOF
-
-        # تعديل كود الـ Java الرئيسي في الأندرويد لإخفاء أشرطة النظام والإشعارات فوراً (ملء الشاشة الحقيقي لجميع الإصدارات)
+        # تحديد مسار ملف الجافا الرئيسي للتطبيق مباشرة وبدقة
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
-        cat <<'EOF' > $MAIN_ACTIVITY
+        
+        # كتابة كود الجافا المطور مع حاقن الـ CORS والـ Immersive Fullscreen
+        cat <<'JAVA' > $MAIN_ACTIVITY
         package com.yallagoal.app;
 
+        import android.graphics.Color;
         import android.os.Build;
         import android.os.Bundle;
         import android.view.View;
+        import android.view.Window;
         import android.view.WindowInsets;
         import android.view.WindowInsetsController;
         import android.view.WindowManager;
+        import android.webkit.WebSettings;
+        import android.webkit.WebView;
+        import android.webkit.WebResourceRequest;
+        import android.webkit.WebResourceResponse;
         import com.getcapacitor.BridgeActivity;
+        import com.getcapacitor.BridgeWebViewClient;
+        import java.io.InputStream;
+        import java.io.ByteArrayInputStream;
+        import java.net.HttpURLConnection;
+        import java.net.URL;
+        import java.util.HashMap;
+        import java.util.Map;
 
         public class MainActivity extends BridgeActivity {
-            @Override
+            @Override 
             protected void onCreate(Bundle savedInstanceState) {
+                requestWindowFeature(Window.FEATURE_NO_TITLE);
+                getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
                 super.onCreate(savedInstanceState);
-                
-                // 1. إخفاء شريط الحالة العلوي بالطريقة العامة
-                getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                                    WindowManager.LayoutParams.FLAG_FULLSCREEN);
-                
-                // 2. التحكم الشامل بملء الشاشة حسب إصدار الأندرويد
+                applyFullscreen();
+                setupWebView();
+            }
+
+            @Override 
+            public void onWindowFocusChanged(boolean hasFocus) { 
+                super.onWindowFocusChanged(hasFocus); 
+                if (hasFocus) applyFullscreen(); 
+            }
+
+            @Override 
+            protected void onResume() { 
+                super.onResume(); 
+                applyFullscreen(); 
+            }
+
+            private void applyFullscreen() {
+                Window w = getWindow();
+                w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // الأنظمة الحديثة (أندرويد 11، 12، 13، 14، 15+)
-                    final WindowInsetsController controller = getWindow().getInsetsController();
-                    if (controller != null) {
-                        // إخفاء شريط الإشعارات وشريط التنقل/الإيماءات السفلي تماماً
-                        controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                        // جعل الإخفاء ثابتاً بحيث لا يظهر إلا بسحب المستخدم للشاشة من الحافة (Sticky)
-                        controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    w.setDecorFitsSystemWindows(false);
+                    WindowInsetsController c = w.getInsetsController();
+                    if (c != null) { 
+                        c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars()); 
+                        c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); 
                     }
+                    w.setStatusBarColor(Color.TRANSPARENT); 
+                    w.setNavigationBarColor(Color.TRANSPARENT);
                 } else {
-                    // الأنظمة القديمة (أندرويد 10 وما قبله)
-                    View decorView = getWindow().getDecorView();
-                    int uiOptions = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                                  | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                                  | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                                  | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                                  | View.SYSTEM_UI_FLAG_FULLSCREEN
-                                  | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-                    decorView.setSystemUiVisibility(uiOptions);
+                    w.getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                    );
+                }
+                if (Build.VERSION.SDK_INT >= 28) { 
+                    WindowManager.LayoutParams lp = w.getAttributes();
+                    lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES; 
+                    w.setAttributes(lp); 
                 }
             }
-            
-            // إعادة تطبيق الاختفاء التلقائي حتى لو خرج المستخدم من التطبيق وعاد إليه
-            @Override
-            public void onWindowFocusChanged(boolean hasFocus) {
-                super.onWindowFocusChanged(hasFocus);
-                if (hasFocus) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                        final WindowInsetsController controller = getWindow().getInsetsController();
-                        if (controller != null) {
-                            controller.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                        }
-                    } else {
-                        getWindow().getDecorView().setSystemUiVisibility(
-                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                            View.SYSTEM_UI_FLAG_FULLSCREEN |
-                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                        );
+
+            private void setupWebView() {
+                try {
+                    WebView wv = getBridge().getWebView();
+                    WebSettings s = wv.getSettings();
+                    s.setJavaScriptEnabled(true); 
+                    s.setDomStorageEnabled(true);
+                    s.setAllowFileAccess(true); 
+                    s.setAllowContentAccess(true);
+                    s.setAllowFileAccessFromFileURLs(true); 
+                    s.setAllowUniversalAccessFromFileURLs(true);
+                    s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                    s.setMediaPlaybackRequiresUserGesture(false);
+                    s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+                    s.setUserAgentString("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36");
+                    wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                    
+                    if (Build.VERSION.SDK_INT >= 21) { 
+                        android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance(); 
+                        cm.setAcceptCookie(true); 
+                        cm.setAcceptThirdPartyCookies(wv, true); 
                     }
+                    // تطبيق كاشف تخطي الـ CORS الاحترافي
+                    getBridge().setWebViewClient(new CORSClient(getBridge()));
+                    System.out.println("==== تم تفعيل حاقن تخطي CORS بنجاح ====");
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
+                }
+            }
+
+            class CORSClient extends BridgeWebViewClient {
+                CORSClient(com.getcapacitor.Bridge b) { super(b); }
+                
+                @Override 
+                public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
+                    String url = r.getUrl().toString();
+                    if ("OPTIONS".equalsIgnoreCase(r.getMethod())) return cors(null, "text/plain", 204);
+                    if (!url.startsWith("http")) return super.shouldInterceptRequest(v, r);
+                    if (url.contains("localhost") || url.contains("capacitor://")) return super.shouldInterceptRequest(v, r);
+                    
+                    try {
+                        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                        c.setRequestMethod(r.getMethod()); 
+                        c.setConnectTimeout(20000); 
+                        c.setReadTimeout(20000); 
+                        c.setInstanceFollowRedirects(true);
+                        
+                        for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) { 
+                            if (!h.getKey().equalsIgnoreCase("Origin")) c.setRequestProperty(h.getKey(), h.getValue()); 
+                        }
+                        c.setRequestProperty("User-Agent", "Mozilla/5.0"); 
+                        c.setRequestProperty("Accept", "*/*");
+                        c.connect();
+                        
+                        int st = c.getResponseCode(); 
+                        if (st < 0) st = 200;
+                        
+                        InputStream is; 
+                        try { 
+                            is = c.getInputStream(); 
+                        } catch (Exception e) { 
+                            is = c.getErrorStream(); 
+                            if (is == null) is = new ByteArrayInputStream(new byte[0]); 
+                        }
+                        
+                        String mt = c.getContentType(); 
+                        if (mt == null) mt = mime(url); 
+                        if (mt.contains(";")) mt = mt.split(";")[0].trim();
+                        
+                        return cors(is, mt, st);
+                    } catch (Exception e) { 
+                        return super.shouldInterceptRequest(v, r); 
+                    }
+                }
+
+                private WebResourceResponse cors(InputStream is, String m, int st) {
+                    Map<String, String> h = new HashMap<>();
+                    h.put("Access-Control-Allow-Origin", "*"); 
+                    h.put("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS"); 
+                    h.put("Access-Control-Allow-Headers", "*");
+                    if (is == null) is = new ByteArrayInputStream(new byte[0]);
+                    return new WebResourceResponse(m, "utf-8", st, st < 400 ? "OK" : "Err", h, is);
+                }
+
+                private String mime(String u) {
+                    u = u.toLowerCase();
+                    if (u.contains(".m3u8")) return "application/vnd.apple.mpegurl";
+                    if (u.contains(".m3u")) return "audio/x-mpegurl";
+                    if (u.contains(".ts")) return "video/mp2t";
+                    if (u.contains(".mp4")) return "video/mp4";
+                    return "application/octet-stream";
                 }
             }
         }
-        EOF
+        JAVA
 
-        # السماح بطلب بيانات الـ HTTP والـ Internet في ملف الـ AndroidManifest
+        # التأكد من صلاحيات الإنترنت وحركة المرور الواضحة لجميع القنوات داخل الـ AndroidManifest
         sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
         sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
