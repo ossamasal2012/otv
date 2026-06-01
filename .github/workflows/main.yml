@@ -18,11 +18,11 @@ jobs:
       with:
         node-version: 18
 
-    - name: Set up JDK 17
+    - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '21'
 
     - name: Install Android SDK
       uses: android-actions/setup-android@v3
@@ -107,20 +107,20 @@ jobs:
         # توليد الأيقونات وتحديث مجلد الأندرويد بها
         npx capacitor-assets generate --android
 
-    - name: Modify Gradle Version in Properties File
+    - name: Sync Capacitor Project
       run: |
-        # استبدال رقم الإصدار داخل ملف الخصائص مباشرة قبل تشغيل أي أمر للـ Gradle
-        PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
-        sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
-        
-        # عرض محتوى الملف للتأكد من التعديل بنجاح في السجلات
-        cat $PROPERTIES_FILE
+        npx cap sync android
+
+    - name: Setup & Upgrade Gradle Wrapper
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.7 # التحديث للإصدار المستقر لحل مشكلة الـ Jar نهائياً
 
     - name: Build Android APK (Release)
       run: |
         cd android
         chmod +x ./gradlew
-        # البناء الآن سيقوم بتحميل إصدار 8.7 المستقر مباشرة ويتخطى المشكلة
+        # البناء الآن باستخدام المحرك المحدث والمعزول تماماً
         ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Upload Finished APK Artifact
