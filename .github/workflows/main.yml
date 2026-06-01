@@ -115,12 +115,12 @@ jobs:
       run: |
         cd android
         chmod +x ./gradlew
-        # إنشاء مجلد كاش محلي مؤقت خاص بهذه العملية لتجنب تعارض الملفات نهائياً
-        mkdir -p ../.gradle_home
-        export GRADLE_USER_HOME="$(pwd)/../.gradle_home"
         
-        # البناء بأعلى درجات العزل والتنظيف
-        ./gradlew assembleDebug --no-daemon --no-build-cache --refresh-dependencies
+        # الحل السحري: تحديث Gradle Wrapper إلى إصدار 8.7 لإصلاح خطأ الـ Jar الفاشل نهائياً
+        ./gradlew wrapper --gradle-version 8.7 --distribution-type all
+        
+        # بناء التطبيق الآن بنقاء وبدون الـ Cache المسبب للمشاكل
+        ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Upload Finished APK Artifact
       uses: actions/upload-artifact@v4
