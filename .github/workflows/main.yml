@@ -32,10 +32,21 @@ jobs:
         mkdir -p www
         cp index.html www/
         npm init -y
-        # تثبيت الـ Dependencies الأساسية والـ Plugins لتخطي الـ CORS وملء الشاشة
+        # تثبيت الـ Dependencies الأساسية والـ Plugins لتخطي الـ CORS
         npm install @capacitor/core @capacitor/cli @capacitor/android
         npx cap init "يلا گول" "com.yallagoal.app" --web-dir=www
         npx cap add android
+
+        # التعديل الفوري لنسخة Gradle داخل المجلد فور إنشائه مباشرة
+        PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
+        if [ -f "$PROPERTIES_FILE" ]; then
+          sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
+          echo "==== تم تحديث ملف الخصائص بنجاح إلى إصدار 8.7 ===="
+          cat $PROPERTIES_FILE
+        else
+          echo "==== خطأ: لم يتم العثور على ملف gradle-wrapper.properties في المسار المحدد ===="
+          exit 1
+        fi
 
     - name: Configure Fullscreen & Disable Default Splash Screen
       run: |
@@ -71,7 +82,7 @@ jobs:
         public class MainActivity extends BridgeActivity {
             @Override
             protected void onCreate(Bundle savedInstanceState) {
-                super.onCreate(savedInstanceState) ;
+                super.onCreate(savedInstanceState);
                 
                 // إخفاء شريط الإشعارات (Status Bar)
                 getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -88,39 +99,26 @@ jobs:
         EOF
 
         # السماح بطلب بيانات الـ HTTP والـ Internet في ملف الـ AndroidManifest
-        MANIFEST="android/app/src/main/main/AndroidManifest.xml"
-        # إضافة صلاحيات الإنترنت الكاملة وتعديل الـ Application للسماح بالمرور الآمن
         sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
-        sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
         sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
 
     - name: Download & Apply App Custom Icon
       run: |
-        # تحميل أيقونة تطبيق "يلا گول" الفخمة التي أرسلتها
         curl -L -o app_icon.png "https://raw.githubusercontent.com/ossamasal2012/otv/main/icon.png"
-        
-        # تثبيت أداة توليد الأيقونات لجميع مقاسات الأندرويد تلقائياً
         npm install -g @capacitor/assets
         mkdir -p assets
         cp app_icon.png assets/icon.png
-        
-        # توليد الأيقونات وتحديث مجلد الأندرويد بها
         npx capacitor-assets generate --android
 
     - name: Sync Capacitor Project
       run: |
         npx cap sync android
 
-    - name: Setup & Upgrade Gradle Wrapper
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: 8.7 # التحديث للإصدار المستقر لحل مشكلة الـ Jar نهائياً
-
     - name: Build Android APK (Release)
       run: |
         cd android
         chmod +x ./gradlew
-        # البناء الآن باستخدام المحرك المحدث والمعزول تماماً
+        # البناء الآن سيقوم بتحميل إصدار 8.7 المستقر مباشرة ويتخطى المشكلة
         ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Upload Finished APK Artifact
