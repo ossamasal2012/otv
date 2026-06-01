@@ -22,7 +22,7 @@ jobs:
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '11'
+        java-version: '17'
 
     - name: Install Android SDK
       uses: android-actions/setup-android@v3
@@ -115,7 +115,11 @@ jobs:
       run: |
         cd android
         chmod +x ./gradlew
-        # بناء نظيف تماماً وإيقاف الـ Daemon لتجنب مشاكل تعارض ملفات الـ Jar
+        # إنشاء مجلد كاش محلي مؤقت خاص بهذه العملية لتجنب تعارض الملفات نهائياً
+        mkdir -p ../.gradle_home
+        export GRADLE_USER_HOME="$(pwd)/../.gradle_home"
+        
+        # البناء بأعلى درجات العزل والتنظيف
         ./gradlew assembleDebug --no-daemon --no-build-cache --refresh-dependencies
 
     - name: Upload Finished APK Artifact
