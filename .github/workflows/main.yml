@@ -111,15 +111,16 @@ jobs:
       run: |
         npx cap sync android
 
+    - name: Setup & Upgrade Gradle Wrapper
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: 8.7 # التحديث للإصدار المستقر لحل مشكلة الـ Jar نهائياً
+
     - name: Build Android APK (Release)
       run: |
         cd android
         chmod +x ./gradlew
-        
-        # الحل السحري: تحديث Gradle Wrapper إلى إصدار 8.7 لإصلاح خطأ الـ Jar الفاشل نهائياً
-        ./gradlew wrapper --gradle-version 8.7 --distribution-type all
-        
-        # بناء التطبيق الآن بنقاء وبدون الـ Cache المسبب للمشاكل
+        # البناء الآن باستخدام المحرك المحدث والمعزول تماماً
         ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Upload Finished APK Artifact
