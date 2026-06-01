@@ -77,10 +77,8 @@ jobs:
 
       - name: Copy web assets
         run: |
-          [ -f index.html ] && cp index.html cap-project/www/index.html || true
-          for f in *.css *.js *.png *.jpg *.svg; do
-            [ -f "$f" ] && cp "$f" cap-project/www/ 2>/dev/null || true
-          done
+          # نسخ كافة ملفات ومجلدات موقعك مع استثناء مجلد cap-project لتجنب التداخل والتكرار
+          rsync -av --exclude='cap-project' --exclude='.git' --exclude='.github' ./ cap-project/www/ || true
 
       - name: Embed app icon
         run: |
