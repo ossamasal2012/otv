@@ -33,7 +33,7 @@ jobs:
         cp index.html www/
         npm init -y
         # تثبيت الـ Dependencies الأساسية والـ Plugins لتخطي الـ CORS وملء الشاشة
-        npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/status-bar @capacitor/navigation-bar
+        npm install @capacitor/core @capacitor/cli @capacitor/android
         npx cap init "يلا گول" "com.yallagoal.app" --web-dir=www
         npx cap add android
 
