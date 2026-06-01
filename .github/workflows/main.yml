@@ -50,7 +50,28 @@ jobs:
           sed -i 's/compileSdkVersion = .*/compileSdkVersion = 35/g' $VARIABLES_FILE
           sed -i 's/targetSdkVersion = .*/targetSdkVersion = 35/g' $VARIABLES_FILE
           echo "==== تم تحديث الـ SDK إلى إصدار 35 بنجاح ===="
-          cat $VARIABLES_FILE
+        fi
+
+        # 3. توحيد وإجبار إصدار كوتلن لمنع خطأ الملفات المكررة (Duplicate Classes)
+        BUILD_FILE="android/build.gradle"
+        if [ -f "$BUILD_FILE" ]; then
+          # إجبار إعدادات الكاش والمكتبات على استبعاد النسخ القديمة وتوحيدها
+          sed -i 's/ext {/ext {\n        kotlinVersion = "1.9.22"/g' $BUILD_FILE
+          
+          # إضافة سطر التوحيد الإجباري في نهاية الملف
+          cat <<EOF >> $BUILD_FILE
+          
+          subprojects {
+              project.configurations.all {
+                  resolutionStrategy.eachDependency { details ->
+                      if (details.requested.group == 'org.jetbrains.kotlin') {
+                          details.useVersion '1.9.22'
+                      }
+                  }
+              }
+          }
+          EOF
+          echo "==== تم توحيد إصدار كوتلن بنجاح لمنع التكرار ===="
         fi
 
     - name: Configure Fullscreen & Disable Default Splash Screen
