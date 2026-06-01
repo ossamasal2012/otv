@@ -57,7 +57,9 @@ jobs:
             "appName": "يلا گول",
             "webDir": "www",
             "android": {
-              "allowMixedContent": true
+              "allowMixedContent": true,
+              "hardwareAccelerated": true
+            },
             },
             "plugins": {
               "SplashScreen": {
@@ -68,7 +70,7 @@ jobs:
             "server": {
               "androidScheme": "https",
               "cleartext": true,
-              "allowNavigation": ["*"]
+              "allowNavigation": ["*", "http://*", "https://*"]
             }
           }
           CAP
@@ -4035,7 +4037,11 @@ jobs:
 
       - name: Fix Java compatibility
         run: |
-          find cap-project/android -name "build.gradle" -exec sed -i "s|JavaVersion.VERSION_[0-9_]*|JavaVersion.VERSION_21|g" {} +
+          find cap-project/android -name "build.gradle" -exec sed -i "s|JavaVersion.VERSION_[0-9_]*|JavaVersion.VERSION_21|g\" {} +
+          
+          # إجبار تطبيق الأندرويد على تفعيل تسريع الأجهزة لعرض الفيديو
+          find cap-project/android -name "AndroidManifest.xml" -exec sed -i 's|<application|<application android:hardwareAccelerated="true"|g' {} +
+          
           echo "org.gradle.jvmargs=-Xmx4g" >> cap-project/android/gradle.properties
 
       - name: Build APK
