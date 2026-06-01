@@ -107,20 +107,20 @@ jobs:
         # توليد الأيقونات وتحديث مجلد الأندرويد بها
         npx capacitor-assets generate --android
 
-    - name: Sync Capacitor Project
+    - name: Modify Gradle Version in Properties File
       run: |
-        npx cap sync android
-
-    - name: Setup & Upgrade Gradle Wrapper
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: 8.7 # التحديث للإصدار المستقر لحل مشكلة الـ Jar نهائياً
+        # استبدال رقم الإصدار داخل ملف الخصائص مباشرة قبل تشغيل أي أمر للـ Gradle
+        PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
+        sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
+        
+        # عرض محتوى الملف للتأكد من التعديل بنجاح في السجلات
+        cat $PROPERTIES_FILE
 
     - name: Build Android APK (Release)
       run: |
         cd android
         chmod +x ./gradlew
-        # البناء الآن باستخدام المحرك المحدث والمعزول تماماً
+        # البناء الآن سيقوم بتحميل إصدار 8.7 المستقر مباشرة ويتخطى المشكلة
         ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Upload Finished APK Artifact
