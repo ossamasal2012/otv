@@ -566,30 +566,54 @@
         }
 
         function renderChannels() {
-            const box = document.getElementById('channelsBox');
-            const filtered = myChannels.filter(c => {
-                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
-                return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
-            });
+    const box = document.getElementById('channelsBox');
+    const filtered = myChannels.filter(c => {
+        const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
+        
+        // مقارنة ذكية تتجاهل الهمزات، الفروق بين الهاء والتاء، وتدعم البحث بحرف أو حرفين بشكل جزئي دقيق
+        const normalizedChannelName = normalizeArabic(c[0]);
+        const normalizedQuery = normalizeArabic(searchQuery);
+        
+        return matchCat && normalizedChannelName.includes(normalizedQuery);
+    });
 
-            box.innerHTML = filtered.map(ch => {
-                const isFav = favorites.includes(ch[0]);
-                return `
-                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                    class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
-                    <div class="flex items-center gap-2">
-                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                        <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-                    </div>
-                    <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                    </button>
-                </div>`;
-            }).join('');
-        }
+    box.innerHTML = filtered.map(ch => {
+        const isFav = favorites.includes(ch[0]);
+        return `
+        <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+            class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+            <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+            </div>
+            <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+            </button>
+        </div>`;
+    }).join('');
+}
 
         function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
-        function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
+        // دالة لتنظيف النص وتوحيد الأحرف المتشابهة لتجعل البحث ذكياً
+        function normalizeArabic(text) {
+    if (!text) return "";
+    return text.toString().toLowerCase().trim()
+        // توحيد الألف بكافة أشكالها (أ، إ، آ، ا) إلى (ا)
+        .replace(/[أإآا]/g, 'ا')
+        // توحيد التاء المربوطة والهاء إلى (ه) لمنع أخطاء اختفاء قنوات مثل "النهار" أو "بي ان"
+        .replace(/[ةه]/g, 'ه')
+        // توحيد الياء والألف المقصورة إلى (ي)
+        .replace(/[ىي]/g, 'ي')
+        // إزالة الحركات، التنوين، الشدة، والفتحة
+        .replace(/[\u064B-\u0652]/g, '')
+        // إزالة الفواصل والرموز الخاصة التي قد تعيق البحث الجزئي
+        .replace(/[-_.\s]/g, '');
+}
+
+        function searchChannels() { 
+         searchQuery = document.getElementById('searchInput').value; 
+         renderChannels(); 
+         }
 
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
