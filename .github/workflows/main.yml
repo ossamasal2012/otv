@@ -143,9 +143,13 @@ jobs:
                 }
             }
 
-            private void setupWebView() {
+           private void setupWebView() {
                 try {
                     WebView wv = getBridge().getWebView();
+                    
+                    // تنظيف الكاش القديم تماماً عند التشغيل
+                    wv.clearCache(true);
+                    
                     WebSettings s = wv.getSettings();
                     s.setJavaScriptEnabled(true); 
                     s.setDomStorageEnabled(true);
@@ -155,7 +159,10 @@ jobs:
                     s.setAllowUniversalAccessFromFileURLs(true);
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                     s.setMediaPlaybackRequiresUserGesture(false);
+                    
+                    // إجبار الـ WebView على التحميل بدون كاش
                     s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+                    
                     s.setUserAgentString("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36");
                     wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
                     
@@ -163,10 +170,12 @@ jobs:
                         android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance(); 
                         cm.setAcceptCookie(true); 
                         cm.setAcceptThirdPartyCookies(wv, true); 
+                        // اختياري: لمسح الكوكيز القديمة إذا كنت تواجه مشكلة معها
+                        // cm.removeAllCookies(null);
                     }
-                    // تطبيق كاشف تخطي الـ CORS الاحترافي
+                    
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تفعيل حاقن تخطي CORS بنجاح ====");
+                    System.out.println("==== تم تفعيل حاقن تخطي CORS وتنظيف الكاش بنجاح ====");
                 } catch (Exception e) { 
                     e.printStackTrace(); 
                 }
