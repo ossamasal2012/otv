@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -86,10 +87,6 @@
             margin-bottom: 0.5rem;
         }
 
-        .login-input-wrap {
-            position: relative;
-        }
-
         .login-input-group {
             display: flex;
             align-items: center;
@@ -150,7 +147,6 @@
 
         .eye-toggle:hover { color: #10b981; }
 
-        /* ملاحظة الرابط */
         .notice-box {
             background: rgba(239, 68, 68, 0.08);
             border: 1px solid rgba(239, 68, 68, 0.35);
@@ -176,15 +172,6 @@
         }
 
         .notice-box a:hover { color: #10b981; }
-
-        .login-input:focus {
-            border-color: #10b981;
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
-        }
-
-        .login-input.error {
-            /* error now handled on the group */
-        }
 
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
@@ -224,7 +211,6 @@
 
         .login-btn:active { transform: translateY(0); }
 
-        /* ===== نفس الستايل الأصلي ===== */
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -303,11 +289,12 @@
         @media (min-width: 1536px) {
             .aside-container { width: 450px !important; }
         }
+
         /* ===== شاشة التحميل الفخمة ===== */
         #loadingSplashScreen {
             position: fixed;
             inset: 0;
-            z-index: 10000; /* أعلى من شاشة تسجيل الدخول */
+            z-index: 10000;
             background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
             display: flex;
             flex-direction: column;
@@ -325,7 +312,6 @@
             animation: pulseGlow 2s infinite ease-in-out;
         }
 
-        /* حلقة مضيئة دائرية حول الشعار */
         .splash-circle {
             position: absolute;
             width: 130px;
@@ -387,7 +373,6 @@
             100% { left: 100%; }
         }
 
-        /* فئة لإخفاء الشاشة بسلاسة */
         .splash-fade-out {
             opacity: 0 !important;
             pointer-events: none !important;
@@ -396,11 +381,9 @@
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
-    <!-- ===== شاشة التحميل الفخمة للموقع ===== -->
     <div id="loadingSplashScreen">
         <div class="splash-logo-container">
             <div class="splash-circle"></div>
-            <!-- شعار التطبيق بناءً على رابط السيرفر الخاص بك -->
             <img src="https://raw.githubusercontent.com/ossamasal2012/otv/main/icon.png" alt="Yalla Goal" class="splash-logo" onerror="this.src='https://i.imgur.com/8mdt9Eg.png'">
         </div>
         <h2 class="splash-title">يلا گـــول</h2>
@@ -409,7 +392,6 @@
         </div>
     </div>
 
-    <!-- ===== شاشة تسجيل الدخول ===== -->
     <div id="loginScreen">
         <div class="login-card">
             <div class="login-title">
@@ -417,7 +399,6 @@
                 <p>أدخل الرمز السري للدخول</p>
             </div>
 
-            <!-- ملاحظة الرابط -->
             <div class="notice-box">
                 <strong>⚠️ ملاحظة مهمة</strong><br>
                 للدخول إلى التطبيق ومشاهدة أكثر من <strong>250 قناة</strong> عربية وأجنبية،<br>
@@ -449,17 +430,16 @@
         <p style="color:#10b981;font-size:0.75rem;font-weight:900;letter-spacing:2px;filter:drop-shadow(0 0 8px rgba(16,185,129,0.6));">تطوير أُسامه · v2.7</p>
     </div>
 
-    <!-- ===== التطبيق الرئيسي ===== -->
     <aside class="aside-container w-full lg:w-80 xl:w-96 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
         <div class="p-4 border-b border-slate-900 hidden lg:block text-center">
-    <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
-    <p class="text-[10px] text-emerald-400 font-black uppercase tracking-widest mt-1" style="filter:drop-shadow(0 0 5px rgba(16,185,129,0.4));">تطوير أُسامه - v2.7</p>
-</div>
+            <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
+            <p class="text-[10px] text-emerald-400 font-black uppercase tracking-widest mt-1" style="filter:drop-shadow(0 0 5px rgba(16,185,129,0.4));">تطوير أُسامه - v2.7</p>
+        </div>
 
         <div class="p-3 shrink-0">
             <div class="relative">
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px]"></i>
-                <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث سريع..."
+                <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث سريع في القنوات والراديو..."
                     class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-3 pr-10 text-xs focus:outline-none focus:border-emerald-500 transition-all text-white placeholder:text-slate-600">
             </div>
         </div>
@@ -505,11 +485,9 @@
         function checkAuth() {
             const isAuth = localStorage.getItem(STORAGE_KEY);
             if (isAuth === "true") {
-                // المستخدم مسجّل مسبقاً، أخفِ شاشة الدخول مباشرة
                 document.getElementById('loginScreen').classList.add('hidden');
                 loadChannels();
             }
-            // إذا لم يكن مسجّلاً، تبقى شاشة الدخول ظاهرة
         }
 
         function doLogin() {
@@ -531,8 +509,9 @@
             }
         }
 
-        // ===== منطق التطبيق الأصلي =====
+        // ===== متغيرات التطبيق =====
         let myChannels = [];
+        let quranRadioChannels = []; 
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
@@ -544,19 +523,42 @@
         async function loadChannels() {
             try {
                 document.getElementById('placeholderScreen').classList.remove('hidden');
+                document.getElementById('errorScreen').classList.add('hidden');
+                
+                // 1. جلب قنوات التلفزيون الأساسية
                 const res = await fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json");
-                const data = await res.json();
-                myChannels = data;
+                if (!res.ok) throw new Error("فشل جلب القنوات الأساسية");
+                myChannels = await res.json();
+                
+                // 2. جلب إذاعات القرآن الكريم
+                try {
+                    const quranRes = await fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json");
+                    if (quranRes.ok) {
+                        quranRadioChannels = await quranRes.json();
+                    } else {
+                        console.warn("ملف القرآن الكريم غير موجود حالياً");
+                        quranRadioChannels = [];
+                    }
+                } catch (quranErr) {
+                    console.error("خطأ جانبي في ملف القرآن:", quranErr);
+                    quranRadioChannels = [];
+                }
+
                 renderMenu();
                 renderChannels();
                 document.getElementById('placeholderScreen').classList.add('hidden');
             } catch (err) {
-                console.error("خطأ في تحميل القنوات", err);
+                console.error("خطأ رئيسي في تحميل القنوات:", err);
+                document.getElementById('placeholderScreen').classList.add('hidden');
                 document.getElementById('errorScreen').classList.remove('hidden');
             }
         }
 
         function renderMenu() {
+            if (currentCat === "القرآن الكريم") {
+                document.getElementById('categoryMenu').innerHTML = "";
+                return;
+            }
             const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
             document.getElementById('categoryMenu').innerHTML = cats.map(c => `
                 <button onclick="filter('${c}')" class="px-3 py-1 rounded-md text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap hover:border-slate-700 ${currentCat === c ? 'active-btn' : ''}">
@@ -566,54 +568,130 @@
         }
 
         function renderChannels() {
-    const box = document.getElementById('channelsBox');
-    const filtered = myChannels.filter(c => {
-        const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
-        
-        // مقارنة ذكية تتجاهل الهمزات، الفروق بين الهاء والتاء، وتدعم البحث بحرف أو حرفين بشكل جزئي دقيق
-        const normalizedChannelName = normalizeArabic(c[0]);
-        const normalizedQuery = normalizeArabic(searchQuery);
-        
-        return matchCat && normalizedChannelName.includes(normalizedQuery);
-    });
+            const box = document.getElementById('channelsBox');
+            const cleanQuery = normalizeArabic(searchQuery);
+            
+            // أولاً: إذا كان المستخدم داخل مجلد القرآن الكريم المخصص
+            if (currentCat === "القرآن الكريم") {
+                let htmlContent = `
+                <div onclick="filter('الكل')" class="channel-item bg-emerald-950/40 border border-emerald-800/40 p-2.5 rounded-lg flex items-center gap-2 text-emerald-400 hover:bg-emerald-900/40 transition-all">
+                    <i class="fa-solid fa-arrow-right text-[12px]"></i>
+                    <span class="text-[12px] font-bold">رجوع للقنوات الرئيسية</span>
+                </div>`;
+                
+                const dataToRender = Array.isArray(quranRadioChannels) ? quranRadioChannels : [];
+                const filteredQuran = dataToRender.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
 
-    box.innerHTML = filtered.map(ch => {
-        const isFav = favorites.includes(ch[0]);
-        return `
-        <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-            class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
-            <div class="flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-            </div>
-            <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-            </button>
-        </div>`;
-    }).join('');
-}
+                htmlContent += filteredQuran.map(ch => {
+                    const isFav = favorites.includes(ch[0]);
+                    return `
+                    <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+                        class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+                        <div class="flex items-center gap-2">
+                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                            <i class="fa-solid fa-radio text-slate-500 text-[11px] group-hover:text-emerald-400"></i>
+                            <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+                        </div>
+                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                        </button>
+                    </div>`;
+                }).join('');
+                
+                box.innerHTML = htmlContent;
+                return;
+            }
+
+            // ثانياً: العمل في الواجهات العادية والبحث الشامل
+            let filtered = [];
+            let matchedQuran = [];
+
+            if (cleanQuery !== "") {
+                // شمولية البحث: جلب النتائج المتطابقة من التلفزيون ومن الراديو معاً
+                filtered = myChannels.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
+                matchedQuran = quranRadioChannels.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
+            } else {
+                if (currentCat === "المفضلة") {
+                    const favChannels = myChannels.filter(c => favorites.includes(c[0]));
+                    const favQuran = quranRadioChannels.filter(c => favorites.includes(c[0]));
+                    filtered = [...favChannels, ...favQuran];
+                } else {
+                    filtered = myChannels.filter(c => currentCat === "الكل" || c[2] === currentCat);
+                }
+            }
+
+            let htmlContent = "";
+
+            // إظهار زر مجلد القرآن عند التواجد بصفحة "الكل" وبدون عملية بحث نشطة
+            if (currentCat === "الكل" && cleanQuery === "") {
+                htmlContent += `
+                <div onclick="filter('القرآن الكريم')" class="channel-item bg-slate-900/80 border border-emerald-600/30 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900 transition-all">
+                    <div class="flex items-center gap-2.5">
+                        <div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div>
+                        <i class="fa-solid fa-folder text-amber-500 text-[14px]"></i>
+                        <span class="text-[13px] font-black text-emerald-400 group-hover:text-emerald-300 transition-colors">القرآن الكريم (راديو)</span>
+                    </div>
+                    <i class="fa-solid fa-chevron-left text-[10px] text-slate-600 group-hover:text-emerald-400 pl-1"></i>
+                </div>`;
+            }
+
+            // رسم قنوات التلفزيون أو المفضلة المختلطة
+            htmlContent += filtered.map(ch => {
+                const isFav = favorites.includes(ch[0]);
+                const isRadio = quranRadioChannels.some(q => q[0] === ch[0]);
+                
+                return `
+                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+                    class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+                    <div class="flex items-center gap-2">
+                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                        ${isRadio ? '<i class="fa-solid fa-radio text-amber-500 text-[11px]"></i>' : '<i class="fa-solid fa-tv text-slate-500 text-[11px] group-hover:text-emerald-400"></i>'}
+                        <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+                    </div>
+                    <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                    </button>
+                </div>`;
+            }).join('');
+
+            // إذا كان هناك بحث نشط، قم بلصق نتائج الراديو المتطابقة مباشرة أسفل القنوات
+            if (cleanQuery !== "" && matchedQuran.length > 0) {
+                htmlContent += matchedQuran.map(ch => {
+                    const isFav = favorites.includes(ch[0]);
+                    return `
+                    <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+                        class="channel-item bg-slate-900/30 border border-emerald-950/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+                        <div class="flex items-center gap-2">
+                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                            <i class="fa-solid fa-radio text-emerald-500 text-[11px] animate-pulse"></i>
+                            <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]} <span class="text-[9px] text-emerald-500 font-normal mr-1">(راديو)</span></span>
+                        </div>
+                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                        </button>
+                    </div>`;
+                }).join('');
+            }
+
+            box.innerHTML = htmlContent;
+        }
 
         function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
-        // دالة لتنظيف النص وتوحيد الأحرف المتشابهة لتجعل البحث ذكياً
+
         function normalizeArabic(text) {
-    if (!text) return "";
-    return text.toString().toLowerCase().trim()
-        // توحيد الألف بكافة أشكالها (أ، إ، آ، ا) إلى (ا)
-        .replace(/[أإآا]/g, 'ا')
-        // توحيد التاء المربوطة والهاء إلى (ه) لمنع أخطاء اختفاء قنوات مثل "النهار" أو "بي ان"
-        .replace(/[ةه]/g, 'ه')
-        // توحيد الياء والألف المقصورة إلى (ي)
-        .replace(/[ىي]/g, 'ي')
-        // إزالة الحركات، التنوين، الشدة، والفتحة
-        .replace(/[\u064B-\u0652]/g, '')
-        // إزالة الفواصل والرموز الخاصة التي قد تعيق البحث الجزئي
-        .replace(/[-_.\s]/g, '');
-}
+            if (!text) return "";
+            return text.toString().toLowerCase().trim()
+                .replace(/[أإآا]/g, 'ا')
+                .replace(/[ةه]/g, 'ه')
+                .replace(/[ىي]/g, 'ي')
+                .replace(/[\u064B-\u0652]/g, '')
+                .replace(/[-_.\s]/g, '');
+        }
 
         function searchChannels() { 
-         searchQuery = document.getElementById('searchInput').value; 
-         renderChannels(); 
-         }
+            searchQuery = document.getElementById('searchInput').value; 
+            renderChannels(); 
+        }
 
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
@@ -721,7 +799,7 @@
                     }
                 };
 
-                if (Hls.isSupported() && url.includes('.m3u8')) {
+                if (Hls.isSupported() && (url.includes('.m3u8') || type === 'v')) {
                     hls = new Hls();
                     hls.loadSource(url);
                     hls.attachMedia(video);
@@ -756,15 +834,14 @@
             }
         }
 
-        // ===== تشغيل التحقق عند البداية =====
+        // ===== التحقق عند البداية وإخفاء شاشة التحميل =====
         checkAuth();
-        // إخفاء شاشة التحميل الفخمة بعد ثانيتين تلقائياً وبسلاسة
+
         window.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 const splash = document.getElementById('loadingSplashScreen');
                 if (splash) {
                     splash.classList.add('splash-fade-out');
-                    // إزالتها تماماً من واجهة الدوم بعد انتهاء الأنيميشن
                     setTimeout(() => splash.remove(), 600);
                 }
             }, 2000); 
