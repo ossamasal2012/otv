@@ -32,42 +32,37 @@ jobs:
         mkdir -p www
         cp index.html www/
         npm init -y
-        # تثبيت الـ Dependencies الأساسية والـ Plugins لتخطي الـ CORS
         npm install @capacitor/core @capacitor/cli @capacitor/android
         npx cap init "يلا گول" "com.yallagoal.app" --web-dir=www
         npx cap add android
 
-        # 1. التعديل الفوري لنسخة Gradle داخل المجلد فور إنشائه مباشرة إلى 8.7
+        # 1. تحديث Gradle إلى 8.7
         PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
         if [ -f "$PROPERTIES_FILE" ]; then
           sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
-          echo "==== تم تحديث ملف الخصائص بنجاح إلى إصدار 8.7 ===="
+          echo "==== تم تحديث Gradle إلى 8.7 ===="
         fi
 
-        # 2. الحل السحري لخطأ الفانيلا: رفع الـ SDK إلى إصدار 35 ليدعم أندرويد 15 بالكامل
+        # 2. رفع SDK إلى 35
         VARIABLES_FILE="android/variables.gradle"
         if [ -f "$VARIABLES_FILE" ]; then
           sed -i 's/compileSdkVersion = .*/compileSdkVersion = 35/g' $VARIABLES_FILE
           sed -i 's/targetSdkVersion = .*/targetSdkVersion = 35/g' $VARIABLES_FILE
-          echo "==== تم تحديث الـ SDK إلى إصدار 35 بنجاح ===="
+          echo "==== تم تحديث SDK إلى 35 ===="
         fi
 
-        # 3. توحيد وإجبار إصدار كوتلن لمنع خطأ الملفات المكررة (Duplicate Classes) عبر printf الآمنة
+        # 3. توحيد إصدار Kotlin
         BUILD_FILE="android/build.gradle"
         if [ -f "$BUILD_FILE" ]; then
           sed -i 's/ext {/ext {\n        kotlinVersion = "1.9.22"/g' $BUILD_FILE
-          
-          # ضخ كوتلن الموحد بطريقة تمنع أخطاء الـ Syntax نهائياً
           printf "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '1.9.22'\n            }\n        }\n    }\n}\n" >> $BUILD_FILE
-          echo "==== تم توحيد إصدار كوتلن بنجاح لمنع التكرار ===="
+          echo "==== تم توحيد Kotlin ===="
         fi
 
     - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        # تحديد مسار ملف الجافا الرئيسي للتطبيق مباشرة وبدقة
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
-        
-        # كتابة كود الجافا المطور مع حاقن الـ CORS والـ Immersive Fullscreen
+
         cat <<'JAVA' > $MAIN_ACTIVITY
         package com.yallagoal.app;
 
@@ -79,6 +74,8 @@ jobs:
         import android.view.WindowInsets;
         import android.view.WindowInsetsController;
         import android.view.WindowManager;
+        import android.webkit.MimeTypeMap;
+        import android.webkit.WebChromeClient;
         import android.webkit.WebSettings;
         import android.webkit.WebView;
         import android.webkit.WebResourceRequest;
@@ -93,25 +90,28 @@ jobs:
         import java.util.Map;
 
         public class MainActivity extends BridgeActivity {
-            @Override 
+            @Override
             protected void onCreate(Bundle savedInstanceState) {
                 requestWindowFeature(Window.FEATURE_NO_TITLE);
-                getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                getWindow().setFlags(
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                    WindowManager.LayoutParams.FLAG_FULLSCREEN
+                );
                 super.onCreate(savedInstanceState);
                 applyFullscreen();
                 setupWebView();
             }
 
-            @Override 
-            public void onWindowFocusChanged(boolean hasFocus) { 
-                super.onWindowFocusChanged(hasFocus); 
-                if (hasFocus) applyFullscreen(); 
+            @Override
+            public void onWindowFocusChanged(boolean hasFocus) {
+                super.onWindowFocusChanged(hasFocus);
+                if (hasFocus) applyFullscreen();
             }
 
-            @Override 
-            public void onResume() { 
-                super.onResume(); 
-                applyFullscreen(); 
+            @Override
+            public void onResume() {
+                super.onResume();
+                applyFullscreen();
             }
 
             private void applyFullscreen() {
@@ -120,11 +120,11 @@ jobs:
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     w.setDecorFitsSystemWindows(false);
                     WindowInsetsController c = w.getInsetsController();
-                    if (c != null) { 
-                        c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars()); 
-                        c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE); 
+                    if (c != null) {
+                        c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                        c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
                     }
-                    w.setStatusBarColor(Color.TRANSPARENT); 
+                    w.setStatusBarColor(Color.TRANSPARENT);
                     w.setNavigationBarColor(Color.TRANSPARENT);
                 } else {
                     w.getDecorView().setSystemUiVisibility(
@@ -136,120 +136,281 @@ jobs:
                         View.SYSTEM_UI_FLAG_FULLSCREEN
                     );
                 }
-                if (Build.VERSION.SDK_INT >= 28) { 
+                if (Build.VERSION.SDK_INT >= 28) {
                     WindowManager.LayoutParams lp = w.getAttributes();
-                    lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES; 
-                    w.setAttributes(lp); 
+                    lp.layoutInDisplayCutoutMode =
+                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                    w.setAttributes(lp);
                 }
             }
 
-           private void setupWebView() {
+            private void setupWebView() {
                 try {
                     WebView wv = getBridge().getWebView();
-                    
-                    // تنظيف الكاش القديم تماماً عند التشغيل
+
+                    // مسح الكاش القديم
                     wv.clearCache(true);
-                    
+
                     WebSettings s = wv.getSettings();
-                    s.setJavaScriptEnabled(true); 
+                    s.setJavaScriptEnabled(true);
                     s.setDomStorageEnabled(true);
-                    s.setAllowFileAccess(true); 
+                    s.setDatabaseEnabled(true);
+                    s.setAllowFileAccess(true);
                     s.setAllowContentAccess(true);
-                    s.setAllowFileAccessFromFileURLs(true); 
+                    s.setAllowFileAccessFromFileURLs(true);
                     s.setAllowUniversalAccessFromFileURLs(true);
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+
+                    // ═══════════════════════════════════════════════════
+                    // تفعيل تشغيل الوسائط بدون إيماءة المستخدم
+                    // ═══════════════════════════════════════════════════
                     s.setMediaPlaybackRequiresUserGesture(false);
-                    
-                    // إجبار الـ WebView على التحميل بدون كاش
+
+                    // تفعيل دعم تشغيل الفيديو المضمّن (Inline Video)
+                    // مهم لـ WebM و HLS داخل <video> tags
+                    s.setUseWideViewPort(true);
+                    s.setLoadWithOverviewMode(true);
+
+                    // منع الكاش تماماً لضمان تحميل أحدث المحتوى
                     s.setCacheMode(WebSettings.LOAD_NO_CACHE);
-                    
-                    s.setUserAgentString("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36");
+
+                    // User-Agent يُقنع الخوادم بأننا متصفح حقيقي
+                    s.setUserAgentString(
+                        "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/120.0.0.0 Mobile Safari/537.36"
+                    );
+
                     wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                    
-                    if (Build.VERSION.SDK_INT >= 21) { 
-                        android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance(); 
-                        cm.setAcceptCookie(true); 
-                        cm.setAcceptThirdPartyCookies(wv, true); 
-                        // اختياري: لمسح الكوكيز القديمة إذا كنت تواجه مشكلة معها
-                        // cm.removeAllCookies(null);
+
+                    // ═══════════════════════════════════════════════════
+                    // WebChromeClient مطلوب لتفعيل تشغيل الميديا كاملاً
+                    // بما فيه الـ Full-Screen Video و WebM Audio
+                    // ═══════════════════════════════════════════════════
+                    wv.setWebChromeClient(new WebChromeClient() {
+                        @Override
+                        public void onShowCustomView(View view, CustomViewCallback callback) {
+                            super.onShowCustomView(view, callback);
+                        }
+                        @Override
+                        public void onHideCustomView() {
+                            super.onHideCustomView();
+                        }
+                    });
+
+                    // Cookie Manager
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
+                        cm.setAcceptCookie(true);
+                        cm.setAcceptThirdPartyCookies(wv, true);
                     }
-                    
+
+                    // تطبيق الـ CORS Proxy Client المطوّر
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تفعيل حاقن تخطي CORS وتنظيف الكاش بنجاح ====");
-                } catch (Exception e) { 
-                    e.printStackTrace(); 
+
+                    System.out.println("==== تم تفعيل الـ WebView مع دعم كامل للـ WebM والصوت ====");
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
             }
 
+            // ═══════════════════════════════════════════════════════════
+            // CORSClient: يعترض كل الطلبات ويضيف رؤوس CORS مع دعم
+            // كامل لجميع صيغ الصوت والفيديو بما فيها WebM و HLS
+            // ═══════════════════════════════════════════════════════════
             class CORSClient extends BridgeWebViewClient {
                 CORSClient(com.getcapacitor.Bridge b) { super(b); }
-                
-                @Override 
+
+                @Override
                 public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
                     String url = r.getUrl().toString();
-                    if ("OPTIONS".equalsIgnoreCase(r.getMethod())) return cors(null, "text/plain", 204);
-                    if (!url.startsWith("http")) return super.shouldInterceptRequest(v, r);
-                    if (url.contains("localhost") || url.contains("capacitor://")) return super.shouldInterceptRequest(v, r);
-                    
+                    String method = r.getMethod();
+
+                    // تمرير طلبات OPTIONS مباشرة مع رؤوس CORS
+                    if ("OPTIONS".equalsIgnoreCase(method)) {
+                        return buildCorsResponse(null, "text/plain", 204);
+                    }
+
+                    // تمرير الموارد المحلية مباشرة
+                    if (!url.startsWith("http")) {
+                        return super.shouldInterceptRequest(v, r);
+                    }
+                    if (url.contains("localhost") || url.contains("capacitor://")) {
+                        return super.shouldInterceptRequest(v, r);
+                    }
+
                     try {
-                        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                        c.setRequestMethod(r.getMethod()); 
-                        c.setConnectTimeout(20000); 
-                        c.setReadTimeout(20000); 
-                        c.setInstanceFollowRedirects(true);
-                        
-                        for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) { 
-                            if (!h.getKey().equalsIgnoreCase("Origin")) c.setRequestProperty(h.getKey(), h.getValue()); 
+                        URL targetUrl = new URL(url);
+                        HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
+                        conn.setRequestMethod(method);
+                        conn.setConnectTimeout(30000);
+                        conn.setReadTimeout(30000);
+                        conn.setInstanceFollowRedirects(true);
+
+                        // نسخ رؤوس الطلب الأصلية مع تخطي Origin
+                        for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
+                            String key = h.getKey();
+                            if (!key.equalsIgnoreCase("Origin") &&
+                                !key.equalsIgnoreCase("Host")) {
+                                conn.setRequestProperty(key, h.getValue());
+                            }
                         }
-                        c.setRequestProperty("User-Agent", "Mozilla/5.0"); 
-                        c.setRequestProperty("Accept", "*/*");
-                        c.connect();
-                        
-                        int st = c.getResponseCode(); 
-                        if (st < 0) st = 200;
-                        
-                        InputStream is; 
-                        try { 
-                            is = c.getInputStream(); 
-                        } catch (Exception e) { 
-                            is = c.getErrorStream(); 
-                            if (is == null) is = new ByteArrayInputStream(new byte[0]); 
+
+                        // رؤوس ضرورية لإقناع الخوادم
+                        conn.setRequestProperty("User-Agent",
+                            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0");
+                        conn.setRequestProperty("Accept",
+                            "audio/webm,audio/ogg,audio/mp4,audio/*,video/webm,video/*,*/*;q=0.9");
+                        conn.setRequestProperty("Accept-Language", "ar,en;q=0.9");
+                        conn.setRequestProperty("Accept-Encoding", "identity");
+                        conn.setRequestProperty("Range", "bytes=0-");
+
+                        // دعم Referer لبعض الخوادم التي تتحقق منه
+                        String referer = extractBaseUrl(url);
+                        if (referer != null) {
+                            conn.setRequestProperty("Referer", referer);
                         }
-                        
-                        String mt = c.getContentType(); 
-                        if (mt == null) mt = mime(url); 
-                        if (mt.contains(";")) mt = mt.split(";")[0].trim();
-                        
-                        return cors(is, mt, st);
-                    } catch (Exception e) { 
-                        return super.shouldInterceptRequest(v, r); 
+
+                        conn.connect();
+
+                        int statusCode = conn.getResponseCode();
+                        if (statusCode < 0) statusCode = 200;
+
+                        // قراءة الاستجابة
+                        InputStream inputStream;
+                        try {
+                            inputStream = conn.getInputStream();
+                        } catch (Exception e) {
+                            inputStream = conn.getErrorStream();
+                            if (inputStream == null) {
+                                inputStream = new ByteArrayInputStream(new byte[0]);
+                            }
+                        }
+
+                        // تحديد نوع المحتوى بدقة
+                        String contentType = conn.getContentType();
+                        if (contentType == null || contentType.isEmpty()) {
+                            contentType = detectMimeType(url);
+                        }
+                        if (contentType.contains(";")) {
+                            contentType = contentType.split(";")[0].trim();
+                        }
+
+                        // تصحيح أنواع MIME الخاطئة
+                        contentType = fixMimeType(contentType, url);
+
+                        return buildCorsResponse(inputStream, contentType, statusCode);
+
+                    } catch (Exception e) {
+                        System.err.println("CORS Proxy Error for: " + url + " -> " + e.getMessage());
+                        return super.shouldInterceptRequest(v, r);
                     }
                 }
 
-                private WebResourceResponse cors(InputStream is, String m, int st) {
-                    Map<String, String> h = new HashMap<>();
-                    h.put("Access-Control-Allow-Origin", "*"); 
-                    h.put("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS"); 
-                    h.put("Access-Control-Allow-Headers", "*");
+                // ═══════════════════════════════════════════════════════
+                // بناء الاستجابة مع رؤوس CORS الكاملة
+                // ═══════════════════════════════════════════════════════
+                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status) {
+                    Map<String, String> headers = new HashMap<>();
+                    headers.put("Access-Control-Allow-Origin", "*");
+                    headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
+                    headers.put("Access-Control-Allow-Headers", "*");
+                    headers.put("Access-Control-Expose-Headers", "*");
+                    headers.put("Access-Control-Max-Age", "86400");
+
+                    // رؤوس مهمة لدعم تشغيل الوسائط المتقطع (Streaming)
+                    headers.put("Accept-Ranges", "bytes");
+                    headers.put("Cache-Control", "no-cache");
+
                     if (is == null) is = new ByteArrayInputStream(new byte[0]);
-                    return new WebResourceResponse(m, "utf-8", st, st < 400 ? "OK" : "Err", h, is);
+                    String reason = status < 400 ? "OK" : "Error";
+                    return new WebResourceResponse(mimeType, "utf-8", status, reason, headers, is);
                 }
 
-                private String mime(String u) {
-                    u = u.toLowerCase();
-                    if (u.contains(".m3u8")) return "application/vnd.apple.mpegurl";
-                    if (u.contains(".m3u")) return "audio/x-mpegurl";
-                    if (u.contains(".ts")) return "video/mp2t";
-                    if (u.contains(".mp4")) return "video/mp4";
+                // ═══════════════════════════════════════════════════════
+                // كشف نوع MIME الصحيح من امتداد الرابط
+                // يشمل كل صيغ الصوت والفيديو الشائعة
+                // ═══════════════════════════════════════════════════════
+                private String detectMimeType(String url) {
+                    String lower = url.toLowerCase();
+
+                    // ── صيغ الفيديو ──────────────────────────────────
+                    if (lower.contains(".m3u8"))   return "application/vnd.apple.mpegurl";
+                    if (lower.contains(".m3u"))    return "audio/x-mpegurl";
+                    if (lower.contains(".ts"))     return "video/mp2t";
+                    if (lower.contains(".mp4"))    return "video/mp4";
+                    if (lower.contains(".webm"))   return "video/webm";
+                    if (lower.contains(".mkv"))    return "video/x-matroska";
+                    if (lower.contains(".avi"))    return "video/x-msvideo";
+                    if (lower.contains(".mov"))    return "video/quicktime";
+                    if (lower.contains(".flv"))    return "video/x-flv";
+                    if (lower.contains(".3gp"))    return "video/3gpp";
+                    if (lower.contains(".ogv"))    return "video/ogg";
+
+                    // ── صيغ الصوت ──────────────────────────────────
+                    if (lower.contains(".mp3"))    return "audio/mpeg";
+                    if (lower.contains(".ogg"))    return "audio/ogg";
+                    if (lower.contains(".oga"))    return "audio/ogg";
+                    if (lower.contains(".opus"))   return "audio/ogg; codecs=opus";
+                    if (lower.contains(".wav"))    return "audio/wav";
+                    if (lower.contains(".aac"))    return "audio/aac";
+                    if (lower.contains(".flac"))   return "audio/flac";
+                    if (lower.contains(".m4a"))    return "audio/mp4";
+                    if (lower.contains(".weba"))   return "audio/webm";
+
+                    // ── بيانات ──────────────────────────────────────
+                    if (lower.contains(".json"))   return "application/json";
+                    if (lower.contains(".xml"))    return "application/xml";
+
                     return "application/octet-stream";
+                }
+
+                // ═══════════════════════════════════════════════════════
+                // تصحيح أنواع MIME الخاطئة التي قد ترسلها بعض الخوادم
+                // مثل إرسال WebM بنوع application/octet-stream
+                // ═══════════════════════════════════════════════════════
+                private String fixMimeType(String serverMime, String url) {
+                    String lower = url.toLowerCase();
+                    String detected = detectMimeType(url);
+
+                    // إذا أرسل السيرفر نوعاً عاماً، نستخدم النوع المكتشف من الامتداد
+                    if ("application/octet-stream".equals(serverMime) ||
+                        "binary/octet-stream".equals(serverMime) ||
+                        serverMime == null || serverMime.isEmpty()) {
+                        return detected;
+                    }
+
+                    // تصحيح خاص: بعض الخوادم تُرسل WebM كـ video/mp4 أو العكس
+                    if (lower.contains(".webm") &&
+                        !serverMime.contains("webm")) {
+                        return lower.contains("audio") ? "audio/webm" : "video/webm";
+                    }
+
+                    return serverMime;
+                }
+
+                // استخراج الـ Base URL للـ Referer
+                private String extractBaseUrl(String url) {
+                    try {
+                        URL u = new URL(url);
+                        return u.getProtocol() + "://" + u.getHost();
+                    } catch (Exception e) {
+                        return null;
+                    }
                 }
             }
         }
         JAVA
 
-        # التأكد من صلاحيات الإنترنت وحركة المرور الواضحة لجميع القنوات داخل الـ AndroidManifest
-        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
-        sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+        # صلاحيات الإنترنت وتشغيل الوسائط في AndroidManifest.xml
+        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' \
+            android/app/src/main/AndroidManifest.xml
+        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' \
+            android/app/src/main/AndroidManifest.xml
+
+        # تفعيل cleartext + hardware acceleration لدعم الفيديو والصوت
+        sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' \
+            android/app/src/main/AndroidManifest.xml
 
     - name: Download & Apply App Custom Icon
       run: |
@@ -267,7 +428,6 @@ jobs:
       run: |
         cd android
         chmod +x ./gradlew
-        # البناء الآن سيقوم بتحميل إصدار 8.7 المستقر مباشرة ويتخطى المشكلة
         ./gradlew assembleDebug --no-daemon --no-build-cache
 
     - name: Upload Finished APK Artifact
