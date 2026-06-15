@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -482,6 +483,18 @@
 
         <div id="dynamic-player-root"></div>
         <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
+        <!-- نافذة عرض قائمة الأجزاء المتعددة (الروابط داخل الـ m3u8) -->
+        <div id="playlistModal" class="absolute inset-0 bg-slate-950/95 z-[150] hidden flex flex-col p-4 animate-[fadeInCard_0.3s_ease]">
+            <div class="flex items-center justify-between border-b border-slate-900 pb-3 mb-3">
+                <h3 id="playlistModalTitle" class="text-sm font-black text-emerald-400">قائمة التشغيل المتعددة</h3>
+                <button onclick="closePlaylistModal()" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-md text-[10px] font-bold transition-all border border-red-500/20">
+                    <i class="fa-solid fa-xmark ml-1"></i>إلغاء الخروج
+                </button>
+            </div>
+            <div id="playlistModalItems" class="flex-1 overflow-y-auto space-y-1.5 pr-1 no-scrollbar">
+                <!-- الأجزاء والروابط الفرعية سيتم توليدها هنا ديناميكياً -->
+            </div>
+        </div>
     </main>
 
     <script>
@@ -624,6 +637,7 @@
             iframe.style.display = "none";
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
+            document.getElementById('playlistModal').classList.add('hidden'); // إخفاء قائمة الأجزاء عند التنظيف
             currentAspectRatio = 0;
             controlsVisible = true;
         }
@@ -663,17 +677,72 @@
             renderChannels();
         }
 
-        function playChannel(url, type, name, el) {
+       function playChannel(url, type, name, el) {
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
-            el.classList.add('active-card');
+            if(el) el.classList.add('active-card');
+            
+            // 1. التعامل مع النوع p (قائمة m3u8 تحتوي على روابط متعددة)
+            if (type === 'p') {
+                document.getElementById('placeholderScreen').classList.remove('hidden');
+                
+                fetch(url)
+                    .then(response => response.text())
+                    .then(text => {
+                        const lines = text.split('\n');
+                        let items = [];
+                        let currentTitle = "";
+                        
+                        for (let i = 0; i < lines.length; i++) {
+                            let line = lines[i].trim();
+                            if (line.startsWith('#EXTINF:')) {
+                                const parts = line.split(',');
+                                currentTitle = parts.length > 1 ? parts.slice(1).join(',') : `جزء فرعي ${items.length + 1}`;
+                            } else if (line.length > 0 && !line.startsWith('#')) {
+                                let itemUrl = line;
+                                if (!line.startsWith('http://') && !line.startsWith('https://')) {
+                                    const baseUrl = url.substring(0, url.lastIndexOf('/') + 1);
+                                    itemUrl = baseUrl + line;
+                                }
+                                items.push({ title: currentTitle || `جزء ${items.length + 1}`, url: itemUrl });
+                                currentTitle = "";
+                            }
+                        }
+                        
+                        if (items.length === 0) throw new Error("قائمة التشغيل فارغة");
+                        
+                        document.getElementById('playlistModalTitle').innerText = `قائمة: ${name}`;
+                        const itemsBox = document.getElementById('playlistModalItems');
+                        itemsBox.innerHTML = items.map((item, index) => `
+                            <div onclick="playChannel('${item.url}', 'v', '${item.title}', null); closePlaylistModal();"
+                                class="p-3 bg-slate-900 border border-slate-800/60 rounded-lg flex items-center justify-between cursor-pointer hover:bg-emerald-950/30 hover:border-emerald-500/40 transition-all group">
+                                <span class="text-[11px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${item.title}</span>
+                                <i class="fa-solid fa-play text-[10px] text-slate-600 group-hover:text-emerald-400 transition-colors"></i>
+                            </div>
+                        `).join('');
+                        
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        document.getElementById('playlistModal').classList.remove('hidden');
+                    })
+                    .catch(err => {
+                        console.error("خطأ في جلب أو تحليل ملف الـ m3u8 المتعدد", err);
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        document.getElementById('errorScreen').classList.remove('hidden');
+                    });
+                return; 
+            }
+
+            // تنظيف المشغل قبل بدء تشغيل نوع آخر
             cleanup();
 
+            // 2. التعامل مع النوع i (محتوى الويب المضمن)
             if (type === 'i') {
                 const iframe = document.getElementById('iPlayer');
                 iframe.style.display = "block";
                 iframe.src = url;
                 document.getElementById('placeholderScreen').classList.add('hidden');
-            } else {
+            } 
+            // 3. التعامل مع بث الـ m3u8 المباشر أو الفردي
+            else {
                 const root = document.getElementById('dynamic-player-root');
                 const video = document.createElement('video');
                 video.id = "vPlayer";
@@ -754,6 +823,10 @@
                     setupPlyr();
                 }
             }
+        }
+
+        function closePlaylistModal() {
+            document.getElementById('playlistModal').classList.add('hidden');
         }
 
         // ===== تشغيل التحقق عند البداية =====
