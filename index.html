@@ -978,7 +978,10 @@ function startHLS(url) {
         }
     };
 
-    if (Hls.isSupported() && url.includes('.m3u8')) {
+    const isHLS = url.includes('.m3u8');
+
+    if (isHLS && Hls.isSupported()) {
+        // ===== بث HLS =====
         hlsInst = new Hls({ maxBufferLength: 20, maxMaxBufferLength: 40 });
         hlsInst.loadSource(url);
         hlsInst.attachMedia(vid);
@@ -1000,8 +1003,17 @@ function startHLS(url) {
                 document.getElementById('errorScreen').classList.remove('hidden');
             }
         });
-    } else {
+    } else if (isHLS && vid.canPlayType('application/vnd.apple.mpegurl')) {
+        // ===== Safari يدعم HLS أصلياً =====
         vid.src = url;
+        initPlyr();
+    } else {
+        // ===== mp4 / mp3 / أي صيغة مباشرة =====
+        vid.src = url;
+        vid.addEventListener('error', () => {
+            document.getElementById('placeholderScreen').classList.add('hidden');
+            document.getElementById('errorScreen').classList.remove('hidden');
+        }, { once: true });
         initPlyr();
     }
 }
@@ -1105,13 +1117,65 @@ function playPLItem(url) {
 }
 
 function closePL() {
-    document.getElementById('playlistModal').classList.remove('open');
+    const modal = document.getElementById('playlistModal');
+    const sheet = document.getElementById('plSheet');
+    // أعِد الـ sheet لمكانها الطبيعي قبل الإغلاق
+    if (sheet) { sheet.style.transform = ''; sheet.style.transition = ''; }
+    modal.classList.remove('open');
     document.body.style.overflow = '';
 }
 
 function modalBgClick(e) {
     if (e.target === document.getElementById('playlistModal')) closePL();
 }
+
+/* ===== Swipe-down لإغلاق القائمة ===== */
+(function initSwipe() {
+    let startY = 0;
+    let curY   = 0;
+    let dragging = false;
+
+    const getSheet = () => document.querySelector('.pl-sheet');
+
+    function onTouchStart(e) {
+        // ابدأ السحب فقط من منطقة الـ handle أو الـ header
+        const tag = e.target.closest('.pl-handle, .pl-header');
+        if (!tag) return;
+        startY   = e.touches[0].clientY;
+        curY     = startY;
+        dragging = true;
+        const sheet = getSheet();
+        if (sheet) sheet.style.transition = 'none';
+    }
+
+    function onTouchMove(e) {
+        if (!dragging) return;
+        curY = e.touches[0].clientY;
+        const dy = Math.max(0, curY - startY); // فقط للأسفل
+        const sheet = getSheet();
+        if (sheet) sheet.style.transform = `translateY(${dy}px)`;
+    }
+
+    function onTouchEnd() {
+        if (!dragging) return;
+        dragging = false;
+        const dy    = curY - startY;
+        const sheet = getSheet();
+        if (sheet) sheet.style.transition = '';
+
+        if (dy > 80) {
+            // سحب كافٍ → أغلق
+            closePL();
+        } else {
+            // ارجع لمكانك
+            if (sheet) sheet.style.transform = '';
+        }
+    }
+
+    document.getElementById('playlistModal').addEventListener('touchstart', onTouchStart, { passive: true });
+    document.getElementById('playlistModal').addEventListener('touchmove',  onTouchMove,  { passive: true });
+    document.getElementById('playlistModal').addEventListener('touchend',   onTouchEnd);
+})();
 
 /* ======================================================
    HELPERS
