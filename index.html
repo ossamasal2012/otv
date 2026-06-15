@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -228,6 +227,194 @@
             text-align: center;
         }
 
+        /* ===== مشغّل الصوت المدمج ===== */
+        #audioPlayerBar {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            z-index: 200;
+            background: linear-gradient(180deg, transparent 0%, rgba(2,6,23,0.97) 100%);
+            padding: 1.5rem 1.2rem 1rem;
+            display: none;
+            flex-direction: column;
+            gap: 0.7rem;
+        }
+
+        #audioPlayerBar.active { display: flex; }
+
+        .audio-title {
+            font-size: 0.8rem;
+            font-weight: 800;
+            color: #10b981;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .audio-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            direction: ltr;
+        }
+
+        .audio-progress-wrap {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        #audioProgress {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        #audioProgress::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+            box-shadow: 0 0 6px rgba(16,185,129,0.6);
+        }
+
+        .audio-time {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: #475569;
+            font-weight: 700;
+            direction: ltr;
+        }
+
+        .audio-btn {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 6px;
+            border-radius: 50%;
+            transition: color 0.2s, background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .audio-btn:hover { color: #10b981; background: rgba(16,185,129,0.1); }
+        .audio-btn.main { font-size: 1.5rem; color: #10b981; }
+
+        #audioVisualizer {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 3px;
+            height: 40px;
+        }
+
+        .vis-bar {
+            width: 4px;
+            background: linear-gradient(180deg, #10b981, #059669);
+            border-radius: 2px;
+            animation: visBounce 0.8s ease-in-out infinite alternate;
+        }
+
+        .vis-bar:nth-child(2) { animation-delay: 0.1s; }
+        .vis-bar:nth-child(3) { animation-delay: 0.2s; }
+        .vis-bar:nth-child(4) { animation-delay: 0.3s; }
+        .vis-bar:nth-child(5) { animation-delay: 0.15s; }
+        .vis-bar:nth-child(6) { animation-delay: 0.25s; }
+        .vis-bar:nth-child(7) { animation-delay: 0.05s; }
+
+        @keyframes visBounce {
+            from { height: 6px; opacity: 0.4; }
+            to { height: 32px; opacity: 1; }
+        }
+
+        #audioVisualizer.paused .vis-bar { animation-play-state: paused; opacity: 0.3; }
+
+        .audio-volume-wrap {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        #audioVolume {
+            width: 55px;
+            height: 3px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        #audioVolume::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #10b981;
+            cursor: pointer;
+        }
+
+        /* ===== شاشة الصوت الخلفية ===== */
+        #audioBackdrop {
+            position: absolute;
+            inset: 0;
+            z-index: 50;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
+            gap: 1rem;
+        }
+
+        #audioBackdrop.active { display: flex; }
+
+        .audio-disc {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #10b981 0%, #059669 50%, #0f172a 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: discSpin 4s linear infinite;
+            box-shadow: 0 0 30px rgba(16,185,129,0.4);
+        }
+
+        .audio-disc.paused { animation-play-state: paused; }
+        .audio-disc i { color: white; font-size: 2rem; }
+
+        @keyframes discSpin { 100% { transform: rotate(360deg); } }
+
+        .audio-disc-title {
+            font-size: 0.95rem;
+            font-weight: 900;
+            color: #f1f5f9;
+            text-align: center;
+            max-width: 80%;
+        }
+
+        .audio-disc-cat {
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: #10b981;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
         /* ===== شاشة التحميل الفخمة ===== */
         #loadingSplashScreen {
             position: fixed;
@@ -356,7 +543,68 @@
         </div>
 
         <div id="dynamic-player-root"></div>
-        <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
+        <iframe id="iPlayer" allowfullscreen
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+            referrerpolicy="no-referrer"></iframe>
+
+        <!-- ===== خلفية مشغّل الصوت ===== -->
+        <div id="audioBackdrop">
+            <div class="audio-disc" id="audioDisc">
+                <i class="fa-solid fa-music"></i>
+            </div>
+            <div id="audioVisualizer">
+                <div class="vis-bar" style="height:10px"></div>
+                <div class="vis-bar" style="height:20px"></div>
+                <div class="vis-bar" style="height:14px"></div>
+                <div class="vis-bar" style="height:28px"></div>
+                <div class="vis-bar" style="height:18px"></div>
+                <div class="vis-bar" style="height:24px"></div>
+                <div class="vis-bar" style="height:10px"></div>
+            </div>
+            <div class="audio-disc-title" id="audioDiscTitle">جاري التشغيل...</div>
+            <div class="audio-disc-cat" id="audioDiscCat">قصائد حسينية</div>
+        </div>
+
+        <!-- ===== شريط تحكم الصوت ===== -->
+        <div id="audioPlayerBar">
+            <div class="audio-title" id="audioTitle">جاري التشغيل...</div>
+            <div class="audio-controls">
+                <!-- زر السرعة -->
+                <button class="audio-btn" id="audioSpeedBtn" onclick="cycleSpeed()" title="السرعة">
+                    <span style="font-size:10px;font-weight:900;">1×</span>
+                </button>
+                <!-- تراجع 10 ثواني -->
+                <button class="audio-btn" onclick="seekAudio(-10)" title="تراجع 10 ث">
+                    <i class="fa-solid fa-rotate-left" style="font-size:0.9rem;"></i>
+                </button>
+                <!-- زر التشغيل/الإيقاف -->
+                <button class="audio-btn main" id="audioPlayBtn" onclick="toggleAudio()">
+                    <i class="fa-solid fa-circle-pause"></i>
+                </button>
+                <!-- تقديم 10 ثواني -->
+                <button class="audio-btn" onclick="seekAudio(10)" title="تقديم 10 ث">
+                    <i class="fa-solid fa-rotate-right" style="font-size:0.9rem;"></i>
+                </button>
+                <!-- شريط التقدم -->
+                <div class="audio-progress-wrap">
+                    <input type="range" id="audioProgress" min="0" max="100" value="0"
+                        oninput="scrubAudio(this.value)">
+                    <div class="audio-time">
+                        <span id="audioCurrent">0:00</span>
+                        <span id="audioDuration">--:--</span>
+                    </div>
+                </div>
+                <!-- الصوت -->
+                <div class="audio-volume-wrap">
+                    <button class="audio-btn" onclick="toggleMute()" id="audioMuteBtn" title="كتم">
+                        <i class="fa-solid fa-volume-high" style="font-size:0.85rem;"></i>
+                    </button>
+                    <input type="range" id="audioVolume" min="0" max="100" value="100"
+                        oninput="setVolume(this.value)">
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -364,13 +612,8 @@
         function togglePin() {
             const inp = document.getElementById('pinInput');
             const btn = document.getElementById('eyeBtn');
-            if (inp.type === 'password') {
-                inp.type = 'text';
-                btn.innerText = '🙈';
-            } else {
-                inp.type = 'password';
-                btn.innerText = '👁';
-            }
+            if (inp.type === 'password') { inp.type = 'text'; btn.innerText = '🙈'; }
+            else { inp.type = 'password'; btn.innerText = '👁'; }
         }
 
         // ===== نظام تسجيل الدخول =====
@@ -378,8 +621,7 @@
         const STORAGE_KEY = "yalla_authenticated";
 
         function checkAuth() {
-            const isAuth = localStorage.getItem(STORAGE_KEY);
-            if (isAuth === "true") {
+            if (localStorage.getItem(STORAGE_KEY) === "true") {
                 document.getElementById('loginScreen').classList.add('hidden');
                 loadChannels();
             }
@@ -387,10 +629,8 @@
 
         function doLogin() {
             const val = document.getElementById('pinInput').value.trim();
-            const inp = document.getElementById('pinInput');
             const grp = document.getElementById('inputGroup');
             const err = document.getElementById('loginError');
-
             if (val === SECRET_CODE) {
                 localStorage.setItem(STORAGE_KEY, "true");
                 document.getElementById('loginScreen').classList.add('hidden');
@@ -398,68 +638,217 @@
             } else {
                 grp.classList.add('error');
                 err.classList.add('show');
-                setTimeout(() => { grp.classList.remove('error'); }, 600);
-                inp.value = "";
-                inp.focus();
+                setTimeout(() => grp.classList.remove('error'), 600);
+                document.getElementById('pinInput').value = "";
+                document.getElementById('pinInput').focus();
             }
         }
 
         // ===== متغيرات التطبيق =====
         let myChannels = [];
-        let quranRadioChannels = []; 
-        let hussainiPoems = []; // مصفوفة القصائد الحسينية تم إضافتها وتجهيزها هنا
+        let quranRadioChannels = [];
+        let hussainiPoems = [];
         let hls = null;
         let plyr = null;
+        let audioEl = null;      // عنصر الصوت المدمج
+        let audioSpeeds = [1, 1.25, 1.5, 0.75];
+        let audioSpeedIdx = 0;
         let currentCat = "الكل";
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
         let currentAspectRatio = 0;
         let controlsVisible = true;
 
+        // ===== كشف إذا كان الرابط ملف صوتي/فيديو مباشر =====
+        function isDirectMedia(url) {
+            if (!url) return false;
+            const lower = url.toLowerCase().split('?')[0];
+            return (
+                lower.includes('.webm') ||
+                lower.includes('.mp3')  ||
+                lower.includes('.ogg')  ||
+                lower.includes('.opus') ||
+                lower.includes('.m4a')  ||
+                lower.includes('.aac')  ||
+                lower.includes('.wav')  ||
+                lower.includes('.flac') ||
+                lower.includes('.weba') ||
+                // روابط googlevideo دائماً ملفات مباشرة
+                url.includes('googlevideo.com') ||
+                url.includes('googleusercontent.com')
+            );
+        }
+
+        function formatTime(sec) {
+            if (!isFinite(sec) || sec < 0) return '--:--';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // ===== مشغّل الصوت المدمج =====
+        function playAudio(url, name) {
+            // إيقاف أي صوت سابق
+            stopAudio();
+
+            audioEl = new Audio();
+            audioEl.crossOrigin = "anonymous";
+            audioEl.preload = "metadata";
+
+            // إضافة مصادر متعددة للتوافق الكامل
+            const mime = detectAudioMime(url);
+            audioEl.src = url;
+            if (mime) audioEl.type = mime;
+
+            audioEl.volume = parseInt(document.getElementById('audioVolume').value) / 100;
+
+            // تحديث الواجهة
+            document.getElementById('audioTitle').textContent = name;
+            document.getElementById('audioDiscTitle').textContent = name;
+            document.getElementById('audioPlayerBar').classList.add('active');
+            document.getElementById('audioBackdrop').classList.add('active');
+            document.getElementById('placeholderScreen').classList.add('hidden');
+            document.getElementById('audioPlayBtn').innerHTML = '<i class="fa-solid fa-circle-pause"></i>';
+            document.getElementById('audioDisc').classList.remove('paused');
+            document.getElementById('audioVisualizer').classList.remove('paused');
+
+            // أحداث التقدم
+            audioEl.addEventListener('timeupdate', () => {
+                if (!audioEl.duration) return;
+                const pct = (audioEl.currentTime / audioEl.duration) * 100;
+                document.getElementById('audioProgress').value = pct;
+                document.getElementById('audioCurrent').textContent = formatTime(audioEl.currentTime);
+            });
+
+            audioEl.addEventListener('loadedmetadata', () => {
+                document.getElementById('audioDuration').textContent = formatTime(audioEl.duration);
+            });
+
+            audioEl.addEventListener('ended', () => {
+                document.getElementById('audioPlayBtn').innerHTML = '<i class="fa-solid fa-circle-play"></i>';
+                document.getElementById('audioDisc').classList.add('paused');
+                document.getElementById('audioVisualizer').classList.add('paused');
+            });
+
+            audioEl.addEventListener('error', (e) => {
+                console.error('Audio error:', e, audioEl.error);
+                document.getElementById('audioBackdrop').classList.remove('active');
+                document.getElementById('audioPlayerBar').classList.remove('active');
+                document.getElementById('errorScreen').classList.remove('hidden');
+            });
+
+            audioEl.addEventListener('waiting', () => {
+                document.getElementById('audioPlayBtn').innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+            });
+
+            audioEl.addEventListener('playing', () => {
+                document.getElementById('audioPlayBtn').innerHTML = '<i class="fa-solid fa-circle-pause"></i>';
+                document.getElementById('audioDisc').classList.remove('paused');
+                document.getElementById('audioVisualizer').classList.remove('paused');
+            });
+
+            audioEl.play().catch(err => {
+                console.error('Play error:', err);
+            });
+        }
+
+        function detectAudioMime(url) {
+            const lower = url.toLowerCase().split('?')[0];
+            if (lower.includes('.webm') || lower.includes('.weba') || url.includes('googlevideo.com')) return 'audio/webm';
+            if (lower.includes('.mp3'))  return 'audio/mpeg';
+            if (lower.includes('.ogg') || lower.includes('.oga'))  return 'audio/ogg';
+            if (lower.includes('.opus')) return 'audio/ogg; codecs=opus';
+            if (lower.includes('.m4a'))  return 'audio/mp4';
+            if (lower.includes('.aac'))  return 'audio/aac';
+            if (lower.includes('.wav'))  return 'audio/wav';
+            if (lower.includes('.flac')) return 'audio/flac';
+            return null;
+        }
+
+        function stopAudio() {
+            if (audioEl) {
+                audioEl.pause();
+                audioEl.src = "";
+                audioEl = null;
+            }
+            document.getElementById('audioPlayerBar').classList.remove('active');
+            document.getElementById('audioBackdrop').classList.remove('active');
+            document.getElementById('audioProgress').value = 0;
+            document.getElementById('audioCurrent').textContent = '0:00';
+            document.getElementById('audioDuration').textContent = '--:--';
+            audioSpeedIdx = 0;
+            document.getElementById('audioSpeedBtn').querySelector('span').textContent = '1×';
+        }
+
+        function toggleAudio() {
+            if (!audioEl) return;
+            if (audioEl.paused) {
+                audioEl.play();
+            } else {
+                audioEl.pause();
+                document.getElementById('audioPlayBtn').innerHTML = '<i class="fa-solid fa-circle-play"></i>';
+                document.getElementById('audioDisc').classList.add('paused');
+                document.getElementById('audioVisualizer').classList.add('paused');
+            }
+        }
+
+        function seekAudio(delta) {
+            if (!audioEl) return;
+            audioEl.currentTime = Math.max(0, Math.min(audioEl.duration || 0, audioEl.currentTime + delta));
+        }
+
+        function scrubAudio(val) {
+            if (!audioEl || !audioEl.duration) return;
+            audioEl.currentTime = (val / 100) * audioEl.duration;
+        }
+
+        function setVolume(val) {
+            if (audioEl) audioEl.volume = val / 100;
+            const btn = document.getElementById('audioMuteBtn').querySelector('i');
+            if (val == 0) btn.className = 'fa-solid fa-volume-xmark';
+            else if (val < 50) btn.className = 'fa-solid fa-volume-low';
+            else btn.className = 'fa-solid fa-volume-high';
+        }
+
+        function toggleMute() {
+            if (!audioEl) return;
+            audioEl.muted = !audioEl.muted;
+            const btn = document.getElementById('audioMuteBtn').querySelector('i');
+            btn.className = audioEl.muted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+        }
+
+        function cycleSpeed() {
+            if (!audioEl) return;
+            audioSpeedIdx = (audioSpeedIdx + 1) % audioSpeeds.length;
+            const spd = audioSpeeds[audioSpeedIdx];
+            audioEl.playbackRate = spd;
+            document.getElementById('audioSpeedBtn').querySelector('span').textContent = spd + '×';
+        }
+
         async function loadChannels() {
             try {
                 document.getElementById('placeholderScreen').classList.remove('hidden');
                 document.getElementById('errorScreen').classList.add('hidden');
-                
-                // 1. جلب قنوات التلفزيون الأساسية
+
                 const res = await fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json");
                 if (!res.ok) throw new Error("فشل جلب القنوات الأساسية");
                 myChannels = await res.json();
-                
-                // 2. جلب إذاعات القرآن الكريم
+
                 try {
                     const quranRes = await fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json");
-                    if (quranRes.ok) {
-                        quranRadioChannels = await quranRes.json();
-                    } else {
-                        console.warn("ملف القرآن الكريم غير موجود حالياً");
-                        quranRadioChannels = [];
-                    }
-                } catch (quranErr) {
-                    console.error("خطأ جانبي في ملف القرآن:", quranErr);
-                    quranRadioChannels = [];
-                }
+                    quranRadioChannels = quranRes.ok ? await quranRes.json() : [];
+                } catch { quranRadioChannels = []; }
 
-                // 3. جلب القصائد الحسينية تلقائياً من المستودع الخاص بك
                 try {
                     const poemsRes = await fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json");
-                    if (poemsRes.ok) {
-                        hussainiPoems = await poemsRes.json();
-                    } else {
-                        // كود احتياطي في حال لم يتم رفع الملف بعد على السيرفر
-                        console.warn("ملف القصائد من السيرفر غير موجود، سيتم تشغيل البيانات الاحتياطية المحليّة.");
-                        hussainiPoems = [];
-                    }
-                } catch (poemsErr) {
-                    console.error("خطأ في جلب ملف القصائد:", poemsErr);
-                    hussainiPoems = [];
-                }
+                    hussainiPoems = poemsRes.ok ? await poemsRes.json() : [];
+                } catch { hussainiPoems = []; }
 
                 renderMenu();
                 renderChannels();
                 document.getElementById('placeholderScreen').classList.add('hidden');
             } catch (err) {
-                console.error("خطأ رئيسي في تحميل القنوات:", err);
+                console.error("خطأ رئيسي:", err);
                 document.getElementById('placeholderScreen').classList.add('hidden');
                 document.getElementById('errorScreen').classList.remove('hidden');
             }
@@ -481,94 +870,52 @@
         function renderChannels() {
             const box = document.getElementById('channelsBox');
             const cleanQuery = normalizeArabic(searchQuery);
-            
-            // أولاً: إذا كان المستخدم داخل مجلد قصائد حسينية المخصص
+
             if (currentCat === "قصائد حسينية") {
-                let htmlContent = `
+                let html = `
                 <div onclick="filter('الكل')" class="channel-item bg-emerald-950/40 border border-emerald-800/40 p-2.5 rounded-lg flex items-center gap-2 text-emerald-400 hover:bg-emerald-900/40 transition-all mb-1 cursor-pointer">
                     <i class="fa-solid fa-arrow-right text-[12px]"></i>
                     <span class="text-[12px] font-bold">رجوع للقنوات الرئيسية</span>
                 </div>`;
-                
-                const dataToRender = Array.isArray(hussainiPoems) ? hussainiPoems : [];
-                const filteredPoems = dataToRender.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
-
-                htmlContent += filteredPoems.map(ch => {
-                    const isFav = favorites.includes(ch[0]);
-                    return `
-                    <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                        class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
-                        <div class="flex items-center gap-2">
-                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                            <i class="fa-solid fa-music text-slate-500 text-[11px] group-hover:text-emerald-400"></i>
-                            <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-                        </div>
-                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                        </button>
-                    </div>`;
-                }).join('');
-                
-                box.innerHTML = htmlContent;
+                const data = Array.isArray(hussainiPoems) ? hussainiPoems : [];
+                html += data.filter(c => normalizeArabic(c[0]).includes(cleanQuery)).map(ch => buildAudioCard(ch, 'fa-music')).join('');
+                box.innerHTML = html;
                 return;
             }
 
-            // ثانياً: إذا كان المستخدم داخل مجلد القرآن الكريم المخصص
             if (currentCat === "القرآن الكريم") {
-                let htmlContent = `
+                let html = `
                 <div onclick="filter('الكل')" class="channel-item bg-emerald-950/40 border border-emerald-800/40 p-2.5 rounded-lg flex items-center gap-2 text-emerald-400 hover:bg-emerald-900/40 transition-all mb-1 cursor-pointer">
                     <i class="fa-solid fa-arrow-right text-[12px]"></i>
                     <span class="text-[12px] font-bold">رجوع للقنوات الرئيسية</span>
                 </div>`;
-                
-                const dataToRender = Array.isArray(quranRadioChannels) ? quranRadioChannels : [];
-                const filteredQuran = dataToRender.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
-
-                htmlContent += filteredQuran.map(ch => {
-                    const isFav = favorites.includes(ch[0]);
-                    return `
-                    <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                        class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
-                        <div class="flex items-center gap-2">
-                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                            <i class="fa-solid fa-radio text-slate-500 text-[11px] group-hover:text-emerald-400"></i>
-                            <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-                        </div>
-                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                        </button>
-                    </div>`;
-                }).join('');
-                
-                box.innerHTML = htmlContent;
+                const data = Array.isArray(quranRadioChannels) ? quranRadioChannels : [];
+                html += data.filter(c => normalizeArabic(c[0]).includes(cleanQuery)).map(ch => buildChannelCard(ch, 'fa-radio')).join('');
+                box.innerHTML = html;
                 return;
             }
 
-            // ثالثاً: العمل في الواجهات العادية والبحث الشامل
-            let filtered = [];
-            let matchedQuran = [];
-            let matchedPoems = [];
-            let htmlContent = "";
+            let filtered = [], matchedQuran = [], matchedPoems = [];
+            let html = "";
 
             if (cleanQuery !== "") {
-                // شمولية البحث: جلب النتائج المتطابقة من التلفزيون، الراديو، والقصائد معاً
                 filtered = myChannels.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
                 matchedQuran = quranRadioChannels.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
                 matchedPoems = hussainiPoems.filter(c => normalizeArabic(c[0]).includes(cleanQuery));
             } else {
                 if (currentCat === "المفضلة") {
-                    const favChannels = myChannels.filter(c => favorites.includes(c[0]));
-                    const favQuran = quranRadioChannels.filter(c => favorites.includes(c[0]));
-                    const favPoems = hussainiPoems.filter(c => favorites.includes(c[0]));
-                    filtered = [...favChannels, ...favQuran, ...favPoems];
+                    filtered = [
+                        ...myChannels.filter(c => favorites.includes(c[0])),
+                        ...quranRadioChannels.filter(c => favorites.includes(c[0])),
+                        ...hussainiPoems.filter(c => favorites.includes(c[0]))
+                    ];
                 } else {
                     filtered = myChannels.filter(c => currentCat === "الكل" || c[2] === currentCat);
                 }
             }
 
-            // إظهار أزرار المجلدات عند التواجد بصفحة "الكل" وبدون عملية بحث نشطة
             if (currentCat === "الكل" && cleanQuery === "") {
-                htmlContent += `
+                html += `
                 <div onclick="filter('القرآن الكريم')" class="channel-item bg-slate-900/80 border border-emerald-600/30 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900 transition-all mb-1 cursor-pointer">
                     <div class="flex items-center gap-2.5">
                         <div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div>
@@ -577,7 +924,6 @@
                     </div>
                     <i class="fa-solid fa-chevron-left text-[10px] text-slate-600 group-hover:text-emerald-400 pl-1"></i>
                 </div>
-                
                 <div onclick="filter('قصائد حسينية')" class="channel-item bg-slate-900/80 border border-emerald-600/30 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900 transition-all mb-1 cursor-pointer">
                     <div class="flex items-center gap-2.5">
                         <div class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_#10b981]"></div>
@@ -588,69 +934,61 @@
                 </div>`;
             }
 
-            // رسم قنوات التلفزيون أو المفضلة المختلطة
-            htmlContent += filtered.map(ch => {
-                const isFav = favorites.includes(ch[0]);
+            html += filtered.map(ch => {
                 const isRadio = quranRadioChannels.some(q => q[0] === ch[0]);
-                const isPoem = hussainiPoems.some(p => p[0] === ch[0]);
-                
-                let iconHtml = '<i class="fa-solid fa-tv text-slate-500 text-[11px] group-hover:text-emerald-400"></i>';
-                if (isRadio) iconHtml = '<i class="fa-solid fa-radio text-amber-500 text-[11px]"></i>';
-                if (isPoem) iconHtml = '<i class="fa-solid fa-music text-emerald-400 text-[11px]"></i>';
-
-                return `
-                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                    class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
-                    <div class="flex items-center gap-2">
-                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                        ${iconHtml}
-                        <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-                    </div>
-                    <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                    </button>
-                </div>`;
+                const isPoem  = hussainiPoems.some(p => p[0] === ch[0]);
+                if (isPoem)  return buildAudioCard(ch, 'fa-music');
+                if (isRadio) return buildChannelCard(ch, 'fa-radio');
+                return buildChannelCard(ch, 'fa-tv');
             }).join('');
 
-            // إذا كان هناك بحث نشط، قم بلصق نتائج القصائد المتطابقة
-            if (cleanQuery !== "" && matchedPoems.length > 0) {
-                htmlContent += matchedPoems.map(ch => {
-                    const isFav = favorites.includes(ch[0]);
-                    return `
-                    <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                        class="channel-item bg-slate-900/30 border border-emerald-950/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
-                        <div class="flex items-center gap-2">
-                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                            <i class="fa-solid fa-music text-emerald-500 text-[11px] animate-pulse"></i>
-                            <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]} <span class="text-[9px] text-emerald-500 font-normal mr-1">(قصيدة)</span></span>
-                        </div>
-                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                        </button>
-                    </div>`;
-                }).join('');
-            }
+            if (cleanQuery !== "" && matchedPoems.length > 0)
+                html += matchedPoems.map(ch => buildAudioCard(ch, 'fa-music', '(قصيدة)')).join('');
+            if (cleanQuery !== "" && matchedQuran.length > 0)
+                html += matchedQuran.map(ch => buildChannelCard(ch, 'fa-radio', '(راديو)')).join('');
 
-            // إذا كان هناك بحث نشط، قم بلصق نتائج الراديو المتطابقة
-            if (cleanQuery !== "" && matchedQuran.length > 0) {
-                htmlContent += matchedQuran.map(ch => {
-                    const isFav = favorites.includes(ch[0]);
-                    return `
-                    <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-                        class="channel-item bg-slate-900/30 border border-emerald-950/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
-                        <div class="flex items-center gap-2">
-                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                            <i class="fa-solid fa-radio text-emerald-500 text-[11px] animate-pulse"></i>
-                            <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]} <span class="text-[9px] text-emerald-500 font-normal mr-1">(راديو)</span></span>
-                        </div>
-                        <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                        </button>
-                    </div>`;
-                }).join('');
-            }
+            box.innerHTML = html;
+        }
 
-            box.innerHTML = htmlContent;
+        // بطاقة قناة عادية (iframe أو فيديو)
+        function buildChannelCard(ch, icon, badge = '') {
+            const isFav = favorites.includes(ch[0]);
+            const badgeHtml = badge ? `<span class="text-[9px] text-emerald-500 font-normal mr-1">${badge}</span>` : '';
+            // ترميز url بشكل آمن للاستخدام في onclick
+            const safeUrl = ch[1].replace(/'/g, "\\'");
+            const safeName = ch[0].replace(/'/g, "\\'");
+            return `
+            <div onclick="playChannel('${safeUrl}', '${ch[3]}', '${safeName}', this)"
+                class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                    <i class="fa-solid ${icon} text-slate-500 text-[11px] group-hover:text-emerald-400"></i>
+                    <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}${badgeHtml}</span>
+                </div>
+                <button onclick="toggleFavorite(event, '${safeName}')" class="focus:outline-none p-1">
+                    <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                </button>
+            </div>`;
+        }
+
+        // بطاقة صوت مباشر (webm/googlevideo)
+        function buildAudioCard(ch, icon, badge = '') {
+            const isFav = favorites.includes(ch[0]);
+            const badgeHtml = badge ? `<span class="text-[9px] text-emerald-500 font-normal mr-1">${badge}</span>` : '';
+            const safeUrl  = ch[1].replace(/'/g, "\\'");
+            const safeName = ch[0].replace(/'/g, "\\'");
+            return `
+            <div onclick="playChannel('${safeUrl}', '${ch[3]}', '${safeName}', this)"
+                class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all cursor-pointer">
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                    <i class="fa-solid ${icon} text-emerald-500 text-[11px]"></i>
+                    <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}${badgeHtml}</span>
+                </div>
+                <button onclick="toggleFavorite(event, '${safeName}')" class="focus:outline-none p-1">
+                    <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                </button>
+            </div>`;
         }
 
         function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
@@ -658,20 +996,15 @@
         function normalizeArabic(text) {
             if (!text) return "";
             return text.toString().toLowerCase().trim()
-                .replace(/[أإآا]/g, 'ا')
-                .replace(/[ةه]/g, 'ه')
-                .replace(/[ىي]/g, 'ي')
-                .replace(/[\u064B-\u0652]/g, '')
-                .replace(/[-_.\s]/g, '');
+                .replace(/[أإآا]/g, 'ا').replace(/[ةه]/g, 'ه').replace(/[ىي]/g, 'ي')
+                .replace(/[\u064B-\u0652]/g, '').replace(/[-_.\s]/g, '');
         }
 
-        function searchChannels() { 
-            searchQuery = document.getElementById('searchInput').value; 
-            renderChannels(); 
-        }
+        function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
 
         function cleanup() {
-            if (hls) { hls.destroy(); hls = null; }
+            stopAudio();
+            if (hls)  { hls.destroy();  hls  = null; }
             if (plyr) { plyr.destroy(); plyr = null; }
             document.getElementById('dynamic-player-root').innerHTML = "";
             const iframe = document.getElementById('iPlayer');
@@ -691,18 +1024,12 @@
             if (currentAspectRatio === 0) video.classList.add('video-fit-contain');
             if (currentAspectRatio === 1) video.classList.add('video-fit-cover');
             if (currentAspectRatio === 2) video.classList.add('video-fit-fill');
-            document.querySelectorAll('.custom-aspect-btn').forEach(btn => {
-                btn.innerText = labels[currentAspectRatio];
-            });
+            document.querySelectorAll('.custom-aspect-btn').forEach(btn => btn.innerText = labels[currentAspectRatio]);
         }
 
         function manualToggleControls() {
             if (!plyr) return;
             controlsVisible = !controlsVisible;
-            updateControlsVisibility();
-        }
-
-        function updateControlsVisibility() {
             const plyrContainer = document.querySelector('.plyr');
             if (!plyrContainer) return;
             if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
@@ -712,102 +1039,103 @@
         function toggleFavorite(event, name) {
             event.stopImmediatePropagation();
             const index = favorites.indexOf(name);
-            if (index > -1) favorites.splice(index, 1);
-            else favorites.push(name);
+            if (index > -1) favorites.splice(index, 1); else favorites.push(name);
             localStorage.setItem('yalla_favs', JSON.stringify(favorites));
             renderChannels();
         }
 
+        // ===== دالة التشغيل الرئيسية المطوّرة =====
         function playChannel(url, type, name, el) {
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             el.classList.add('active-card');
             cleanup();
 
+            // ── مسار 1: رابط صوتي مباشر (webm, googlevideo, mp3...) ──
+            if (type === 'i' && isDirectMedia(url)) {
+                document.getElementById('audioDiscCat').textContent = 'قصائد حسينية';
+                playAudio(url, name);
+                return;
+            }
+
+            // ── مسار 2: iframe (صفحات راديو، مواقع...) ──
             if (type === 'i') {
                 const iframe = document.getElementById('iPlayer');
                 iframe.style.display = "block";
                 iframe.src = url;
                 document.getElementById('placeholderScreen').classList.add('hidden');
-            } else {
-                const root = document.getElementById('dynamic-player-root');
-                const video = document.createElement('video');
-                video.id = "vPlayer";
-                video.className = "w-full h-full video-fit-contain";
-                video.autoplay = true;
-                video.setAttribute('playsinline', '');
-                video.setAttribute('crossorigin', '');
-                root.appendChild(video);
+                return;
+            }
 
-                root.onclick = (e) => {
-                    if (e.target.closest('.plyr__controls')) return;
-                    manualToggleControls();
-                };
+            // ── مسار 3: HLS أو فيديو مباشر ──
+            const root = document.getElementById('dynamic-player-root');
+            const video = document.createElement('video');
+            video.id = "vPlayer";
+            video.className = "w-full h-full video-fit-contain";
+            video.autoplay = true;
+            video.setAttribute('playsinline', '');
+            video.setAttribute('crossorigin', '');
+            root.appendChild(video);
 
-                const plyrOptions = {
-                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
-                    settings: ['quality', 'speed'],
-                    hideControls: false,
-                    clickToPlay: false,
-                    tooltips: { controls: false, seek: true },
-                    i18n: { quality: 'الجودة', speed: 'السرعة' }
-                };
+            root.onclick = (e) => {
+                if (e.target.closest('.plyr__controls')) return;
+                manualToggleControls();
+            };
 
-                const setupPlyr = () => {
-                    plyr = new Plyr(video, plyrOptions);
-                    document.getElementById('placeholderScreen').classList.add('hidden');
-                    controlsVisible = true;
-                    plyr.on('controlshidden', () => {
-                        if (controlsVisible) plyr.toggleControls(true);
-                    });
+            const plyrOptions = {
+                controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
+                settings: ['quality', 'speed'],
+                hideControls: false,
+                clickToPlay: false,
+                tooltips: { controls: false, seek: true },
+                i18n: { quality: 'الجودة', speed: 'السرعة' }
+            };
 
-                    const controls = document.querySelector('.plyr__controls');
-                    if (controls) {
-                        const aspectBtn = document.createElement('button');
-                        aspectBtn.type = 'button';
-                        aspectBtn.className = 'plyr__control custom-aspect-btn';
-                        aspectBtn.innerText = 'Fit';
-                        aspectBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            toggleAspectRatio(video);
-                        };
-                        const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
-                        if (fullscreenBtn) controls.insertBefore(aspectBtn, fullscreenBtn);
-                        else controls.appendChild(aspectBtn);
-                    }
-                };
+            const setupPlyr = () => {
+                plyr = new Plyr(video, plyrOptions);
+                document.getElementById('placeholderScreen').classList.add('hidden');
+                controlsVisible = true;
+                plyr.on('controlshidden', () => { if (controlsVisible) plyr.toggleControls(true); });
 
-                if (Hls.isSupported() && (url.includes('.m3u8') || type === 'v')) {
-                    hls = new Hls();
-                    hls.loadSource(url);
-                    hls.attachMedia(video);
-
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
-                        plyrOptions.quality = {
-                            default: 0,
-                            options: [0, ...availableQualities],
-                            forced: true,
-                            onChange: (q) => {
-                                if (q === 0) hls.currentLevel = -1;
-                                else hls.levels.forEach((level, idx) => {
-                                    if (level.height === q) hls.currentLevel = idx;
-                                });
-                            }
-                        };
-                        plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
-                        setupPlyr();
-                    });
-
-                    hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            document.getElementById('placeholderScreen').classList.add('hidden');
-                            document.getElementById('errorScreen').classList.remove('hidden');
-                        }
-                    });
-                } else {
-                    video.src = url;
-                    setupPlyr();
+                const controls = document.querySelector('.plyr__controls');
+                if (controls) {
+                    const aspectBtn = document.createElement('button');
+                    aspectBtn.type = 'button';
+                    aspectBtn.className = 'plyr__control custom-aspect-btn';
+                    aspectBtn.innerText = 'Fit';
+                    aspectBtn.onclick = (e) => { e.stopPropagation(); toggleAspectRatio(video); };
+                    const fsBtn = controls.querySelector('[data-plyr="fullscreen"]');
+                    if (fsBtn) controls.insertBefore(aspectBtn, fsBtn);
+                    else controls.appendChild(aspectBtn);
                 }
+            };
+
+            if (Hls.isSupported() && (url.includes('.m3u8') || type === 'v')) {
+                hls = new Hls();
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
+                    plyrOptions.quality = {
+                        default: 0,
+                        options: [0, ...availableQualities],
+                        forced: true,
+                        onChange: (q) => {
+                            if (q === 0) hls.currentLevel = -1;
+                            else hls.levels.forEach((level, idx) => { if (level.height === q) hls.currentLevel = idx; });
+                        }
+                    };
+                    plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
+                    setupPlyr();
+                });
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    if (data.fatal) {
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        document.getElementById('errorScreen').classList.remove('hidden');
+                    }
+                });
+            } else {
+                video.src = url;
+                setupPlyr();
             }
         }
 
@@ -821,7 +1149,7 @@
                     splash.classList.add('splash-fade-out');
                     setTimeout(() => splash.remove(), 600);
                 }
-            }, 2000); 
+            }, 2000);
         });
     </script>
 </body>
