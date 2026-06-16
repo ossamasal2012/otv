@@ -270,7 +270,20 @@ jobs:
                         return super.shouldInterceptRequest(v, r);
                     }
 
-                    if (isStrictRadioStream(url)) {
+                    // التحقق مما إذا كان الطلب يخص iframe أو صفحة ويب كاملة (HTML)
+                    boolean isIframe = false;
+                    if (r.getRequestHeaders() != null) {
+                        String accept = r.getRequestHeaders().get("Accept");
+                        String secFetch = r.getRequestHeaders().get("Sec-Fetch-Dest");
+                        
+                        if (("iframe".equalsIgnoreCase(secFetch) || "document".equalsIgnoreCase(secFetch)) || 
+                            (accept != null && accept.contains("text/html"))) {
+                            isIframe = true;
+                        }
+                    }
+
+                    // تجاهل التدخل في قنوات الراديو وملفات الـ iframe
+                    if (isStrictRadioStream(url) || isIframe) {
                         return null; 
                     }
 
