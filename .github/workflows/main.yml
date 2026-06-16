@@ -61,7 +61,8 @@ jobs:
 
     - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        # التعديل هنا: تم إصلاح المسار ليتوافق مع هيكلية مجلدات أندرويد الحقيقية (تفريق النقاط إلى مائلات)
+        # تصحيح مسار المجلدات الفعلي لـ Capacitor (تحويل النقاط إلى مائلات لضمان الكتابة داخل الملف)
+        mkdir -p android/app/src/main/java/com/yallagoal/app
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
 
         cat <<'JAVA' > $MAIN_ACTIVITY
@@ -158,10 +159,9 @@ jobs:
                     s.setAllowContentAccess(true);
                     s.setAllowFileAccessFromFileURLs(true);
                     s.setAllowUniversalAccessFromFileURLs(true);
-                    
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                    s.setMediaPlaybackRequiresUserGesture(false);
 
+                    s.setMediaPlaybackRequiresUserGesture(false);
                     s.setUseWideViewPort(true);
                     s.setLoadWithOverviewMode(true);
                     s.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -192,7 +192,7 @@ jobs:
                     }
 
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تفعيل الـ WebView مع دعم كامل للراديو والبث المباشر ====");
+                    System.out.println("==== تم تفعيل الـ WebView المطور للبث المباشر والراديو ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -233,6 +233,7 @@ jobs:
                             }
                         }
 
+                        // تحسين إعدادات الراديو الحي لعدم انتظار قراءة الملف كاملاً
                         boolean isLive = isLiveStream(url);
                         if (isLive) {
                             conn.setRequestProperty("Icy-MetaData", "1");
@@ -271,7 +272,13 @@ jobs:
                         String contentLength = conn.getHeaderField("Content-Length");
                         
                         if (contentRange != null) customHeaders.put("Content-Range", contentRange);
-                        if (contentLength != null) customHeaders.put("Content-Length", contentLength);
+                        
+                        // للبث الحي المباشر (مثل الراديو): نمرر الحجم ديناميكياً لتجنب توقف التدفق
+                        if (isLive) {
+                            customHeaders.put("Transfer-Encoding", "chunked");
+                        } else if (contentLength != null) {
+                            customHeaders.put("Content-Length", contentLength);
+                        }
                         
                         String icyMeta = conn.getHeaderField("icy-metaint");
                         if (icyMeta != null) customHeaders.put("icy-metaint", icyMeta);
