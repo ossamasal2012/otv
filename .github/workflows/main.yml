@@ -196,7 +196,6 @@ jobs:
 
                     wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-                    // معالجة مخصصة لإدارة ملء الشاشة الفعلي وإصلاح تجمد النظام
                     wv.setWebChromeClient(new WebChromeClient() {
                         @Override
                         public void onShowCustomView(View view, CustomViewCallback callback) {
@@ -270,20 +269,38 @@ jobs:
                         return super.shouldInterceptRequest(v, r);
                     }
 
-                    // التحقق مما إذا كان الطلب يخص iframe أو صفحة ويب كاملة (HTML)
-                    boolean isIframe = false;
-                    if (r.getRequestHeaders() != null) {
-                        String accept = r.getRequestHeaders().get("Accept");
-                        String secFetch = r.getRequestHeaders().get("Sec-Fetch-Dest");
+                    // =================================================================
+                    // الحل الجذري والنهائي لمشكلة الـ Iframe والروابط الداخلية
+                    // =================================================================
+                    Map<String, String> reqHeaders = r.getRequestHeaders();
+                    if (reqHeaders != null) {
+                        String accept = reqHeaders.get("Accept");
                         
-                        if (("iframe".equalsIgnoreCase(secFetch) || "document".equalsIgnoreCase(secFetch)) || 
-                            (accept != null && accept.contains("text/html"))) {
-                            isIframe = true;
+                        // 1. إذا كان الطلب يخص فتح صفحة ويب رئيسية (تحميل الـ Iframe نفسه)
+                        if (accept != null && accept.contains("text/html")) {
+                            return null; // السماح للنظام بمعالجته 
+                        }
+
+                        // 2. الفحص الأمني الدقيق (معرفة مصدر الطلب)
+                        String referer = reqHeaders.get("Referer");
+                        String origin = reqHeaders.get("Origin");
+                        
+                        boolean isFromMainApp = false;
+                        if (origin != null && (origin.contains("localhost") || origin.contains("capacitor://"))) {
+                            isFromMainApp = true;
+                        } else if (referer != null && (referer.contains("localhost") || referer.contains("capacitor://"))) {
+                            isFromMainApp = true;
+                        }
+
+                        // 3. إذا كان الطلب صادر من ملفات داخل الـ Iframe (مثل سكربتات مشغلات الويب)
+                        // نوقف محركنا فوراً وندع المتصفح الأصلي يتعامل معه للحفاظ على الكوكيز والـ Sessions
+                        if (!isFromMainApp) {
+                            return null;
                         }
                     }
+                    // =================================================================
 
-                    // تجاهل التدخل في قنوات الراديو وملفات الـ iframe
-                    if (isStrictRadioStream(url) || isIframe) {
+                    if (isStrictRadioStream(url)) {
                         return null; 
                     }
 
