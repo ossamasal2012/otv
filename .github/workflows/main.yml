@@ -148,7 +148,7 @@ jobs:
                 try {
                     WebView wv = getBridge().getWebView();
 
-                    // مسح الكاش القديم
+                    // مسح الكاش القديم لضمان عدم تداخل البيانات السابقة
                     wv.clearCache(true);
 
                     WebSettings s = wv.getSettings();
@@ -159,34 +159,27 @@ jobs:
                     s.setAllowContentAccess(true);
                     s.setAllowFileAccessFromFileURLs(true);
                     s.setAllowUniversalAccessFromFileURLs(true);
+                    
+                    // السماح بدمج المحتوى المشفر وغير المشفر لدعم الصوتيات بكافة الروابط
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
-                    // ═══════════════════════════════════════════════════
-                    // تفعيل تشغيل الوسائط بدون إيماءة المستخدم
-                    // ═══════════════════════════════════════════════════
+                    // تفعيل تشغيل الوسائط التلقائي بدون إيماءة من المستخدم
                     s.setMediaPlaybackRequiresUserGesture(false);
 
-                    // تفعيل دعم تشغيل الفيديو المضمّن (Inline Video)
-                    // مهم لـ WebM و HLS داخل <video> tags
+                    // تحسينات أداء التصفح وعرض الميديا
                     s.setUseWideViewPort(true);
                     s.setLoadWithOverviewMode(true);
-
-                    // منع الكاش تماماً لضمان تحميل أحدث المحتوى
                     s.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
-                    // User-Agent يُقنع الخوادم بأننا متصفح حقيقي
+                    // وكيل مستخدم حديث لتخطي حجب تشغيل ميديا الصوتيات من الخوادم
                     s.setUserAgentString(
                         "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
                         "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                        "Chrome/120.0.0.0 Mobile Safari/537.36"
+                        "Chrome/125.0.0.0 Mobile Safari/537.36"
                     );
 
                     wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
-                    // ═══════════════════════════════════════════════════
-                    // WebChromeClient مطلوب لتفعيل تشغيل الميديا كاملاً
-                    // بما فيه الـ Full-Screen Video و WebM Audio
-                    // ═══════════════════════════════════════════════════
                     wv.setWebChromeClient(new WebChromeClient() {
                         @Override
                         public void onShowCustomView(View view, CustomViewCallback callback) {
@@ -198,26 +191,22 @@ jobs:
                         }
                     });
 
-                    // Cookie Manager
                     if (Build.VERSION.SDK_INT >= 21) {
                         android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
                         cm.setAcceptCookie(true);
                         cm.setAcceptThirdPartyCookies(wv, true);
                     }
 
-                    // تطبيق الـ CORS Proxy Client المطوّر
+                    // ربط كود الـ CORS Client الجديد والمطور للصوتيات
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
 
-                    System.out.println("==== تم تفعيل الـ WebView مع دعم كامل للـ WebM والصوت ====");
+                    System.out.println("==== تم تفعيل الـ WebView مع دعم كامل للصوتيات وكافة الصيغ ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
 
-            // ═══════════════════════════════════════════════════════════
-            // CORSClient: يعترض كل الطلبات ويضيف رؤوس CORS مع دعم
-            // كامل لجميع صيغ الصوت والفيديو بما فيها WebM و HLS
-            // ═══════════════════════════════════════════════════════════
+            // CORSClient مطور ليدعم تدفق بيانات الصوت والفيديو (Streaming/Range Request)
             class CORSClient extends BridgeWebViewClient {
                 CORSClient(com.getcapacitor.Bridge b) { super(b); }
 
@@ -226,16 +215,11 @@ jobs:
                     String url = r.getUrl().toString();
                     String method = r.getMethod();
 
-                    // تمرير طلبات OPTIONS مباشرة مع رؤوس CORS
                     if ("OPTIONS".equalsIgnoreCase(method)) {
-                        return buildCorsResponse(null, "text/plain", 204);
+                        return buildCorsResponse(null, "text/plain", 204, null);
                     }
 
-                    // تمرير الموارد المحلية مباشرة
-                    if (!url.startsWith("http")) {
-                        return super.shouldInterceptRequest(v, r);
-                    }
-                    if (url.contains("localhost") || url.contains("capacitor://")) {
+                    if (!url.startsWith("http") || url.contains("localhost") || url.contains("capacitor://")) {
                         return super.shouldInterceptRequest(v, r);
                     }
 
@@ -247,25 +231,27 @@ jobs:
                         conn.setReadTimeout(30000);
                         conn.setInstanceFollowRedirects(true);
 
-                        // نسخ رؤوس الطلب الأصلية مع تخطي Origin
+                        // نسخ الرؤوس مع الحفاظ على طلبات الأجزاء للصوت (Range Request)
+                        String rangeHeader = null;
                         for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
                             String key = h.getKey();
-                            if (!key.equalsIgnoreCase("Origin") &&
-                                !key.equalsIgnoreCase("Host")) {
+                            if (!key.equalsIgnoreCase("Origin") && !key.equalsIgnoreCase("Host")) {
                                 conn.setRequestProperty(key, h.getValue());
+                                if (key.equalsIgnoreCase("Range")) {
+                                    rangeHeader = h.getValue();
+                                }
                             }
                         }
 
-                        // رؤوس ضرورية لإقناع الخوادم
-                        conn.setRequestProperty("User-Agent",
-                            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0.0.0");
-                        conn.setRequestProperty("Accept",
-                            "audio/webm,audio/ogg,audio/mp4,audio/*,video/webm,video/*,*/*;q=0.9");
-                        conn.setRequestProperty("Accept-Language", "ar,en;q=0.9");
-                        conn.setRequestProperty("Accept-Encoding", "identity");
-                        conn.setRequestProperty("Range", "bytes=0-");
+                        // إذا كان الرابط لملف صوتي ولم يرسل المتصفح Range، نقوم بتهيئته لدعم التدفّق السمعي
+                        if (rangeHeader == null && isAudioOrVideo(url)) {
+                            conn.setRequestProperty("Range", "bytes=0-");
+                        }
 
-                        // دعم Referer لبعض الخوادم التي تتحقق منه
+                        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
+                        conn.setRequestProperty("Accept", "audio/webm,audio/ogg,audio/mp4,audio/mpeg,audio/*,video/*,*/*;q=0.9");
+                        conn.setRequestProperty("Accept-Language", "ar,en;q=0.9");
+
                         String referer = extractBaseUrl(url);
                         if (referer != null) {
                             conn.setRequestProperty("Referer", referer);
@@ -276,7 +262,6 @@ jobs:
                         int statusCode = conn.getResponseCode();
                         if (statusCode < 0) statusCode = 200;
 
-                        // قراءة الاستجابة
                         InputStream inputStream;
                         try {
                             inputStream = conn.getInputStream();
@@ -287,7 +272,6 @@ jobs:
                             }
                         }
 
-                        // تحديد نوع المحتوى بدقة
                         String contentType = conn.getContentType();
                         if (contentType == null || contentType.isEmpty()) {
                             contentType = detectMimeType(url);
@@ -296,10 +280,16 @@ jobs:
                             contentType = contentType.split(";")[0].trim();
                         }
 
-                        // تصحيح أنواع MIME الخاطئة
                         contentType = fixMimeType(contentType, url);
 
-                        return buildCorsResponse(inputStream, contentType, statusCode);
+                        // جلب رؤوس الاستجابة الهامة للصوت من السيرفر الأصلي وتمريرها للمشغل
+                        Map<String, String> customHeaders = new HashMap<>();
+                        String contentRange = conn.getHeaderField("Content-Range");
+                        String contentLength = conn.getHeaderField("Content-Length");
+                        if (contentRange != null) customHeaders.put("Content-Range", contentRange);
+                        if (contentLength != null) customHeaders.put("Content-Length", contentLength);
+
+                        return buildCorsResponse(inputStream, contentType, statusCode, customHeaders);
 
                     } catch (Exception e) {
                         System.err.println("CORS Proxy Error for: " + url + " -> " + e.getMessage());
@@ -307,47 +297,47 @@ jobs:
                     }
                 }
 
-                // ═══════════════════════════════════════════════════════
-                // بناء الاستجابة مع رؤوس CORS الكاملة
-                // ═══════════════════════════════════════════════════════
-                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status) {
+                private boolean isAudioOrVideo(String url) {
+                    String lower = url.toLowerCase();
+                    return lower.contains(".mp3") || lower.contains(".webm") || lower.contains(".ogg") || 
+                           lower.contains(".wav") || lower.contains(".aac") || lower.contains(".m4a") || 
+                           lower.contains(".m3u8") || lower.contains(".mp4");
+                }
+
+                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders) {
                     Map<String, String> headers = new HashMap<>();
                     headers.put("Access-Control-Allow-Origin", "*");
                     headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
                     headers.put("Access-Control-Allow-Headers", "*");
                     headers.put("Access-Control-Expose-Headers", "*");
                     headers.put("Access-Control-Max-Age", "86400");
-
-                    // رؤوس مهمة لدعم تشغيل الوسائط المتقطع (Streaming)
                     headers.put("Accept-Ranges", "bytes");
                     headers.put("Cache-Control", "no-cache");
 
+                    if (extraHeaders != null) {
+                        headers.putAll(extraHeaders);
+                    }
+
                     if (is == null) is = new ByteArrayInputStream(new byte[0]);
-                    String reason = status < 400 ? "OK" : "Error";
+                    
+                    String reason = "OK";
+                    if (status == 206) reason = "Partial Content";
+                    else if (status >= 400) reason = "Error";
+
                     return new WebResourceResponse(mimeType, "utf-8", status, reason, headers, is);
                 }
 
-                // ═══════════════════════════════════════════════════════
-                // كشف نوع MIME الصحيح من امتداد الرابط
-                // يشمل كل صيغ الصوت والفيديو الشائعة
-                // ═══════════════════════════════════════════════════════
                 private String detectMimeType(String url) {
                     String lower = url.toLowerCase();
 
-                    // ── صيغ الفيديو ──────────────────────────────────
                     if (lower.contains(".m3u8"))   return "application/vnd.apple.mpegurl";
                     if (lower.contains(".m3u"))    return "audio/x-mpegurl";
                     if (lower.contains(".ts"))     return "video/mp2t";
                     if (lower.contains(".mp4"))    return "video/mp4";
                     if (lower.contains(".webm"))   return "video/webm";
                     if (lower.contains(".mkv"))    return "video/x-matroska";
-                    if (lower.contains(".avi"))    return "video/x-msvideo";
-                    if (lower.contains(".mov"))    return "video/quicktime";
-                    if (lower.contains(".flv"))    return "video/x-flv";
-                    if (lower.contains(".3gp"))    return "video/3gpp";
-                    if (lower.contains(".ogv"))    return "video/ogg";
 
-                    // ── صيغ الصوت ──────────────────────────────────
+                    // صيغ الصوتيات بالكامل
                     if (lower.contains(".mp3"))    return "audio/mpeg";
                     if (lower.contains(".ogg"))    return "audio/ogg";
                     if (lower.contains(".oga"))    return "audio/ogg";
@@ -358,38 +348,30 @@ jobs:
                     if (lower.contains(".m4a"))    return "audio/mp4";
                     if (lower.contains(".weba"))   return "audio/webm";
 
-                    // ── بيانات ──────────────────────────────────────
                     if (lower.contains(".json"))   return "application/json";
-                    if (lower.contains(".xml"))    return "application/xml";
-
                     return "application/octet-stream";
                 }
 
-                // ═══════════════════════════════════════════════════════
-                // تصحيح أنواع MIME الخاطئة التي قد ترسلها بعض الخوادم
-                // مثل إرسال WebM بنوع application/octet-stream
-                // ═══════════════════════════════════════════════════════
                 private String fixMimeType(String serverMime, String url) {
                     String lower = url.toLowerCase();
                     String detected = detectMimeType(url);
 
-                    // إذا أرسل السيرفر نوعاً عاماً، نستخدم النوع المكتشف من الامتداد
                     if ("application/octet-stream".equals(serverMime) ||
                         "binary/octet-stream".equals(serverMime) ||
                         serverMime == null || serverMime.isEmpty()) {
                         return detected;
                     }
 
-                    // تصحيح خاص: بعض الخوادم تُرسل WebM كـ video/mp4 أو العكس
-                    if (lower.contains(".webm") &&
-                        !serverMime.contains("webm")) {
+                    if (lower.contains(".webm") && !serverMime.contains("webm")) {
                         return lower.contains("audio") ? "audio/webm" : "video/webm";
+                    }
+                    if (lower.contains(".mp3") && !serverMime.contains("mpeg")) {
+                        return "audio/mpeg";
                     }
 
                     return serverMime;
                 }
 
-                // استخراج الـ Base URL للـ Referer
                 private String extractBaseUrl(String url) {
                     try {
                         URL u = new URL(url);
