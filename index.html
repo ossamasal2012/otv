@@ -1,5 +1,6 @@
 
 
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -230,6 +231,37 @@
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
+        }
+        /* ستايل المجلدات الجديدة */
+        .folder-item {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%) !important;
+            border: 1px solid rgba(16, 185, 129, 0.25) !important;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .folder-item:hover {
+            border-color: #10b981 !important;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15);
+        }
+        .folder-badge {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 800;
+        }
+        /* ستايل زر العودة إلى القنوات الرئيسية */
+        .back-btn {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            color: #94a3b8;
+            transition: all 0.2s;
+        }
+        .back-btn:hover {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: #10b981;
+            color: #10b981;
         }
 
         .active-card {
@@ -532,9 +564,20 @@
                 inp.focus();
             }
         }
+        // روابط المجلدات المثبتة الجديدة
+        const QURAN_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
+        const POEMS_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
         // ===== منطق التطبيق الأصلي =====
+        // ===== منطق التطبيق الأصلي =====
         let myChannels = [];
+        let quranChannels = [];
+        let poemsChannels = [];
+        
+        // متغيرات للتحكم في فتح وإغلاق المجلدات داخل القائمة
+        // المتغير المسؤول عن تحديد التبويب الحالي (main = القائمة الرئيسية، quran = مجلد القرآن، poems = مجلد القصائد)
+        let currentTab = "main";
+
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
@@ -546,9 +589,19 @@
         async function loadChannels() {
             try {
                 document.getElementById('placeholderScreen').classList.remove('hidden');
-                const res = await fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json");
-                const data = await res.json();
-                myChannels = data;
+                
+                // جلب البيانات من الروابط الثلاثة
+                const [resMain, resQuran, resPoems] = await Promise.all([
+                    fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json").then(r => r.json()).catch(() => []),
+                    fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json").then(r => r.json()).catch(() => []),
+                    fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json").then(r => r.json()).catch(() => [])
+                ]);
+
+                // حفظ قنوات المجلدات بصيغتها القياسية
+                quranChannels = resQuran.map(ch => [ch[0], ch[1], "القرآن الكريم", ch[3]]);
+                poemsChannels = resPoems.map(ch => [ch[0], ch[1], "قصائد حسينية", ch[3]]);
+                myChannels = resMain; // القنوات الرئيسية فقط
+                
                 renderMenu();
                 renderChannels();
                 document.getElementById('placeholderScreen').classList.add('hidden');
@@ -558,7 +611,8 @@
             }
         }
 
-        function renderMenu() {
+       function renderMenu() {
+            // استخراج الأقسام من القنوات الرئيسية فقط لتبقى الواجهة نظيفة
             const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
             document.getElementById('categoryMenu').innerHTML = cats.map(c => `
                 <button onclick="filter('${c}')" class="px-3 py-1 rounded-md text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap hover:border-slate-700 ${currentCat === c ? 'active-btn' : ''}">
@@ -568,37 +622,153 @@
         }
 
         function renderChannels() {
-    const box = document.getElementById('channelsBox');
-    const filtered = myChannels.filter(c => {
-        const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
-        
-        // مقارنة ذكية تتجاهل الهمزات، الفروق بين الهاء والتاء، وتدعم البحث بحرف أو حرفين بشكل جزئي دقيق
-        const normalizedChannelName = normalizeArabic(c[0]);
-        const normalizedQuery = normalizeArabic(searchQuery);
-        
-        return matchCat && normalizedChannelName.includes(normalizedQuery);
-    });
+            const box = document.getElementById('channelsBox');
+            let htmlContent = "";
+            const normalizedQuery = normalizeArabic(searchQuery);
 
-    box.innerHTML = filtered.map(ch => {
-        const isFav = favorites.includes(ch[0]);
-        return `
-        <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
-            class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
-            <div class="flex items-center gap-2">
-                <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
-                <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
-            </div>
-            <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
-                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-            </button>
-        </div>`;
-    }).join('');
-}
+            // دالة مساعدة لتوليد كود الـ HTML للقنوات العادية
+            const generateChannelHTML = (ch) => {
+                const isFav = favorites.includes(ch[0]);
+                return `
+                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+                    class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+                    <div class="flex items-center gap-2">
+                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
+                        <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+                    </div>
+                    <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                    </button>
+                </div>`;
+            };
 
-        function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
+            // ================= [ أولاً: إذا كنا داخل مجلد القرآن الكريم ] =================
+            if (currentTab === "quran") {
+                const filteredQuran = quranChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery));
+                
+                // إضافة زر العودة مع عنوان المجلد
+                htmlContent += `
+                <div class="flex flex-col gap-2 mb-3">
+                    <button onclick="switchTab('main')" class="back-btn w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-arrow-right"></i> العودة للقنوات الرئيسية
+                    </button>
+                    <div class="text-[11px] font-bold text-emerald-500 px-1 flex items-center gap-1.5">
+                        <i class="fa-solid fa-folder-open"></i> تبويب | القرآن الكريم
+                    </div>
+                </div>
+                <div class="space-y-1">${filteredQuran.map(ch => generateChannelHTML(ch)).join('')}</div>`;
+                
+                box.innerHTML = htmlContent;
+                return; // إنهاء الدالة هنا لأننا في تبويب منفصل
+            }
+
+            // ================= [ ثانياً: إذا كنا داخل مجلد قصائد حسينية ] =================
+            if (currentTab === "poems") {
+                const filteredPoems = poemsChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery));
+                
+                htmlContent += `
+                <div class="flex flex-col gap-2 mb-3">
+                    <button onclick="switchTab('main')" class="back-btn w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-arrow-right"></i> العودة للقنوات الرئيسية
+                    </button>
+                    <div class="text-[11px] font-bold text-emerald-500 px-1 flex items-center gap-1.5">
+                        <i class="fa-solid fa-folder-open"></i> تبويب | قصائد حسينية
+                    </div>
+                </div>
+                <div class="space-y-1">${filteredPoems.map(ch => generateChannelHTML(ch)).join('')}</div>`;
+                
+                box.innerHTML = htmlContent;
+                return; // إنهاء الدالة
+            }
+
+            // ================= [ ثالثاً: الشاشة الرئيسية الافتراضية (main) ] =================
+            
+            // 1. عرض كرت مجلد القرآن الكريم (يظهر فقط في قسم الكل)
+            if (currentCat === "الكل") {
+                const filteredQuranCount = quranChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery)).length;
+                if (filteredQuranCount > 0 || searchQuery.trim() === "") {
+                    htmlContent += `
+                    <div onclick="switchTab('quran')" class="channel-item folder-item p-3 rounded-lg flex items-center justify-between group mb-1">
+                        <div class="flex items-center gap-2.5">
+                            <i class="fa-solid fa-folder text-emerald-500 text-[16px]"></i>
+                            <span class="text-[12px] font-black text-white group-hover:text-emerald-400 transition-colors">القرآن الكريم</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="folder-badge">${quranChannels.length} قناة</span>
+                            <i class="fa-solid fa-chevron-left text-[10px] text-slate-600 group-hover:text-emerald-500 mr-1 transition-colors"></i>
+                        </div>
+                    </div>`;
+                }
+            }
+
+            // 2. عرض كرت مجلد قصائد حسينية (يظهر فقط في قسم الكل)
+            if (currentCat === "الكل") {
+                const filteredPoemsCount = poemsChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery).length);
+                if (filteredPoemsCount > 0 || searchQuery.trim() === "") {
+                    htmlContent += `
+                    <div onclick="switchTab('poems')" class="channel-item folder-item p-3 rounded-lg flex items-center justify-between group mb-2">
+                        <div class="flex items-center gap-2.5">
+                            <i class="fa-solid fa-folder text-emerald-500 text-[16px]"></i>
+                            <span class="text-[12px] font-black text-white group-hover:text-emerald-400 transition-colors">قصائد حسينية</span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="folder-badge">${poemsChannels.length} عينة</span>
+                            <i class="fa-solid fa-chevron-left text-[10px] text-slate-600 group-hover:text-emerald-500 mr-1 transition-colors"></i>
+                        </div>
+                    </div>`;
+                }
+            }
+
+            // 3. عرض القنوات الرئيسية بناءً على الفلترة والبحث
+            const filteredMain = myChannels.filter(c => {
+                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
+                return matchCat && normalizeArabic(c[0]).includes(normalizedQuery);
+            });
+
+            // إذا كنا في المفضلة، ندمج مفضلة المجلدات أيضاً لتظهر هنا
+            if (currentCat === "المفضلة") {
+                const allFolderChannels = [...quranChannels, ...poemsChannels];
+                const favFolders = allFolderChannels.filter(c => favorites.includes(c[0]) && normalizeArabic(c[0]).includes(normalizedQuery));
+                htmlContent += favFolders.map(ch => generateChannelHTML(ch)).join('');
+            }
+
+            // إضافة القنوات العادية
+            htmlContent += filteredMain.map(ch => generateChannelHTML(ch)).join('');
+
+            box.innerHTML = htmlContent;
+        }
+
+        // دالة التنقل بين التبويبات وإعادة تصفير البحث عند التنقل إذا أردت
+        function switchTab(tabName) {
+            currentTab = tabName;
+            // تصفير خانة البحث تلقائياً عند الدخول أو الخروج لكي تظهر القنوات كاملة
+            document.getElementById('searchInput').value = "";
+            searchQuery = "";
+            renderChannels();
+        }
+
+        // دالات فتح وإغلاق المجلدات يدوياً عند الضغط عليها
+        function toggleQuranFolder(e) {
+            e.stopPropagation();
+            isQuranFolderOpen = !isQuranFolderOpen;
+            renderChannels();
+        }
+
+        function togglePoemsFolder(e) {
+            e.stopPropagation();
+            isPoemsFolderOpen = !isPoemsFolderOpen;
+            renderChannels();
+        }
+
+        function filter(c) { 
+            currentCat = c; 
+            currentTab = "main"; // إرجاعه للشاشة الرئيسية عند تغيير القسم العلوي
+            renderMenu(); 
+            renderChannels(); 
+        }
         // دالة لتنظيف النص وتوحيد الأحرف المتشابهة لتجعل البحث ذكياً
-        function normalizeArabic(text) {
-    if (!text) return "";
+       function normalizeArabic(text) {
+    if (text === undefined || text === null) return "";
     return text.toString().toLowerCase().trim()
         // توحيد الألف بكافة أشكالها (أ، إ، آ، ا) إلى (ا)
         .replace(/[أإآا]/g, 'ا')
