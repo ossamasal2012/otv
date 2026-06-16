@@ -89,6 +89,7 @@ jobs:
         import android.os.Build;
         import android.os.Bundle;
         import android.view.View;
+        import android.view.ViewGroup;
         import android.view.Window;
         import android.view.WindowInsets;
         import android.view.WindowInsetsController;
@@ -99,6 +100,7 @@ jobs:
         import android.webkit.WebView;
         import android.webkit.WebResourceRequest;
         import android.webkit.WebResourceResponse;
+        import android.widget.FrameLayout;
         import com.getcapacitor.BridgeActivity;
         import com.getcapacitor.BridgeWebViewClient;
         import java.io.InputStream;
@@ -109,6 +111,10 @@ jobs:
         import java.util.Map;
 
         public class MainActivity extends BridgeActivity {
+            private View customView;
+            private WebChromeClient.CustomViewCallback customViewCallback;
+            private FrameLayout customViewContainer;
+
             @Override
             protected void onCreate(Bundle savedInstanceState) {
                 requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -167,7 +173,6 @@ jobs:
                 try {
                     WebView wv = getBridge().getWebView();
                     
-                    // [تعديل فائق للسرعة]: تم حذف حظر الكاش وتصفيره نهائياً ليفتح التطبيق في رمشة عين
                     WebSettings s = wv.getSettings();
                     s.setJavaScriptEnabled(true);
                     s.setDomStorageEnabled(true);
@@ -181,8 +186,6 @@ jobs:
 
                     s.setUseWideViewPort(true);
                     s.setLoadWithOverviewMode(true);
-                    
-                    // [تعديل فائق للسرعة]: تفعيل الكاش الافتراضي السريع بدلاً من منع الكاش القديم
                     s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
                     s.setUserAgentString(
@@ -193,14 +196,48 @@ jobs:
 
                     wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
+                    // معالجة مخصصة لإدارة ملء الشاشة الفعلي وإصلاح تجمد النظام
                     wv.setWebChromeClient(new WebChromeClient() {
                         @Override
                         public void onShowCustomView(View view, CustomViewCallback callback) {
-                            super.onShowCustomView(view, callback);
+                            if (customView != null) {
+                                onHideCustomView();
+                                return;
+                            }
+                            
+                            customView = view;
+                            customViewCallback = callback;
+                            
+                            ViewGroup decorView = (ViewGroup) getWindow().getDecorView();
+                            customViewContainer = new FrameLayout(MainActivity.this);
+                            customViewContainer.setBackgroundColor(Color.BLACK);
+                            customViewContainer.addView(customView, new FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                            ));
+                            decorView.addView(customViewContainer, new ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                            ));
+                            
+                            getBridge().getWebView().setVisibility(View.GONE);
+                            applyFullscreen();
                         }
+
                         @Override
                         public void onHideCustomView() {
-                            super.onHideCustomView();
+                            if (customView == null) return;
+                            
+                            ViewGroup decorView = (ViewGroup) getWindow().getDecorView();
+                            customViewContainer.removeView(customView);
+                            decorView.removeView(customViewContainer);
+                            
+                            customView = null;
+                            customViewContainer = null;
+                            customViewCallback.onCustomViewHidden();
+                            
+                            getBridge().getWebView().setVisibility(View.VISIBLE);
+                            applyFullscreen();
                         }
                     });
 
