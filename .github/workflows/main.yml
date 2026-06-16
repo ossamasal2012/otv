@@ -31,16 +31,10 @@ jobs:
       run: |
         mkdir -p www
         cp index.html www/
-        
-        # خطوة ذكية لإضافة sandbox لجميع وسوم iframe في ملف الـ HTML تلقائياً لحمايتك ودعم البث
-        if [ -f "www/index.html" ]; then
-          sed -i 's/<iframe/<iframe sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allowfullscreen/g' www/index.html
-          echo "==== تم حقن الـ Sandbox والـ Permissions في الـ iframes بنجاح ===="
-        fi
-
         npm init -y
         npm install @capacitor/core @capacitor/cli @capacitor/android
         
+        # إنشاء ملف إعدادات كاباسيتور مخصص ومحسن للإقلاع الفوري وإلغاء شاشة الانتظار تماماً
         cat <<'EOF' > capacitor.config.json
         {
           "appId": "com.yallagoal.app",
@@ -202,6 +196,7 @@ jobs:
 
                     wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
+                    // معالجة مخصصة لإدارة ملء الشاشة الفعلي وإصلاح تجمد النظام
                     wv.setWebChromeClient(new WebChromeClient() {
                         @Override
                         public void onShowCustomView(View view, CustomViewCallback callback) {
@@ -253,7 +248,7 @@ jobs:
                     }
 
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تفعيل محرك البث فائق السرعة لـ يلا گول ====");
+                    System.out.println("==== تم تفعيل المحرك فائق السرعة لـ يلا گول ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -268,7 +263,7 @@ jobs:
                     String method = r.getMethod();
 
                     if ("OPTIONS".equalsIgnoreCase(method)) {
-                        return buildCorsResponse(null, "text/plain", 204, null, url);
+                        return buildCorsResponse(null, "text/plain", 204, null);
                     }
 
                     if (!url.startsWith("http") || url.contains("localhost") || url.contains("capacitor://")) {
@@ -331,17 +326,18 @@ jobs:
                             contentType = contentType.split(";")[0].trim();
                         }
 
-                        Map<String, String> customHeaders = new HashMap<>();
-                        
-                        // تعديل جوهري: قراءة هيدرز السيرفر وحذف القيود الأمنية للبث والـ iframe
-                        for (Map.Entry<String, java.util.List<String>> header : conn.getHeaderFields().entrySet()) {
-                            String key = header.getKey();
-                            if (key != null && !key.equalsIgnoreCase("X-Frame-Options" ) && !key.equalsIgnoreCase("Content-Security-Policy")) {
-                                customHeaders.put(key, header.getValue().get(0));
-                            }
+                        if ("application/octet-stream".equals(contentType) || "binary/octet-stream".equals(contentType)) {
+                            contentType = detectMimeType(url);
                         }
 
-                        return buildCorsResponse(inputStream, contentType, statusCode, customHeaders, url);
+                        Map<String, String> customHeaders = new HashMap<>();
+                        String contentLength = conn.getHeaderField("Content-Length");
+                        if (contentLength != null) customHeaders.put("Content-Length", contentLength);
+
+                        String contentRange = conn.getHeaderField("Content-Range");
+                        if (contentRange != null) customHeaders.put("Content-Range", contentRange);
+
+                        return buildCorsResponse(inputStream, contentType, statusCode, customHeaders);
 
                     } catch (Exception e) {
                         return super.shouldInterceptRequest(v, r);
@@ -367,27 +363,28 @@ jobs:
                     if (lower.contains(".ts"))     return "video/mp2t";
                     if (lower.contains(".mp4"))    return "video/mp4";
                     if (lower.contains(".webm"))   return "audio/webm";
-                    return "text/html"; 
+                    if (lower.contains(".mp3"))    return "audio/mpeg";
+                    if (lower.contains(".ogg"))    return "audio/ogg";
+                    if (lower.contains(".wav"))    return "audio/wav";
+                    if (lower.contains(".aac"))    return "audio/aac";
+                    return "audio/mpeg"; 
                 }
 
-                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders, String url) {
+                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders) {
                     Map<String, String> headers = new HashMap<>();
                     headers.put("Access-Control-Allow-Origin", "*");
                     headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
                     headers.put("Access-Control-Allow-Headers", "*");
                     headers.put("Access-Control-Expose-Headers", "*");
                     headers.put("Accept-Ranges", "bytes");
+                    headers.put("Cache-Control", "no-cache, no-store, must-revalidate");
 
                     if (extraHeaders != null) {
                         headers.putAll(extraHeaders);
                     }
 
-                    // إحباط قيود التضمين بشكل نهائي وقاطع
-                    headers.remove("X-Frame-Options");
-                    headers.remove("Content-Security-Policy");
-
                     if (is == null) is = new ByteArrayInputStream(new byte[0]);
-                    String reason = "OK";
+                    String reason = status == 206 ? "Partial Content" : "OK";
 
                     return new WebResourceResponse(mimeType, "utf-8", status, reason, headers, is);
                 }
