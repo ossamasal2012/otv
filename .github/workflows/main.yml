@@ -61,7 +61,8 @@ jobs:
 
     - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal.app/MainActivity.java"
+        # التعديل هنا: تم إصلاح المسار ليتوافق مع هيكلية مجلدات أندرويد الحقيقية (تفريق النقاط إلى مائلات)
+        MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
 
         cat <<'JAVA' > $MAIN_ACTIVITY
         package com.yallagoal.app;
@@ -232,10 +233,9 @@ jobs:
                             }
                         }
 
-                        // إعدادات خاصة بالراديو والبث المباشر (تخطي الـ Cache وتفعيل التمرير الفوري)
                         boolean isLive = isLiveStream(url);
                         if (isLive) {
-                            conn.setRequestProperty("Icy-MetaData", "1"); // لدعم سيرفرات الراديو الشائعة
+                            conn.setRequestProperty("Icy-MetaData", "1");
                             conn.setRequestProperty("Connection", "keep-alive");
                         } else if (rangeHeader == null && isAudioOrVideo(url)) {
                             conn.setRequestProperty("Range", "bytes=0-");
@@ -273,7 +273,6 @@ jobs:
                         if (contentRange != null) customHeaders.put("Content-Range", contentRange);
                         if (contentLength != null) customHeaders.put("Content-Length", contentLength);
                         
-                        // تمرير رؤوس ميديا الراديو الحية إن وُجدت
                         String icyMeta = conn.getHeaderField("icy-metaint");
                         if (icyMeta != null) customHeaders.put("icy-metaint", icyMeta);
 
@@ -292,7 +291,6 @@ jobs:
                            lower.contains(".m3u8") || lower.contains(".mp4") || lower.contains(".ts");
                 }
 
-                // فحص ما إذا كان الرابط هو إذاعة راديو أو بث مباشر
                 private boolean isLiveStream(String url) {
                     String lower = url.toLowerCase();
                     return lower.contains(".m3u8") || lower.contains("stream") || lower.contains("radio") || 
@@ -337,7 +335,6 @@ jobs:
                     if (lower.contains(".flac"))   return "audio/flac";
                     if (lower.contains(".m4a"))    return "audio/mp4";
                     
-                    // إذا كان رابط راديو غير معروف الامتداد، نحدد أنه بث صوتي عام
                     if (isLiveStream(url))         return "audio/mpeg";
 
                     return "application/octet-stream";
