@@ -1,6 +1,3 @@
-
-
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -185,10 +182,6 @@
             box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
         }
 
-        .login-input.error {
-            /* error now handled on the group */
-        }
-
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
             25% { transform: translateX(-8px); }
@@ -227,12 +220,11 @@
 
         .login-btn:active { transform: translateY(0); }
 
-        /* ===== نفس الستايل الأصلي ===== */
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
         }
-        /* ستايل المجلدات الجديدة */
+        
         .folder-item {
             background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%) !important;
             border: 1px solid rgba(16, 185, 129, 0.25) !important;
@@ -251,7 +243,7 @@
             font-size: 9px;
             font-weight: 800;
         }
-        /* ستايل زر العودة إلى القنوات الرئيسية */
+        
         .back-btn {
             background: rgba(30, 41, 59, 0.8);
             border: 1px solid #1e293b;
@@ -311,14 +303,7 @@
             gap: 1rem;
         }
 
-        #iPlayer {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            border: 0;
-            z-index: 40;
-            display: none;
-        }
+        /* تم إزالة #iPlayer من الـ CSS لأنه سيتم إنشاؤه برمجياً */
 
         .custom-aspect-btn {
             background: rgba(16, 185, 129, 0.2) !important;
@@ -337,11 +322,11 @@
         @media (min-width: 1536px) {
             .aside-container { width: 450px !important; }
         }
-        /* ===== شاشة التحميل الفخمة ===== */
+        
         #loadingSplashScreen {
             position: fixed;
             inset: 0;
-            z-index: 10000; /* أعلى من شاشة تسجيل الدخول */
+            z-index: 10000; 
             background: radial-gradient(circle at center, #0f172a 0%, #020617 100%);
             display: flex;
             flex-direction: column;
@@ -359,7 +344,6 @@
             animation: pulseGlow 2s infinite ease-in-out;
         }
 
-        /* حلقة مضيئة دائرية حول الشعار */
         .splash-circle {
             position: absolute;
             width: 130px;
@@ -421,7 +405,6 @@
             100% { left: 100%; }
         }
 
-        /* فئة لإخفاء الشاشة بسلاسة */
         .splash-fade-out {
             opacity: 0 !important;
             pointer-events: none !important;
@@ -430,11 +413,9 @@
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
-    <!-- ===== شاشة التحميل الفخمة للموقع ===== -->
     <div id="loadingSplashScreen">
         <div class="splash-logo-container">
             <div class="splash-circle"></div>
-            <!-- شعار التطبيق بناءً على رابط السيرفر الخاص بك -->
             <img src="https://raw.githubusercontent.com/ossamasal2012/otv/main/icon.png" alt="Yalla Goal" class="splash-logo" onerror="this.src='https://i.imgur.com/8mdt9Eg.png'">
         </div>
         <h2 class="splash-title">يلا گـــول</h2>
@@ -443,7 +424,6 @@
         </div>
     </div>
 
-    <!-- ===== شاشة تسجيل الدخول ===== -->
     <div id="loginScreen">
         <div class="login-card">
             <div class="login-title">
@@ -451,7 +431,6 @@
                 <p>أدخل الرمز السري للدخول</p>
             </div>
 
-            <!-- ملاحظة الرابط -->
             <div class="notice-box">
                 <strong>⚠️ ملاحظة مهمة</strong><br>
                 للدخول إلى التطبيق ومشاهدة أكثر من <strong>250 قناة</strong> عربية وأجنبية،<br>
@@ -483,7 +462,6 @@
         <p style="color:#10b981;font-size:0.75rem;font-weight:900;letter-spacing:2px;filter:drop-shadow(0 0 8px rgba(16,185,129,0.6));">تطوير أُسامه · v2.7</p>
     </div>
 
-    <!-- ===== التطبيق الرئيسي ===== -->
     <aside class="aside-container w-full lg:w-80 xl:w-96 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
         <div class="p-4 border-b border-slate-900 hidden lg:block text-center">
     <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
@@ -515,11 +493,9 @@
         </div>
 
         <div id="dynamic-player-root"></div>
-        <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
-    </main>
+        </main>
 
     <script>
-        // ===== إظهار/إخفاء الرمز =====
         function togglePin() {
             const inp = document.getElementById('pinInput');
             const btn = document.getElementById('eyeBtn');
@@ -532,18 +508,15 @@
             }
         }
 
-        // ===== نظام تسجيل الدخول =====
         const SECRET_CODE = "ossamatt22";
         const STORAGE_KEY = "yalla_authenticated";
 
         function checkAuth() {
             const isAuth = localStorage.getItem(STORAGE_KEY);
             if (isAuth === "true") {
-                // المستخدم مسجّل مسبقاً، أخفِ شاشة الدخول مباشرة
                 document.getElementById('loginScreen').classList.add('hidden');
                 loadChannels();
             }
-            // إذا لم يكن مسجّلاً، تبقى شاشة الدخول ظاهرة
         }
 
         function doLogin() {
@@ -564,20 +537,14 @@
                 inp.focus();
             }
         }
-        // روابط المجلدات المثبتة الجديدة
+        
         const QURAN_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
-        // ===== منطق التطبيق الأصلي =====
-        // ===== منطق التطبيق الأصلي =====
         let myChannels = [];
         let quranChannels = [];
         let poemsChannels = [];
-        
-        // متغيرات للتحكم في فتح وإغلاق المجلدات داخل القائمة
-        // المتغير المسؤول عن تحديد التبويب الحالي (main = القائمة الرئيسية، quran = مجلد القرآن، poems = مجلد القصائد)
         let currentTab = "main";
-
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
@@ -589,18 +556,15 @@
         async function loadChannels() {
             try {
                 document.getElementById('placeholderScreen').classList.remove('hidden');
-                
-                // جلب البيانات من الروابط الثلاثة
                 const [resMain, resQuran, resPoems] = await Promise.all([
                     fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json").then(r => r.json()).catch(() => []),
                     fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json").then(r => r.json()).catch(() => []),
                     fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json").then(r => r.json()).catch(() => [])
                 ]);
 
-                // حفظ قنوات المجلدات بصيغتها القياسية
                 quranChannels = resQuran.map(ch => [ch[0], ch[1], "القرآن الكريم", ch[3]]);
                 poemsChannels = resPoems.map(ch => [ch[0], ch[1], "قصائد حسينية", ch[3]]);
-                myChannels = resMain; // القنوات الرئيسية فقط
+                myChannels = resMain; 
                 
                 renderMenu();
                 renderChannels();
@@ -612,7 +576,6 @@
         }
 
        function renderMenu() {
-            // استخراج الأقسام من القنوات الرئيسية فقط لتبقى الواجهة نظيفة
             const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
             document.getElementById('categoryMenu').innerHTML = cats.map(c => `
                 <button onclick="filter('${c}')" class="px-3 py-1 rounded-md text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap hover:border-slate-700 ${currentCat === c ? 'active-btn' : ''}">
@@ -626,7 +589,6 @@
             let htmlContent = "";
             const normalizedQuery = normalizeArabic(searchQuery);
 
-            // دالة مساعدة لتوليد كود الـ HTML للقنوات العادية
             const generateChannelHTML = (ch) => {
                 const isFav = favorites.includes(ch[0]);
                 return `
@@ -642,11 +604,8 @@
                 </div>`;
             };
 
-            // ================= [ أولاً: إذا كنا داخل مجلد القرآن الكريم ] =================
             if (currentTab === "quran") {
                 const filteredQuran = quranChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery));
-                
-                // إضافة زر العودة مع عنوان المجلد
                 htmlContent += `
                 <div class="flex flex-col gap-2 mb-3">
                     <button onclick="switchTab('main')" class="back-btn w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
@@ -657,15 +616,12 @@
                     </div>
                 </div>
                 <div class="space-y-1">${filteredQuran.map(ch => generateChannelHTML(ch)).join('')}</div>`;
-                
                 box.innerHTML = htmlContent;
-                return; // إنهاء الدالة هنا لأننا في تبويب منفصل
+                return; 
             }
 
-            // ================= [ ثانياً: إذا كنا داخل مجلد قصائد حسينية ] =================
             if (currentTab === "poems") {
                 const filteredPoems = poemsChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery));
-                
                 htmlContent += `
                 <div class="flex flex-col gap-2 mb-3">
                     <button onclick="switchTab('main')" class="back-btn w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2">
@@ -676,14 +632,10 @@
                     </div>
                 </div>
                 <div class="space-y-1">${filteredPoems.map(ch => generateChannelHTML(ch)).join('')}</div>`;
-                
                 box.innerHTML = htmlContent;
-                return; // إنهاء الدالة
+                return; 
             }
-
-            // ================= [ ثالثاً: الشاشة الرئيسية الافتراضية (main) ] =================
             
-            // 1. عرض كرت مجلد القرآن الكريم (يظهر فقط في قسم الكل)
             if (currentCat === "الكل") {
                 const filteredQuranCount = quranChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery)).length;
                 if (filteredQuranCount > 0 || searchQuery.trim() === "") {
@@ -701,7 +653,6 @@
                 }
             }
 
-            // 2. عرض كرت مجلد قصائد حسينية (يظهر فقط في قسم الكل)
             if (currentCat === "الكل") {
                 const filteredPoemsCount = poemsChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery).length);
                 if (filteredPoemsCount > 0 || searchQuery.trim() === "") {
@@ -719,81 +670,61 @@
                 }
             }
 
-            // 3. عرض القنوات الرئيسية بناءً على الفلترة والبحث
             const filteredMain = myChannels.filter(c => {
                 const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
                 return matchCat && normalizeArabic(c[0]).includes(normalizedQuery);
             });
 
-            // إذا كنا في المفضلة، ندمج مفضلة المجلدات أيضاً لتظهر هنا
             if (currentCat === "المفضلة") {
                 const allFolderChannels = [...quranChannels, ...poemsChannels];
                 const favFolders = allFolderChannels.filter(c => favorites.includes(c[0]) && normalizeArabic(c[0]).includes(normalizedQuery));
                 htmlContent += favFolders.map(ch => generateChannelHTML(ch)).join('');
             }
 
-            // إضافة القنوات العادية
             htmlContent += filteredMain.map(ch => generateChannelHTML(ch)).join('');
-
             box.innerHTML = htmlContent;
         }
 
-        // دالة التنقل بين التبويبات وإعادة تصفير البحث عند التنقل إذا أردت
         function switchTab(tabName) {
             currentTab = tabName;
-            // تصفير خانة البحث تلقائياً عند الدخول أو الخروج لكي تظهر القنوات كاملة
             document.getElementById('searchInput').value = "";
             searchQuery = "";
             renderChannels();
         }
 
-        // دالات فتح وإغلاق المجلدات يدوياً عند الضغط عليها
-        function toggleQuranFolder(e) {
-            e.stopPropagation();
-            isQuranFolderOpen = !isQuranFolderOpen;
-            renderChannels();
-        }
-
-        function togglePoemsFolder(e) {
-            e.stopPropagation();
-            isPoemsFolderOpen = !isPoemsFolderOpen;
-            renderChannels();
-        }
-
         function filter(c) { 
             currentCat = c; 
-            currentTab = "main"; // إرجاعه للشاشة الرئيسية عند تغيير القسم العلوي
+            currentTab = "main"; 
             renderMenu(); 
             renderChannels(); 
         }
-        // دالة لتنظيف النص وتوحيد الأحرف المتشابهة لتجعل البحث ذكياً
+
        function normalizeArabic(text) {
-    if (text === undefined || text === null) return "";
-    return text.toString().toLowerCase().trim()
-        // توحيد الألف بكافة أشكالها (أ، إ، آ، ا) إلى (ا)
-        .replace(/[أإآا]/g, 'ا')
-        // توحيد التاء المربوطة والهاء إلى (ه) لمنع أخطاء اختفاء قنوات مثل "النهار" أو "بي ان"
-        .replace(/[ةه]/g, 'ه')
-        // توحيد الياء والألف المقصورة إلى (ي)
-        .replace(/[ىي]/g, 'ي')
-        // إزالة الحركات، التنوين، الشدة، والفتحة
-        .replace(/[\u064B-\u0652]/g, '')
-        // إزالة الفواصل والرموز الخاصة التي قد تعيق البحث الجزئي
-        .replace(/[-_.\s]/g, '');
-}
+            if (text === undefined || text === null) return "";
+            return text.toString().toLowerCase().trim()
+                .replace(/[أإآا]/g, 'ا')
+                .replace(/[ةه]/g, 'ه')
+                .replace(/[ىي]/g, 'ي')
+                .replace(/[\u064B-\u0652]/g, '')
+                .replace(/[-_.\s]/g, '');
+        }
 
         function searchChannels() { 
-         searchQuery = document.getElementById('searchInput').value; 
-         renderChannels(); 
+             searchQuery = document.getElementById('searchInput').value; 
+             renderChannels(); 
          }
 
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
             if (plyr) { plyr.destroy(); plyr = null; }
             document.getElementById('dynamic-player-root').innerHTML = "";
-            const iframe = document.getElementById('iPlayer');
-            iframe.src = "about:blank";
-            iframe.style.display = "none";
+            
+            // التعديل السحري: تدمير الـ iframe القديم بالكامل من الذاكرة والشاشة
+            const oldIframe = document.getElementById('iPlayer');
+            if (oldIframe) {
+                oldIframe.remove();
+            }
+
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
             currentAspectRatio = 0;
@@ -841,10 +772,38 @@
             cleanup();
 
             if (type === 'i') {
-                const iframe = document.getElementById('iPlayer');
-                iframe.style.display = "block";
+                // التعديل السحري الثاني: إنشاء iframe جديد كلياً لتفادي احتكار الذاكرة من السكربتات القديمة
+                const iframe = document.createElement('iframe');
+                iframe.id = "iPlayer";
+                iframe.setAttribute('allowfullscreen', 'true');
+                iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
+                iframe.setAttribute('referrerpolicy', 'no-referrer');
+                
+                // التنسيقات لملء مساحة العرض
+                iframe.style.position = 'absolute';
+                iframe.style.top = '0';
+                iframe.style.left = '0';
+                iframe.style.width = '100%';
+                iframe.style.height = '100%';
+                iframe.style.border = '0';
+                iframe.style.zIndex = '40';
+                iframe.style.backgroundColor = '#000';
+                
                 iframe.src = url;
-                document.getElementById('placeholderScreen').classList.add('hidden');
+
+                // إخفاء مؤشر التحميل عند استجابة الـ iframe
+                iframe.onload = () => {
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                };
+
+                // حقن الـ iframe في الصفحة
+                document.getElementById('mainPlayerArea').appendChild(iframe);
+                
+                // تأمين: في حال كان الموقع ثقيلاً جداً وتأخر حدث onload
+                setTimeout(() => {
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                }, 2000);
+
             } else {
                 const root = document.getElementById('dynamic-player-root');
                 const video = document.createElement('video');
@@ -928,15 +887,12 @@
             }
         }
 
-        // ===== تشغيل التحقق عند البداية =====
         checkAuth();
-        // إخفاء شاشة التحميل الفخمة بعد ثانيتين تلقائياً وبسلاسة
         window.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 const splash = document.getElementById('loadingSplashScreen');
                 if (splash) {
                     splash.classList.add('splash-fade-out');
-                    // إزالتها تماماً من واجهة الدوم بعد انتهاء الأنيميشن
                     setTimeout(() => splash.remove(), 600);
                 }
             }, 2000); 
