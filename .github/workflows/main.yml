@@ -61,8 +61,6 @@ jobs:
 
     - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        mkdir -p android/app/src/main/java/com/yallagoal.app
-        mkdir -p android/app/src/main/java/com/yallagoal
         mkdir -p android/app/src/main/java/com/yallagoal/app
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
 
@@ -160,7 +158,6 @@ jobs:
                     s.setAllowContentAccess(true);
                     s.setAllowFileAccessFromFileURLs(true);
                     s.setAllowUniversalAccessFromFileURLs(true);
-                    
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                     s.setMediaPlaybackRequiresUserGesture(false);
 
@@ -194,7 +191,7 @@ jobs:
                     }
 
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تثبيت مشغل حسم قيود الـ CORS للبث المباشر ====");
+                    System.out.println("==== تم إقرار نظام الحسم المزدوج للراديو والقصائد والقنوات ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -216,7 +213,6 @@ jobs:
                         return super.shouldInterceptRequest(v, r);
                     }
 
-                    // اعتراض روابط الراديو والبث الحي لحل مشكلة الـ CORS عبر تزوير رؤوس الطلب النيتف
                     try {
                         URL targetUrl = new URL(url);
                         HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
@@ -225,26 +221,28 @@ jobs:
                         conn.setReadTimeout(20000);
                         conn.setInstanceFollowRedirects(true);
 
-                        boolean isLive = isLiveStreamOrAudio(url);
+                        boolean isRadioOrLive = isLiveStreamOrAudio(url);
 
+                        // نسخ الرؤوس مع حذف قيود الحماية للتطبيق لتخطي CORS الخاص بالقنوات والقصائد
                         for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
                             String key = h.getKey();
-                            // حذف الـ Origin الخاص بالتطبيق لتخطي جدار حماية CORS الخارجي
                             if (!key.equalsIgnoreCase("Origin") && !key.equalsIgnoreCase("Host")) {
                                 conn.setRequestProperty(key, h.getValue());
                             }
                         }
 
-                        // تزوير رأس الـ Referer وإجباره ليكون متوافقاً مع سيرفر الراديو الأصلي لمنع الحجب
+                        // تزوير مرجع الطلب (Referer) بناءً على موقع السيرفر لكسر حماية قنوات الراديو والبث
                         String referer = extractBaseUrl(url);
                         if (referer != null) {
                             conn.setRequestProperty("Referer", referer);
                         }
                         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
 
-                        if (isLive) {
+                        if (isRadioOrLive) {
                             conn.setRequestProperty("Icy-MetaData", "1");
                             conn.setRequestProperty("Connection", "keep-alive");
+                        } else {
+                            conn.setRequestProperty("Range", "bytes=0-");
                         }
 
                         conn.connect();
@@ -262,9 +260,14 @@ jobs:
                             contentType = contentType.split(";")[0].trim();
                         }
 
+                        // تصحيح الأنماط المجهولة للقصائد والقنوات لتجبر المشغل على قراءتها كميديا
+                        if ("application/octet-stream".equals(contentType) || "binary/octet-stream".equals(contentType)) {
+                            contentType = detectMimeType(url);
+                        }
+
                         Map<String, String> customHeaders = new HashMap<>();
-                        if (isLive) {
-                            // الحسم: إعلام الـ WebView بتدفق البيانات الفوري المجزأ لمنع انكسار المشغل
+                        if (isRadioOrLive) {
+                            // إجبار الراديو والبث المباشر على التدفق الفوري المفتوح بدون حجم محدد
                             customHeaders.put("Transfer-Encoding", "chunked");
                         } else {
                             String contentLength = conn.getHeaderField("Content-Length");
@@ -290,11 +293,15 @@ jobs:
 
                 private String detectMimeType(String url) {
                     String lower = url.toLowerCase();
-                    if (lower.contains(".m3u8")) return "application/vnd.apple.mpegurl";
-                    if (lower.contains(".ts"))   return "video/mp2t";
-                    if (lower.contains(".mp3"))  return "audio/mpeg";
-                    if (lower.contains(".webm")) return "audio/webm";
-                    return "audio/mpeg"; // افتراضي للراديو الحي
+                    if (lower.contains(".m3u8"))   return "application/vnd.apple.mpegurl";
+                    if (lower.contains(".ts"))     return "video/mp2t";
+                    if (lower.contains(".mp4"))    return "video/mp4";
+                    if (lower.contains(".webm"))   return "audio/webm";
+                    if (lower.contains(".mp3"))    return "audio/mpeg";
+                    if (lower.contains(".ogg"))    return "audio/ogg";
+                    if (lower.contains(".wav"))    return "audio/wav";
+                    if (lower.contains(".aac"))    return "audio/aac";
+                    return "audio/mpeg"; 
                 }
 
                 private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders) {
