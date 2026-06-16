@@ -191,7 +191,7 @@ jobs:
                     }
 
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== حسم قاطع: دمج حماية القنوات وتشغيل الراديو النيتف ====");
+                    System.out.println("==== تم إقرار نظام الفصل الذكي للحسم القاطع ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -214,40 +214,41 @@ jobs:
                     }
 
                     // ═══════════════════════════════════════════════════════════════════════
-                    // نقطة الحسم المشتركة: عزل روابط الراديو الصوتي الحي ليعمل نيتف تماماً كالمتصفح
-                    // مع إجبار القنوات والقصائد على المرور عبر البروكسي لحل مشاكل الـ CORS
+                    // نقطة الحسم: التمييز القاطع والصارم بين الراديو المباشر والقصائد/القنوات
                     // ═══════════════════════════════════════════════════════════════════════
-                    if (isPureAudioRadioStream(url)) {
-                        return null; // دع الـ WebView يشغل الراديو الأصلي نيتف بدون تدخل الجافا
+                    if (isStrictRadioStream(url)) {
+                        return null; // نترك الراديو المباشر يعمل نيتف تماماً كالمتصفح لئلا ينكسر البث
                     }
 
+                    // هنا تمر القنوات والقصائد لمعالجتها وحل مشاكل CORS والـ Range بالكامل
                     try {
                         URL targetUrl = new URL(url);
                         HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
                         conn.setRequestMethod(method);
-                        conn.setConnectTimeout(20000);
-                        conn.setReadTimeout(20000);
+                        conn.setConnectTimeout(25000);
+                        conn.setReadTimeout(25000);
                         conn.setInstanceFollowRedirects(true);
 
+                        boolean hasRange = false;
                         for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
                             String key = h.getKey();
                             if (!key.equalsIgnoreCase("Origin") && !key.equalsIgnoreCase("Host")) {
                                 conn.setRequestProperty(key, h.getValue());
+                                if (key.equalsIgnoreCase("Range")) {
+                                    hasRange = true;
+                                }
                             }
-                        }
-
-                        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
-                        
-                        String rangeHeader = r.getRequestHeaders().get("Range");
-                        if (rangeHeader != null) {
-                            conn.setRequestProperty("Range", rangeHeader);
-                        } else {
-                            conn.setRequestProperty("Range", "bytes=0-");
                         }
 
                         String referer = extractBaseUrl(url);
                         if (referer != null) {
                             conn.setRequestProperty("Referer", referer);
+                        }
+                        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
+                        
+                        // إجبار السيرفر على دعم الـ Range للقصائد لتفعيل التقديم والتأخير بسلاسة
+                        if (!hasRange) {
+                            conn.setRequestProperty("Range", "bytes=0-");
                         }
 
                         conn.connect();
@@ -255,9 +256,17 @@ jobs:
                         int statusCode = conn.getResponseCode();
                         if (statusCode < 0) statusCode = 200;
 
-                        InputStream inputStream = conn.getInputStream();
-                        String contentType = conn.getContentType();
+                        InputStream inputStream;
+                        try {
+                            inputStream = conn.getInputStream();
+                        } catch (Exception e) {
+                            inputStream = conn.getErrorStream();
+                            if (inputStream == null) {
+                                inputStream = new ByteArrayInputStream(new byte[0]);
+                            }
+                        }
 
+                        String contentType = conn.getContentType();
                         if (contentType == null || contentType.isEmpty()) {
                             contentType = detectMimeType(url);
                         }
@@ -272,7 +281,7 @@ jobs:
                         Map<String, String> customHeaders = new HashMap<>();
                         String contentLength = conn.getHeaderField("Content-Length");
                         if (contentLength != null) customHeaders.put("Content-Length", contentLength);
-                        
+
                         String contentRange = conn.getHeaderField("Content-Range");
                         if (contentRange != null) customHeaders.put("Content-Range", contentRange);
 
@@ -283,15 +292,22 @@ jobs:
                     }
                 }
 
-                // دالة عزل مجهرية تفرز الراديو الصوتي النيتف وتستثني قنوات التلفزيون الـ M3U8 والقصائد
-                private boolean isPureAudioRadioStream(String url) {
+                // فلتر الفحص الدقيق والذكي لمنع اعتراض خوادم الراديو اللانهائي مع السماح بمرور القنوات والقصائد للبروكسي
+                private boolean isStrictRadioStream(String url) {
                     String lower = url.toLowerCase();
-                    // إذا كان الرابط قناة تلفزيونية أو بث مرئي، يجب ألا يعتبر راديو نيتف لكي يمر عبر البروكسي ويحل الـ CORS
-                    if (lower.contains(".m3u8") || lower.contains(".ts") || lower.contains("live/playlist")) {
-                        return false;
+                    
+                    // القنوات المرئية والملفات الثابتة التي تنتهي بصيغ واضحة يجب ألا تُعامل كراديو بث حي لأنها تحتاج البروكسي
+                    if (lower.contains(".m3u8") || lower.contains(".ts") || lower.contains(".mp4") || lower.contains(".webm")) {
+                        return false; 
                     }
-                    // روابط الراديو الحقيقية للبث الصوتي المستمر (مثل موقع سيرفرات qurango أو أي بث راديو صوتي)
-                    return lower.contains("qurango.net") || lower.contains("/radio") || lower.contains("shoutcast") || lower.contains("icecast");
+                    
+                    // روابط إذاعات الراديو الحي الصوتي المستمر (مثل راديو قرآنجو والـ Icecast)
+                    return lower.contains("radio") || 
+                           lower.contains("icecast") || 
+                           lower.contains("shoutcast") || 
+                           lower.contains("streamlive") ||
+                           lower.contains(":8000") || 
+                           lower.contains(":8002");
                 }
 
                 private String detectMimeType(String url) {
@@ -313,6 +329,7 @@ jobs:
                     headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
                     headers.put("Access-Control-Allow-Headers", "*");
                     headers.put("Access-Control-Expose-Headers", "*");
+                    headers.put("Accept-Ranges", "bytes");
                     headers.put("Cache-Control", "no-cache, no-store, must-revalidate");
 
                     if (extraHeaders != null) {
