@@ -77,6 +77,232 @@ jobs:
           echo "==== تم توحيد Kotlin ===="
         fi
 
+    - name: Inject HLS.js Player into index.html
+      run: |
+        # ===== حقن مشغل HLS.js المتكامل في index.html =====
+        # هذا يضيف مشغل HLS نظيف يعمل مع روابط m3u8 مباشرة بدون iframe
+        # مع دعم كامل للبث المباشر وتغيير القنوات ديناميكياً
+
+        cat <<'HLSEOF' > www/hls-player.js
+        // ===== HLS.js Ultra Player - يلا گول =====
+        // مشغل HLS مدمج يعمل مباشرة بدون iframe
+        
+        (function() {
+          'use strict';
+
+          // تحميل مكتبة HLS.js من CDN
+          function loadHlsLibrary(callback) {
+            if (window.Hls) {
+              callback();
+              return;
+            }
+            var script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js';
+            script.onload = callback;
+            script.onerror = function() {
+              // بديل في حالة فشل CDN الأول
+              var fallback = document.createElement('script');
+              fallback.src = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js';
+              fallback.onload = callback;
+              document.head.appendChild(fallback);
+            };
+            document.head.appendChild(script);
+          }
+
+          // الكلاس الرئيسي للمشغل
+          window.YallaPlayer = {
+            hlsInstance: null,
+            videoElement: null,
+            retryCount: 0,
+            maxRetries: 5,
+            retryDelay: 3000,
+            currentUrl: null,
+
+            // تهيئة المشغل مع عنصر video
+            init: function(videoEl) {
+              this.videoElement = videoEl;
+              this._setupVideoElement(videoEl);
+              console.log('==== يلا گول HLS Player جاهز ====');
+            },
+
+            // إعداد خصائص عنصر الفيديو
+            _setupVideoElement: function(videoEl) {
+              videoEl.setAttribute('playsinline', '');
+              videoEl.setAttribute('webkit-playsinline', '');
+              videoEl.setAttribute('x-webkit-airplay', 'allow');
+              videoEl.controls = true;
+              videoEl.style.width = '100%';
+              videoEl.style.height = '100%';
+              videoEl.style.backgroundColor = '#000';
+            },
+
+            // تشغيل رابط m3u8
+            play: function(m3u8Url, options) {
+              var self = this;
+              options = options || {};
+              this.currentUrl = m3u8Url;
+              this.retryCount = 0;
+
+              loadHlsLibrary(function() {
+                self._startPlayback(m3u8Url, options);
+              });
+            },
+
+            _startPlayback: function(m3u8Url, options) {
+              var self = this;
+              var videoEl = this.videoElement;
+
+              // تنظيف المشغل القديم
+              this._destroy();
+
+              if (Hls.isSupported()) {
+                var hlsConfig = {
+                  // إعدادات الأداء العالي
+                  enableWorker: true,
+                  lowLatencyMode: true,
+                  backBufferLength: 90,
+
+                  // إعدادات الشبكة
+                  xhrSetup: function(xhr, url) {
+                    // إضافة headers مخصصة لتجاوز قيود CORS
+                    xhr.withCredentials = false;
+                    if (options.referer) {
+                      try { xhr.setRequestHeader('Referer', options.referer); } catch(e) {}
+                    }
+                    if (options.origin) {
+                      try { xhr.setRequestHeader('Origin', options.origin); } catch(e) {}
+                    }
+                    if (options.userAgent) {
+                      try { xhr.setRequestHeader('User-Agent', options.userAgent); } catch(e) {}
+                    }
+                  },
+
+                  // إعدادات إعادة المحاولة
+                  manifestLoadingMaxRetry: 6,
+                  manifestLoadingRetryDelay: 1000,
+                  levelLoadingMaxRetry: 6,
+                  levelLoadingRetryDelay: 1000,
+                  fragLoadingMaxRetry: 6,
+                  fragLoadingRetryDelay: 1000,
+
+                  // إعدادات التخزين المؤقت
+                  maxBufferLength: 30,
+                  maxMaxBufferLength: 600,
+                  maxBufferSize: 60 * 1000 * 1000,
+                  maxBufferHole: 0.5,
+
+                  // إعدادات جودة التشغيل التكيفي
+                  startLevel: -1,
+                  abrEwmaDefaultEstimate: 500000,
+                  abrBandWidthFactor: 0.95,
+                  abrBandWidthUpFactor: 0.7,
+                };
+
+                var hls = new Hls(hlsConfig);
+                this.hlsInstance = hls;
+
+                hls.loadSource(m3u8Url);
+                hls.attachMedia(videoEl);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
+                  console.log('==== HLS: البث جاهز، عدد الجودات: ' + data.levels.length + ' ====');
+                  self.retryCount = 0;
+                  videoEl.play().catch(function(e) {
+                    console.log('تشغيل تلقائي محجوب، انتظار تفاعل المستخدم');
+                  });
+                  if (typeof self.onReady === 'function') self.onReady(data);
+                });
+
+                hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
+                  if (typeof self.onQualityChange === 'function') self.onQualityChange(data);
+                });
+
+                hls.on(Hls.Events.ERROR, function(event, data) {
+                  console.warn('HLS Error:', data.type, data.details, data.fatal);
+                  if (data.fatal) {
+                    self._handleFatalError(data, m3u8Url, options);
+                  } else {
+                    // أخطاء غير مميتة - HLS.js يعالجها تلقائياً
+                    if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+                      hls.recoverMediaError();
+                    }
+                  }
+                });
+
+              } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                // دعم HLS الأصلي (Safari/iOS)
+                videoEl.src = m3u8Url;
+                videoEl.addEventListener('loadedmetadata', function() {
+                  videoEl.play().catch(function(e) {
+                    console.log('تشغيل تلقائي محجوب');
+                  });
+                });
+              } else {
+                console.error('HLS غير مدعوم في هذا المتصفح');
+                if (typeof self.onError === 'function') self.onError('HLS not supported');
+              }
+            },
+
+            _handleFatalError: function(data, url, options) {
+              var self = this;
+              if (this.retryCount < this.maxRetries) {
+                this.retryCount++;
+                console.log('إعادة المحاولة ' + this.retryCount + '/' + this.maxRetries + '...');
+                setTimeout(function() {
+                  if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    self.hlsInstance.startLoad();
+                  } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                    self.hlsInstance.recoverMediaError();
+                  } else {
+                    self._startPlayback(url, options);
+                  }
+                }, this.retryDelay);
+              } else {
+                console.error('فشل البث نهائياً بعد ' + this.maxRetries + ' محاولات');
+                if (typeof this.onError === 'function') this.onError(data);
+              }
+            },
+
+            // تغيير القناة مباشرة
+            switchChannel: function(newM3u8Url, options) {
+              console.log('==== تغيير القناة: ' + newM3u8Url + ' ====');
+              this.play(newM3u8Url, options);
+            },
+
+            // إيقاف المشغل
+            _destroy: function() {
+              if (this.hlsInstance) {
+                this.hlsInstance.destroy();
+                this.hlsInstance = null;
+              }
+            },
+
+            // إيقاف كامل
+            stop: function() {
+              this._destroy();
+              if (this.videoElement) {
+                this.videoElement.src = '';
+                this.videoElement.load();
+              }
+            }
+          };
+
+          // ===== API عامة لاستدعاء المشغل من أي مكان في التطبيق =====
+          // مثال الاستخدام في index.html:
+          // YallaPlayer.init(document.getElementById('myVideo'));
+          // YallaPlayer.play('https://example.com/stream.m3u8', { referer: 'https://example.com' });
+
+        })();
+        HLSEOF
+
+        echo "==== تم إنشاء مشغل HLS.js المتكامل ===="
+
+        # دمج المشغل مع index.html إذا لم يكن موجوداً بالفعل
+        if ! grep -q "hls-player.js" www/index.html 2>/dev/null; then
+          sed -i 's|</head>|<script src="hls-player.js"></script>\n</head>|' www/index.html
+          echo "==== تم دمج المشغل مع index.html ===="
+        fi
+
     - name: Configure Fullscreen & Native CORS Proxy Client (Lightning Speed Boost)
       run: |
         mkdir -p android/app/src/main/java/com/yallagoal/app
@@ -237,6 +463,9 @@ jobs:
                         return null; 
                     }
 
+                    // ===== معالجة خاصة لملفات HLS =====
+                    boolean isHlsRequest = url.contains(".m3u8") || url.contains(".ts");
+                    
                     try {
                         URL targetUrl = new URL(url);
                         HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
@@ -256,13 +485,25 @@ jobs:
                             }
                         }
 
-                        String referer = extractBaseUrl(url);
-                        if (referer != null) {
-                            conn.setRequestProperty("Referer", referer);
+                        // ===== حقن headers ذكية لملفات HLS =====
+                        if (isHlsRequest) {
+                            String baseUrl = extractBaseUrl(url);
+                            if (baseUrl != null) {
+                                // إرسال Origin و Referer من نفس النطاق للسيرفر
+                                conn.setRequestProperty("Origin", baseUrl);
+                                conn.setRequestProperty("Referer", baseUrl + "/");
+                            }
+                            conn.setRequestProperty("Accept", "application/vnd.apple.mpegurl, application/x-mpegURL, */*");
+                        } else {
+                            String referer = extractBaseUrl(url);
+                            if (referer != null) {
+                                conn.setRequestProperty("Referer", referer);
+                            }
                         }
+
                         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
                         
-                        if (!hasRange) {
+                        if (!hasRange && !isHlsRequest) {
                             conn.setRequestProperty("Range", "bytes=0-");
                         }
 
