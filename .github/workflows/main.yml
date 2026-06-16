@@ -61,7 +61,8 @@ jobs:
 
     - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        # التأكد التام من إنشاء المسار الصحيح للمجلدات قبل كتابة الملف
+        mkdir -p android/app/src/main/java/com/yallagoal.app
+        mkdir -p android/app/src/main/java/com/yallagoal
         mkdir -p android/app/src/main/java/com/yallagoal/app
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
 
@@ -160,7 +161,6 @@ jobs:
                     s.setAllowFileAccessFromFileURLs(true);
                     s.setAllowUniversalAccessFromFileURLs(true);
                     
-                    // إجبار النظام على السماح بتشغيل المحتوى المختلط لدعم كل روابط الراديو HTTP و HTTPS
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                     s.setMediaPlaybackRequiresUserGesture(false);
 
@@ -194,7 +194,7 @@ jobs:
                     }
 
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== الحسم: تم تهيئة الـ WebView لتشغيل البث المباشر تلقائياً وبأعلى كفاءة ====");
+                    System.out.println("==== تم تثبيت مشغل حسم قيود الـ CORS للبث المباشر ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -209,37 +209,44 @@ jobs:
                     String method = r.getMethod();
 
                     if ("OPTIONS".equalsIgnoreCase(method)) {
-                        return buildCorsResponse(null, "text/plain", 204);
-                    }
-
-                    // ═══════════════════════════════════════════════════════════════════════
-                    // نقطة الحسم: إذا كان الرابط هو راديو أو بث مباشر، نمنع الجافا من اعتراضه تماماً
-                    // وندع الأندرويد والـ WebView يتعامل معه نيتف (Native) ليعمل البث فوراً وبدون انقطاع
-                    // ═══════════════════════════════════════════════════════════════════════
-                    if (isLiveStreamOrAudio(url)) {
-                        return null; 
+                        return buildCorsResponse(null, "text/plain", 204, null);
                     }
 
                     if (!url.startsWith("http") || url.contains("localhost") || url.contains("capacitor://")) {
                         return super.shouldInterceptRequest(v, r);
                     }
 
+                    // اعتراض روابط الراديو والبث الحي لحل مشكلة الـ CORS عبر تزوير رؤوس الطلب النيتف
                     try {
                         URL targetUrl = new URL(url);
                         HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
                         conn.setRequestMethod(method);
-                        conn.setConnectTimeout(15000);
-                        conn.setReadTimeout(15000);
+                        conn.setConnectTimeout(20000);
+                        conn.setReadTimeout(20000);
                         conn.setInstanceFollowRedirects(true);
+
+                        boolean isLive = isLiveStreamOrAudio(url);
 
                         for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
                             String key = h.getKey();
+                            // حذف الـ Origin الخاص بالتطبيق لتخطي جدار حماية CORS الخارجي
                             if (!key.equalsIgnoreCase("Origin") && !key.equalsIgnoreCase("Host")) {
                                 conn.setRequestProperty(key, h.getValue());
                             }
                         }
 
+                        // تزوير رأس الـ Referer وإجباره ليكون متوافقاً مع سيرفر الراديو الأصلي لمنع الحجب
+                        String referer = extractBaseUrl(url);
+                        if (referer != null) {
+                            conn.setRequestProperty("Referer", referer);
+                        }
                         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
+
+                        if (isLive) {
+                            conn.setRequestProperty("Icy-MetaData", "1");
+                            conn.setRequestProperty("Connection", "keep-alive");
+                        }
+
                         conn.connect();
 
                         int statusCode = conn.getResponseCode();
@@ -249,17 +256,31 @@ jobs:
                         String contentType = conn.getContentType();
 
                         if (contentType == null || contentType.isEmpty()) {
-                            contentType = "application/octet-stream";
+                            contentType = detectMimeType(url);
+                        }
+                        if (contentType.contains(";")) {
+                            contentType = contentType.split(";")[0].trim();
                         }
 
-                        return buildCorsResponse(inputStream, contentType, statusCode);
+                        Map<String, String> customHeaders = new HashMap<>();
+                        if (isLive) {
+                            // الحسم: إعلام الـ WebView بتدفق البيانات الفوري المجزأ لمنع انكسار المشغل
+                            customHeaders.put("Transfer-Encoding", "chunked");
+                        } else {
+                            String contentLength = conn.getHeaderField("Content-Length");
+                            if (contentLength != null) customHeaders.put("Content-Length", contentLength);
+                        }
+
+                        String contentRange = conn.getHeaderField("Content-Range");
+                        if (contentRange != null) customHeaders.put("Content-Range", contentRange);
+
+                        return buildCorsResponse(inputStream, contentType, statusCode, customHeaders);
 
                     } catch (Exception e) {
                         return super.shouldInterceptRequest(v, r);
                     }
                 }
 
-                // فحص دقيق وشامل لروابط الراديو والبث المباشر لمنع اعتراضها وتخريب مجرى البث
                 private boolean isLiveStreamOrAudio(String url) {
                     String lower = url.toLowerCase();
                     return lower.contains("radio") || lower.contains("stream") || lower.contains("live") ||
@@ -267,19 +288,40 @@ jobs:
                            lower.contains("shoutcast") || lower.contains(":8000") || lower.contains(":80");
                 }
 
-                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status) {
+                private String detectMimeType(String url) {
+                    String lower = url.toLowerCase();
+                    if (lower.contains(".m3u8")) return "application/vnd.apple.mpegurl";
+                    if (lower.contains(".ts"))   return "video/mp2t";
+                    if (lower.contains(".mp3"))  return "audio/mpeg";
+                    if (lower.contains(".webm")) return "audio/webm";
+                    return "audio/mpeg"; // افتراضي للراديو الحي
+                }
+
+                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders) {
                     Map<String, String> headers = new HashMap<>();
                     headers.put("Access-Control-Allow-Origin", "*");
                     headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
                     headers.put("Access-Control-Allow-Headers", "*");
                     headers.put("Access-Control-Expose-Headers", "*");
-                    headers.put("Access-Control-Max-Age", "86400");
-                    headers.put("Cache-Control", "no-cache");
+                    headers.put("Cache-Control", "no-cache, no-store, must-revalidate");
+
+                    if (extraHeaders != null) {
+                        headers.putAll(extraHeaders);
+                    }
 
                     if (is == null) is = new ByteArrayInputStream(new byte[0]);
-                    String reason = status < 400 ? "OK" : "Error";
+                    String reason = status == 206 ? "Partial Content" : "OK";
 
                     return new WebResourceResponse(mimeType, "utf-8", status, reason, headers, is);
+                }
+
+                private String extractBaseUrl(String url) {
+                    try {
+                        URL u = new URL(url);
+                        return u.getProtocol() + "://" + u.getHost();
+                    } catch (Exception e) {
+                        return null;
+                    }
                 }
             }
         }
