@@ -61,7 +61,7 @@ jobs:
 
     - name: Configure Fullscreen & Native CORS Proxy Client
       run: |
-        # تصحيح مسار المجلدات الفعلي لـ Capacitor (تحويل النقاط إلى مائلات لضمان الكتابة داخل الملف)
+        # التأكد التام من إنشاء المسار الصحيح للمجلدات قبل كتابة الملف
         mkdir -p android/app/src/main/java/com/yallagoal/app
         MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
 
@@ -159,9 +159,11 @@ jobs:
                     s.setAllowContentAccess(true);
                     s.setAllowFileAccessFromFileURLs(true);
                     s.setAllowUniversalAccessFromFileURLs(true);
+                    
+                    // إجبار النظام على السماح بتشغيل المحتوى المختلط لدعم كل روابط الراديو HTTP و HTTPS
                     s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-
                     s.setMediaPlaybackRequiresUserGesture(false);
+
                     s.setUseWideViewPort(true);
                     s.setLoadWithOverviewMode(true);
                     s.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -192,7 +194,7 @@ jobs:
                     }
 
                     getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تفعيل الـ WebView المطور للبث المباشر والراديو ====");
+                    System.out.println("==== الحسم: تم تهيئة الـ WebView لتشغيل البث المباشر تلقائياً وبأعلى كفاءة ====");
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
@@ -207,7 +209,15 @@ jobs:
                     String method = r.getMethod();
 
                     if ("OPTIONS".equalsIgnoreCase(method)) {
-                        return buildCorsResponse(null, "text/plain", 204, null);
+                        return buildCorsResponse(null, "text/plain", 204);
+                    }
+
+                    // ═══════════════════════════════════════════════════════════════════════
+                    // نقطة الحسم: إذا كان الرابط هو راديو أو بث مباشر، نمنع الجافا من اعتراضه تماماً
+                    // وندع الأندرويد والـ WebView يتعامل معه نيتف (Native) ليعمل البث فوراً وبدون انقطاع
+                    // ═══════════════════════════════════════════════════════════════════════
+                    if (isLiveStreamOrAudio(url)) {
+                        return null; 
                     }
 
                     if (!url.startsWith("http") || url.contains("localhost") || url.contains("capacitor://")) {
@@ -218,158 +228,58 @@ jobs:
                         URL targetUrl = new URL(url);
                         HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
                         conn.setRequestMethod(method);
-                        conn.setConnectTimeout(20000);
-                        conn.setReadTimeout(20000);
+                        conn.setConnectTimeout(15000);
+                        conn.setReadTimeout(15000);
                         conn.setInstanceFollowRedirects(true);
 
-                        String rangeHeader = null;
                         for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
                             String key = h.getKey();
                             if (!key.equalsIgnoreCase("Origin") && !key.equalsIgnoreCase("Host")) {
                                 conn.setRequestProperty(key, h.getValue());
-                                if (key.equalsIgnoreCase("Range")) {
-                                    rangeHeader = h.getValue();
-                                }
                             }
                         }
 
-                        // تحسين إعدادات الراديو الحي لعدم انتظار قراءة الملف كاملاً
-                        boolean isLive = isLiveStream(url);
-                        if (isLive) {
-                            conn.setRequestProperty("Icy-MetaData", "1");
-                            conn.setRequestProperty("Connection", "keep-alive");
-                        } else if (rangeHeader == null && isAudioOrVideo(url)) {
-                            conn.setRequestProperty("Range", "bytes=0-");
-                        }
-
                         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
-                        conn.setRequestProperty("Accept", "*/*");
-
-                        String referer = extractBaseUrl(url);
-                        if (referer != null) {
-                            conn.setRequestProperty("Referer", referer);
-                        }
-
                         conn.connect();
 
                         int statusCode = conn.getResponseCode();
                         if (statusCode < 0) statusCode = 200;
 
                         InputStream inputStream = conn.getInputStream();
-
                         String contentType = conn.getContentType();
+
                         if (contentType == null || contentType.isEmpty()) {
-                            contentType = detectMimeType(url);
-                        }
-                        if (contentType.contains(";")) {
-                            contentType = contentType.split(";")[0].trim();
+                            contentType = "application/octet-stream";
                         }
 
-                        contentType = fixMimeType(contentType, url);
-
-                        Map<String, String> customHeaders = new HashMap<>();
-                        String contentRange = conn.getHeaderField("Content-Range");
-                        String contentLength = conn.getHeaderField("Content-Length");
-                        
-                        if (contentRange != null) customHeaders.put("Content-Range", contentRange);
-                        
-                        // للبث الحي المباشر (مثل الراديو): نمرر الحجم ديناميكياً لتجنب توقف التدفق
-                        if (isLive) {
-                            customHeaders.put("Transfer-Encoding", "chunked");
-                        } else if (contentLength != null) {
-                            customHeaders.put("Content-Length", contentLength);
-                        }
-                        
-                        String icyMeta = conn.getHeaderField("icy-metaint");
-                        if (icyMeta != null) customHeaders.put("icy-metaint", icyMeta);
-
-                        return buildCorsResponse(inputStream, contentType, statusCode, customHeaders);
+                        return buildCorsResponse(inputStream, contentType, statusCode);
 
                     } catch (Exception e) {
-                        System.err.println("CORS Proxy Error for: " + url + " -> " + e.getMessage());
                         return super.shouldInterceptRequest(v, r);
                     }
                 }
 
-                private boolean isAudioOrVideo(String url) {
+                // فحص دقيق وشامل لروابط الراديو والبث المباشر لمنع اعتراضها وتخريب مجرى البث
+                private boolean isLiveStreamOrAudio(String url) {
                     String lower = url.toLowerCase();
-                    return lower.contains(".mp3") || lower.contains(".webm") || lower.contains(".ogg") || 
-                           lower.contains(".wav") || lower.contains(".aac") || lower.contains(".m4a") || 
-                           lower.contains(".m3u8") || lower.contains(".mp4") || lower.contains(".ts");
+                    return lower.contains("radio") || lower.contains("stream") || lower.contains("live") ||
+                           lower.contains(".m3u8") || lower.contains(".ts") || lower.contains("icecast") ||
+                           lower.contains("shoutcast") || lower.contains(":8000") || lower.contains(":80");
                 }
 
-                private boolean isLiveStream(String url) {
-                    String lower = url.toLowerCase();
-                    return lower.contains(".m3u8") || lower.contains("stream") || lower.contains("radio") || 
-                           lower.contains("live") || lower.contains(":80") || lower.contains(":8000") || lower.contains(";");
-                }
-
-                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders) {
+                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status) {
                     Map<String, String> headers = new HashMap<>();
                     headers.put("Access-Control-Allow-Origin", "*");
                     headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
                     headers.put("Access-Control-Allow-Headers", "*");
                     headers.put("Access-Control-Expose-Headers", "*");
                     headers.put("Access-Control-Max-Age", "86400");
-                    headers.put("Accept-Ranges", "bytes");
-                    headers.put("Cache-Control", "no-cache, no-store, must-revalidate");
-
-                    if (extraHeaders != null) {
-                        headers.putAll(extraHeaders);
-                    }
+                    headers.put("Cache-Control", "no-cache");
 
                     if (is == null) is = new ByteArrayInputStream(new byte[0]);
-                    
-                    String reason = "OK";
-                    if (status == 206) reason = "Partial Content";
-                    else if (status >= 400) reason = "Error";
+                    String reason = status < 400 ? "OK" : "Error";
 
                     return new WebResourceResponse(mimeType, "utf-8", status, reason, headers, is);
-                }
-
-                private String detectMimeType(String url) {
-                    String lower = url.toLowerCase();
-
-                    if (lower.contains(".m3u8"))   return "application/vnd.apple.mpegurl";
-                    if (lower.contains(".m3u"))    return "audio/x-mpegurl";
-                    if (lower.contains(".ts"))     return "video/mp2t";
-                    if (lower.contains(".mp4"))    return "video/mp4";
-                    if (lower.contains(".webm"))   return "video/webm";
-
-                    if (lower.contains(".mp3"))    return "audio/mpeg";
-                    if (lower.contains(".ogg"))    return "audio/ogg";
-                    if (lower.contains(".aac"))    return "audio/aac";
-                    if (lower.contains(".flac"))   return "audio/flac";
-                    if (lower.contains(".m4a"))    return "audio/mp4";
-                    
-                    if (isLiveStream(url))         return "audio/mpeg";
-
-                    return "application/octet-stream";
-                }
-
-                private String fixMimeType(String serverMime, String url) {
-                    String lower = url.toLowerCase();
-                    String detected = detectMimeType(url);
-
-                    if ("application/octet-stream".equals(serverMime) ||
-                        "binary/octet-stream".equals(serverMime) ||
-                        serverMime == null || serverMime.isEmpty()) {
-                        return detected;
-                    }
-
-                    if (lower.contains(".m3u8")) return "application/vnd.apple.mpegurl";
-                    if (lower.contains(".mp3") && !serverMime.contains("mpeg")) return "audio/mpeg";
-
-                    return serverMime;
-                }
-
-                private String extractBaseUrl(String url) {
-                    try {
-                        URL u = new URL(url);
-                        return u.getProtocol() + "://" + u.getHost();
-                    } catch (Exception e) {
-                        return null;
-                    }
                 }
             }
         }
