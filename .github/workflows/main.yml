@@ -78,6 +78,7 @@ jobs:
         cat > "$MAIN_ACTIVITY" <<- 'JAVA_EOF'
         package com.yallagoal.app;
 
+        import android.content.Intent;
         import android.graphics.Color;
         import android.os.Build;
         import android.os.Bundle;
@@ -193,7 +194,7 @@ jobs:
              * kill the process outright here too.
              */
             @Override
-            public void onTaskRemoved(android.content.Intent rootIntent) {
+            public void onTaskRemoved(Intent rootIntent) {
                 super.onTaskRemoved(rootIntent);
                 exitAppCompletely();
             }
@@ -205,7 +206,7 @@ jobs:
              * is left dangling even in the brief window before the kill below.
              */
             @Override
-            protected void onDestroy() {
+            public void onDestroy() {
                 if (proxyClient != null) {
                     proxyClient.shutdown();
                     proxyClient = null;
