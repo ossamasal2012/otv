@@ -81,6 +81,7 @@ jobs:
         import android.graphics.Color;
         import android.os.Build;
         import android.os.Bundle;
+        import android.os.Process;
         import android.util.Log;
         import android.view.View;
         import android.view.ViewGroup;
@@ -132,6 +133,7 @@ jobs:
             private View customView;
             private WebChromeClient.CustomViewCallback customViewCallback;
             private FrameLayout customViewContainer;
+            private UltraProxyClient proxyClient;
 
             // ═══════════════════════════════════════════════════════════════════
             //  LIFECYCLE
@@ -159,6 +161,71 @@ jobs:
             public void onResume() {
                 super.onResume();
                 applyFullscreen();
+            }
+
+            /**
+             * Back button: if the in-app WebView has navigation history (the user
+             * drilled into a sub-page), go back inside the app as normal — that's
+             * still useful navigation. Only once there's nowhere left to go inside
+             * the WebView does back press fully exit and kill the app, instead of
+             * the default Android behavior of just backgrounding the Activity.
+             */
+            @Override
+            public void onBackPressed() {
+                try {
+                    WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                    if (wv != null && wv.canGoBack()) {
+                        wv.goBack();
+                        return;
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "onBackPressed navigation check failed", e);
+                }
+                exitAppCompletely();
+            }
+
+            /**
+             * Fires when the user swipes the app away from the Recent Apps list —
+             * the most common way people close an app. Without overriding this,
+             * Android keeps the process alive in the background so it can resume
+             * instantly later. Since this app has no reason to do anything once
+             * it's not visible (no background playback, no notifications), we
+             * kill the process outright here too.
+             */
+            @Override
+            public void onTaskRemoved(android.content.Intent rootIntent) {
+                super.onTaskRemoved(rootIntent);
+                exitAppCompletely();
+            }
+
+            /**
+             * Last-resort cleanup hook — runs on every exit path (back press,
+             * task removal, system-initiated destroy). Releases the proxy
+             * engine's in-memory state before the process disappears so nothing
+             * is left dangling even in the brief window before the kill below.
+             */
+            @Override
+            protected void onDestroy() {
+                if (proxyClient != null) {
+                    proxyClient.shutdown();
+                    proxyClient = null;
+                }
+                super.onDestroy();
+            }
+
+            /**
+             * Full, immediate shutdown — no lingering background process. Closes
+             * this task (removing it from Recents too), then kills the process
+             * itself so Android can't keep it cached in memory for a fast
+             * relaunch. Next launch always starts completely fresh.
+             */
+            private void exitAppCompletely() {
+                if (proxyClient != null) {
+                    proxyClient.shutdown();
+                    proxyClient = null;
+                }
+                finishAndRemoveTask();
+                Process.killProcess(Process.myPid());
             }
 
             // ═══════════════════════════════════════════════════════════════════
@@ -265,7 +332,8 @@ jobs:
                         cm.setAcceptThirdPartyCookies(wv, true);
                     }
 
-                    getBridge().setWebViewClient(new UltraProxyClient(getBridge()));
+                    proxyClient = new UltraProxyClient(getBridge());
+                    getBridge().setWebViewClient(proxyClient);
                     Log.i(TAG, "══ يلا گول ULTRA PROXY ENGINE v5.0 ACTIVE ══");
                 } catch (Exception e) {
                     Log.e(TAG, "setupWebView error", e);
@@ -284,6 +352,13 @@ jobs:
             class UltraProxyClient extends BridgeWebViewClient {
 
                 // ── Constants ──────────────────────────────────────────────────────────
+                // Master switch for verbose per-request tracing (redirects, cache,
+                // stream/segment logs). Every Log.d/Log.i/Log.w call below is still
+                // fully present and unchanged — this flag only skips the (often
+                // string-concatenation-heavy) message building when tracing isn't
+                // needed, which matters a lot on a live stream firing hundreds of
+                // segment requests per hour. Flip to true for debugging.
+                private static final boolean DEBUG = false;
                 private static final int  TIMEOUT_CONNECT_MS    = 12_000;
                 private static final int  TIMEOUT_READ_MS       = 20_000;
                 private static final int  TIMEOUT_STREAM_MS     = 30_000;
@@ -379,13 +454,47 @@ jobs:
                         "unpkg.com", "ajax.googleapis.com"
                     ));
 
-                // ── Regex patterns ─────────────────────────────────────────────────────
+                // ── Static-asset / media extensions — built ONCE, reused on every
+                //    request (previously rebuilt per-call, which churned the GC on
+                //    every single network request) ─────────────────────────────────
+                private static final Set<String> STATIC_EXTS =
+                    new HashSet<>(Arrays.asList(
+                        "js", "css", "woff", "woff2", "ttf", "otf",
+                        "png", "jpg", "jpeg", "gif", "webp", "ico", "svg"
+                    ));
+                private static final Set<String> MEDIA_EXTS =
+                    new HashSet<>(Arrays.asList(
+                        "mp4", "webm", "mp3", "aac", "ogg", "opus", "wav", "flac", "m4a", "mkv"
+                    ));
+
+                // ── Request headers we never forward as-is (we set our own values) ──
+                private static final Set<String> SKIP_FORWARD_HEADERS =
+                    new HashSet<>(Arrays.asList(
+                        "host", "origin", "referer", "user-agent",
+                        "accept-encoding", "connection", "pragma",
+                        "cache-control", "if-none-match", "if-modified-since"
+                    ));
+
+                // ── Upstream headers we pass through on the response side ──────────
+                private static final String[] PASSTHROUGH_RESPONSE_HEADERS = {
+                    "Content-Length", "Content-Range", "ETag",
+                    "Last-Modified", "Cache-Control", "Expires"
+                };
+
+                // ── Regex patterns — compiled ONCE and reused everywhere ────────────
                 private static final Pattern CHARSET_PATTERN =
                     Pattern.compile("charset=([\\w-]+)", Pattern.CASE_INSENSITIVE);
                 private static final Pattern GZIP_PATTERN =
                     Pattern.compile("gzip", Pattern.CASE_INSENSITIVE);
                 private static final Pattern DEFLATE_PATTERN =
                     Pattern.compile("deflate", Pattern.CASE_INSENSITIVE);
+                // Tracking-param stripper used by buildCacheKey() — compiling this
+                // once avoids the hidden Pattern.compile() that String.replaceAll()
+                // performs internally on EVERY call.
+                private static final Pattern TRACKING_PARAMS =
+                    Pattern.compile("[?&](?:_|cb|t|ts|rand|random|cachebust|v)=[^&]*");
+                private static final Pattern TRAILING_SEP =
+                    Pattern.compile("[?&]$");
 
                 // ── Counters ───────────────────────────────────────────────────────────
                 private final AtomicLong totalReqs    = new AtomicLong(0);
@@ -468,6 +577,21 @@ jobs:
                 // ══════════════════════════════════════════════════════════════════════
 
                 UltraProxyClient(com.getcapacitor.Bridge b) { super(b); }
+
+                /**
+                 * Full teardown — called from MainActivity right before the app
+                 * exits. Clears every piece of in-memory state the proxy engine
+                 * keeps (response cache, cookie jar, per-host stats, auto-block
+                 * list) so nothing lingers in memory and no background work is
+                 * left pending once the process is killed.
+                 */
+                void shutdown() {
+                    synchronized (responseCache) { responseCache.clear(); }
+                    hostStatsMap.clear();
+                    autoBlockedHosts.clear();
+                    cookieJar.clear();
+                    if (DEBUG) Log.d(TAG, "UltraProxyClient state cleared on shutdown");
+                }
 
                 // ══════════════════════════════════════════════════════════════════════
                 //  MAIN INTERCEPT ENTRY POINT
@@ -672,7 +796,7 @@ jobs:
                             target      = new URL(loc);
                             currentHost = extractHost(loc);
                             redirectCount++;
-                            Log.d(TAG, "→ Redirect [" + redirectCount + "] " + loc);
+                            if (DEBUG) Log.d(TAG, "→ Redirect [" + redirectCount + "] " + loc);
                             continue;
                         }
 
@@ -691,7 +815,7 @@ jobs:
 
                         // True streaming for HLS/DASH segments (no buffering)
                         if (isLiveStream(mimeType)) {
-                            Log.d(TAG, "STREAM ← [" + status + "] " + target);
+                            if (DEBUG) Log.d(TAG, "STREAM ← [" + status + "] " + target);
                             return new ProxyResult(decoded, mimeType, charset,
                                 status, respHeaders);
                         }
@@ -705,7 +829,7 @@ jobs:
                             body = rewriteM3U8(body, target.toString());
                         }
 
-                        Log.d(TAG, "PROXY ← [" + status + "] " + mimeType
+                        if (DEBUG) Log.d(TAG, "PROXY ← [" + status + "] " + mimeType
                             + " " + body.length + "B ← " + target);
 
                         return new ProxyResult(
@@ -725,13 +849,8 @@ jobs:
                                            int attempt, String host) {
                     // Forward original headers (selective)
                     if (rh != null) {
-                        Set<String> skip = new HashSet<>(Arrays.asList(
-                            "host", "origin", "referer", "user-agent",
-                            "accept-encoding", "connection", "pragma",
-                            "cache-control", "if-none-match", "if-modified-since"
-                        ));
                         for (Map.Entry<String, String> h : rh.entrySet()) {
-                            if (!skip.contains(h.getKey().toLowerCase(Locale.ROOT)))
+                            if (!SKIP_FORWARD_HEADERS.contains(h.getKey().toLowerCase(Locale.ROOT)))
                                 conn.setRequestProperty(h.getKey(), h.getValue());
                         }
                     }
@@ -869,10 +988,7 @@ jobs:
                     h.put("Timing-Allow-Origin", "*");
 
                     // Pass through useful upstream headers
-                    for (String name : new String[]{
-                        "Content-Length", "Content-Range", "ETag",
-                        "Last-Modified", "Cache-Control", "Expires"
-                    }) {
+                    for (String name : PASSTHROUGH_RESPONSE_HEADERS) {
                         String val = conn.getHeaderField(name);
                         if (val != null) h.put(name, val);
                     }
@@ -889,10 +1005,12 @@ jobs:
                 private String buildCacheKey(String url, String method,
                                              Map<String, String> rh) {
                     String range = rh != null ? rh.getOrDefault("Range", "") : "";
-                    // Strip common tracking params
-                    String clean = url
-                        .replaceAll("[?&](?:_|cb|t|ts|rand|random|cachebust|v)=[^&]*", "")
-                        .replaceAll("[?&]$", "");
+                    // Strip common tracking params — uses precompiled Pattern objects
+                    // (String.replaceAll() would otherwise recompile this regex from
+                    // scratch on every single request)
+                    String clean = TRAILING_SEP.matcher(
+                        TRACKING_PARAMS.matcher(url).replaceAll("")
+                    ).replaceAll("");
                     return method + ":" + clean + (range.isEmpty() ? "" : ":r=" + range);
                 }
 
@@ -1056,16 +1174,11 @@ jobs:
                 }
 
                 private boolean isStaticExt(String ext) {
-                    return new HashSet<>(Arrays.asList(
-                        "js","css","woff","woff2","ttf","otf",
-                        "png","jpg","jpeg","gif","webp","ico","svg"
-                    )).contains(ext);
+                    return STATIC_EXTS.contains(ext);
                 }
 
                 private boolean isMediaExt(String ext) {
-                    return new HashSet<>(Arrays.asList(
-                        "mp4","webm","mp3","aac","ogg","opus","wav","flac","m4a","mkv"
-                    )).contains(ext);
+                    return MEDIA_EXTS.contains(ext);
                 }
 
                 private String ext(String url) {
@@ -1088,9 +1201,23 @@ jobs:
                     } catch (MalformedURLException e) { return relative; }
                 }
 
+                // Thread-local scratch buffer — WebView dispatches shouldInterceptRequest
+                // on a small, bounded thread pool, so each thread gets exactly ONE
+                // 32 KB buffer that it reuses for every request instead of allocating
+                // a fresh one per call. This is the single biggest GC-pressure
+                // reduction in the whole engine: a live HLS stream fires this method
+                // hundreds of times per hour, and each allocation/collection cycle
+                // was previously costing a small GC pause on the UI-adjacent thread.
+                private static final ThreadLocal<byte[]> READ_BUFFER =
+                    ThreadLocal.withInitial(() -> new byte[BUFFER_SIZE]);
+
                 private byte[] readLimited(InputStream in, int max) throws IOException {
-                    ByteArrayOutputStream out = new ByteArrayOutputStream(8192);
-                    byte[] buf = new byte[BUFFER_SIZE];
+                    // Right-sized initial capacity (instead of a fixed 8 KB) avoids
+                    // ByteArrayOutputStream's internal copy-and-double growth for any
+                    // response close to the cap — most API/static responses are a
+                    // few KB to a few hundred KB, well under the 512 KB cache limit.
+                    ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(max, 65_536));
+                    byte[] buf = READ_BUFFER.get();
                     int total = 0, n;
                     while ((n = in.read(buf)) != -1) {
                         out.write(buf, 0, n);
