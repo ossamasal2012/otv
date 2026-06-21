@@ -666,13 +666,26 @@ jobs:
 
                     if (lo.contains("capacitor://")) return RequestClass.BYPASS;
 
+                    // ── Original iframe/session-preserving logic ───────────────────
+                    // 1. Any top-level HTML document load — including the iframe's
+                    //    own page — bypasses unconditionally. This is what lets the
+                    //    embedded site's real cookies and session survive: the
+                    //    WebView's native engine handles the navigation directly
+                    //    instead of our HttpURLConnection proxy, which would
+                    //    otherwise strip the embedded site's own session context.
+                    if (accept.contains("text/html")) return RequestClass.WEB_PAGE;
+
+                    // 2. For everything else (sub-resources: scripts, XHR, media,
+                    //    etc.), only requests that do NOT originate from our own
+                    //    app's origin get this separate bypass check. This is the
+                    //    original "is this a third-party iframe asset" guard —
+                    //    anything from outside our own localhost/capacitor origin
+                    //    is left to the native WebView so it keeps the embedded
+                    //    page's own cookies/session rather than being proxied.
                     boolean fromApp = origin.contains("localhost")
                         || origin.contains("capacitor://")
                         || ref.contains("localhost") || ref.contains("capacitor://");
-
-                    if (!fromApp && accept.contains("text/html")
-                        && !"XMLHttpRequest".equalsIgnoreCase(xrw))
-                        return RequestClass.WEB_PAGE;
+                    if (!fromApp) return RequestClass.WEB_PAGE;
 
                     // HLS / DASH / manifests
                     if (lo.contains(".m3u8") || lo.contains(".mpd")
