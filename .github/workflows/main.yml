@@ -916,8 +916,14 @@ jobs:
 
                         Map<String, String> respHeaders = buildRespHeaders(conn, status);
 
-                        // True streaming for HLS/DASH segments (no buffering)
-                        if (isLiveStream(mimeType)) {
+                        // True streaming — no buffering — for HLS/DASH segments AND
+                        // large progressive-download media files (MP4/WebM/MKV).
+                        // Buffering these into a byte[] first (the old behavior for
+                        // MP4) added a full round-trip of latency to every Range
+                        // request a video player makes while buffering ahead during
+                        // playback, which is what caused stuttering on long videos.
+                        // Streaming the bytes straight through removes that delay.
+                        if (isLiveStream(mimeType) || isLargeMediaFile(mimeType)) {
                             if (DEBUG) Log.d(TAG, "STREAM ← [" + status + "] " + target);
                             return new ProxyResult(decoded, mimeType, charset,
                                 status, respHeaders);
@@ -1423,6 +1429,26 @@ jobs:
 
                 private boolean isLiveStream(String mime) {
                     return mime.contains("mp2t") || mime.contains("dash+xml");
+                }
+
+                /**
+                 * Large progressive-download video/audio containers (MP4, WebM,
+                 * MKV, M4A) that a player fetches via repeated Range requests while
+                 * buffering ahead during playback. These are NOT "live" streams —
+                 * isLiveStream() above is specifically for HLS/DASH — but they need
+                 * the exact same true-streaming treatment for a different reason:
+                 * buffering the requested byte range fully into a byte[] before
+                 * handing it to the player adds latency on every single Range
+                 * request, which is what caused stuttering/buffering pauses on
+                 * long videos. Streaming the bytes straight through as they arrive
+                 * from the upstream connection removes that extra round-trip delay.
+                 */
+                private boolean isLargeMediaFile(String mime) {
+                    return mime.startsWith("video/mp4")
+                        || mime.startsWith("video/webm")
+                        || mime.startsWith("video/x-matroska")
+                        || mime.startsWith("audio/mp4")
+                        || mime.startsWith("audio/webm");
                 }
 
                 private boolean hasRange(Map<String, String> h) {
