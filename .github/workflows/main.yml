@@ -89,6 +89,7 @@ jobs:
         import android.view.WindowInsets;
         import android.view.WindowInsetsController;
         import android.view.WindowManager;
+        import android.webkit.CookieManager;
         import android.webkit.WebChromeClient;
         import android.webkit.WebSettings;
         import android.webkit.WebView;
@@ -204,6 +205,7 @@ jobs:
                     proxyClient.shutdown();
                     proxyClient = null;
                 }
+                flushWebViewCookies();
                 super.onDestroy();
                 if (isFinishing()) {
                     Process.killProcess(Process.myPid());
@@ -221,8 +223,29 @@ jobs:
                     proxyClient.shutdown();
                     proxyClient = null;
                 }
+                flushWebViewCookies();
                 finishAndRemoveTask();
                 Process.killProcess(Process.myPid());
+            }
+
+            /**
+             * Forces WebView's CookieManager to write its in-memory cookie jar to
+             * persistent storage immediately, synchronously, before the process
+             * is killed. Without this, a third-party site loaded inside the
+             * iframe (the embedded channel page, its login session, etc.) could
+             * silently lose its session every time the app exits — the cookies
+             * were sitting in memory and never got the chance to reach disk
+             * before Process.killProcess() tore everything down. This single
+             * call is what makes "closing the app" behave like closing a normal
+             * browser tab for the site inside the iframe, instead of like
+             * yanking its power cord.
+             */
+            private void flushWebViewCookies() {
+                try {
+                    CookieManager.getInstance().flush();
+                } catch (Exception e) {
+                    Log.w(TAG, "Cookie flush failed (non-fatal)", e);
+                }
             }
 
             // ═══════════════════════════════════════════════════════════════════
@@ -379,6 +402,37 @@ jobs:
                 private static final int  DISK_CACHE_THRESHOLD_BYTES = 32_768; // 32 KB
                 private static final long DISK_CACHE_MAX_TOTAL_BYTES = 80L * 1024 * 1024; // 80 MB budget
                 private static final String DISK_CACHE_DIR_NAME = "ultraproxy_cache";
+
+                // ── DNS pre-resolution (lightweight connection warm-up) ─────────────
+                // A single dedicated background thread used ONLY for speculative DNS
+                // lookups — never for the actual proxied request itself. Once a host
+                // proves reliable (a few successful fetches), we know it's likely to
+                // be asked for again soon (a CDN serving the next video segment, an
+                // iframe's API host being polled repeatedly), so we keep Android's
+                // own InetAddress DNS cache warm for it. This is deliberately NOT a
+                // full TCP/socket warm-up: HttpURLConnection gives no reliable way to
+                // guarantee a pre-opened socket gets reused by the next real request,
+                // so speculatively opening connections would spend battery/data for
+                // an unguaranteed payoff. A bare DNS lookup costs no socket and no
+                // bytes over the wire, and removes 20-200ms of lookup latency from
+                // whatever request comes next to that host.
+                private static final int WARMUP_MIN_SUCCESS_COUNT = 3;
+                private static final int WARMED_HOSTS_MAX_ENTRIES = 60;
+                private static final long WARMUP_COOLDOWN_MS = 30_000; // don't re-warm the same host more than once per 30s
+                private final java.util.concurrent.ExecutorService dnsWarmupExecutor =
+                    java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                        Thread t = new Thread(r, "UltraProxy-DnsWarmup");
+                        t.setDaemon(true);
+                        t.setPriority(Thread.MIN_PRIORITY);
+                        return t;
+                    });
+                private final LinkedHashMap<String, Long> warmedHosts =
+                    new LinkedHashMap<String, Long>(32, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, Long> e) {
+                            return size() > WARMED_HOSTS_MAX_ENTRIES;
+                        }
+                    };
 
                 // ── Intelligent LRU Cache (in-memory tier) ──────────────────────────────
                 private final LinkedHashMap<String, CacheEntry> responseCache =
@@ -654,6 +708,51 @@ jobs:
                 UltraProxyClient(com.getcapacitor.Bridge b) { super(b); }
 
                 /**
+                 * Fires on every page navigation — including when the embedded
+                 * iframe's own page starts loading. setAcceptThirdPartyCookies()
+                 * is documented as a per-WebView policy that can differ across
+                 * WebView instances, so re-asserting it here on every navigation
+                 * guarantees the policy is always correctly applied for whichever
+                 * WebView context is currently active, rather than relying on the
+                 * one-time setup call in onCreate() to have covered every case.
+                 * This is a completely separate WebViewClient callback from
+                 * shouldInterceptRequest() — it runs before any resource
+                 * interception for the page even begins, so it cannot affect the
+                 * iframe bypass logic in classify() in any way.
+                 */
+                @Override
+                public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                    super.onPageStarted(view, url, favicon);
+                    try {
+                        CookieManager.getInstance().setAcceptCookie(true);
+                        CookieManager.getInstance().setAcceptThirdPartyCookies(view, true);
+                    } catch (Exception e) {
+                        if (DEBUG) Log.w(TAG, "Cookie policy re-assertion failed (non-fatal)", e);
+                    }
+                }
+
+                /**
+                 * Fires when a page (including the iframe's own top-level load)
+                 * fails to load — timeout, DNS failure, connection refused, etc.
+                 * This is purely observational right now: it logs the failure so
+                 * it's visible during debugging, without attempting any retry or
+                 * redirect on its own (an automatic reload here could fight with
+                 * the user's own retry actions or mask a transient network blip
+                 * behind a confusing reload). A completely separate WebViewClient
+                 * callback from shouldInterceptRequest() — it cannot influence
+                 * the iframe bypass logic in classify() in any way.
+                 */
+                @Override
+                public void onReceivedError(WebView view, WebResourceRequest request,
+                                            android.webkit.WebResourceError error) {
+                    super.onReceivedError(view, request, error);
+                    if (request != null && request.isForMainFrame()) {
+                        Log.w(TAG, "Main frame load failed: " + request.getUrl()
+                            + " (error: " + error.getDescription() + ")");
+                    }
+                }
+
+                /**
                  * Full teardown — called from MainActivity right before the app
                  * exits. Clears every piece of in-memory state the proxy engine
                  * keeps (response cache, cookie jar, per-host stats, auto-block
@@ -665,6 +764,8 @@ jobs:
                     synchronized (hostStatsMap)    { hostStatsMap.clear(); }
                     synchronized (autoBlockedHosts) { autoBlockedHosts.clear(); }
                     synchronized (cookieJar)       { cookieJar.clear(); }
+                    synchronized (warmedHosts)     { warmedHosts.clear(); }
+                    dnsWarmupExecutor.shutdownNow();
                     clearDiskCache();
                     if (DEBUG) Log.d(TAG, "UltraProxyClient state cleared on shutdown");
                 }
@@ -827,6 +928,7 @@ jobs:
                                 stats.recordSuccess(System.currentTimeMillis() - t0);
                                 if (attempt > 0)
                                     Log.i(TAG, "✓ OK attempt " + (attempt + 1) + " → " + host);
+                                maybeWarmUpDns(host, stats);
                                 return r;
                             }
                         } catch (Exception e) {
@@ -849,6 +951,46 @@ jobs:
                     }
                     if (lastEx != null) Log.e(TAG, "All retries exhausted → " + url, lastEx);
                     return null;
+                }
+
+                // ══════════════════════════════════════════════════════════════════════
+                //  DNS PRE-RESOLUTION (lightweight connection warm-up)
+                // ══════════════════════════════════════════════════════════════════════
+
+                /**
+                 * Once a host has proven reliable (a handful of successful
+                 * fetches), keeps Android's DNS cache warm for it on a background
+                 * thread — cheap (no socket opened, no bytes transferred) and
+                 * harmless if the host never gets asked for again. A per-host
+                 * cooldown stops this from firing on every single successful
+                 * request to the same popular host (which would just be wasted
+                 * work re-resolving something already freshly cached).
+                 */
+                private void maybeWarmUpDns(String host, HostStats stats) {
+                    if (stats.successCount.get() < WARMUP_MIN_SUCCESS_COUNT) return;
+
+                    long now = System.currentTimeMillis();
+                    synchronized (warmedHosts) {
+                        Long lastWarmed = warmedHosts.get(host);
+                        if (lastWarmed != null && (now - lastWarmed) < WARMUP_COOLDOWN_MS) {
+                            return; // still warm, skip
+                        }
+                        warmedHosts.put(host, now);
+                    }
+
+                    try {
+                        dnsWarmupExecutor.execute(() -> {
+                            try {
+                                java.net.InetAddress.getByName(host);
+                                if (DEBUG) Log.d(TAG, "DNS warm-up: " + host);
+                            } catch (Exception ignored) {
+                                // A failed speculative lookup has zero effect on
+                                // any real request — nothing to handle here.
+                            }
+                        });
+                    } catch (java.util.concurrent.RejectedExecutionException ree) {
+                        // Executor was already shut down (app closing) — harmless.
+                    }
                 }
 
                 // ══════════════════════════════════════════════════════════════════════
