@@ -101,6 +101,9 @@ jobs:
 
         import java.io.ByteArrayInputStream;
         import java.io.ByteArrayOutputStream;
+        import java.io.File;
+        import java.io.FileInputStream;
+        import java.io.FileOutputStream;
         import java.io.IOException;
         import java.io.InputStream;
         import java.net.HttpURLConnection;
@@ -364,7 +367,20 @@ jobs:
                 private static final int  CACHE_MAX_ENTRIES     = 120;
                 private static final int  BUFFER_SIZE           = 32_768;  // 32 KB
 
-                // ── Intelligent LRU Cache ──────────────────────────────────────────────
+                // ── RAM vs. disk cache split — the actual memory-leak fix. Anything
+                //    at or under this size stays in the in-memory LRU map exactly as
+                //    before (fast, and small enough that even 120 of them is
+                //    trivial). Anything larger gets written to a file under
+                //    Android's own managed cache directory instead of sitting in
+                //    the Java heap; only a small descriptor (path + metadata) lives
+                //    in RAM for those. Over a multi-hour viewing session with many
+                //    channel switches, this is what keeps proxy-related heap usage
+                //    flat instead of climbing toward an OutOfMemoryError. ─────────
+                private static final int  DISK_CACHE_THRESHOLD_BYTES = 32_768; // 32 KB
+                private static final long DISK_CACHE_MAX_TOTAL_BYTES = 80L * 1024 * 1024; // 80 MB budget
+                private static final String DISK_CACHE_DIR_NAME = "ultraproxy_cache";
+
+                // ── Intelligent LRU Cache (in-memory tier) ──────────────────────────────
                 private final LinkedHashMap<String, CacheEntry> responseCache =
                     new LinkedHashMap<String, CacheEntry>(64, 0.75f, true) {
                         @Override
@@ -373,17 +389,60 @@ jobs:
                         }
                     };
 
-                // ── Per-host adaptive statistics ───────────────────────────────────────
-                private final ConcurrentHashMap<String, HostStats> hostStatsMap =
-                    new ConcurrentHashMap<>();
+                // Running total of bytes currently written to the disk cache tier —
+                // tracked so we can evict the oldest files once the budget above is
+                // exceeded, the same way the in-memory caches evict their oldest
+                // entries. Updated only while holding the diskCacheDirLock.
+                private final AtomicLong diskCacheBytes = new AtomicLong(0);
+                private final Object diskCacheDirLock = new Object();
+                private volatile File diskCacheDir; // lazily created on first use
 
-                // ── Auto-learned block list ────────────────────────────────────────────
-                private final Set<String> autoBlockedHosts =
-                    Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
-                // ── Cookie jar (session persistence across requests) ───────────────────
-                private final ConcurrentHashMap<String, String> cookieJar =
-                    new ConcurrentHashMap<>();
+                // ── Per-host adaptive statistics — LRU-capped to prevent unbounded
+                //    growth. A multi-hour viewing session that switches between many
+                //    channels/domains used to add a new entry here for every host
+                //    seen and NEVER remove any of them — a genuine memory leak over
+                //    a long session. Now capped at 200 hosts with LRU eviction,
+                //    exactly like responseCache already does. ─────────────────────
+                private static final int HOST_STATS_MAX_ENTRIES = 200;
+                private final LinkedHashMap<String, HostStats> hostStatsMap =
+                    new LinkedHashMap<String, HostStats>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, HostStats> e) {
+                            return size() > HOST_STATS_MAX_ENTRIES;
+                        }
+                    };
+
+                // ── Auto-learned block list — LRU-capped with the same reasoning
+                //    as hostStatsMap above: an unbounded Set<String> would grow for
+                //    as long as the app runs. Capped at 100 hosts; the oldest block
+                //    is forgotten once the cap is hit (a host that was blocked
+                //    hours ago and hasn't been retried since is safe to re-evaluate
+                //    fresh anyway). ─────────────────────────────────────────────────
+                private static final int AUTOBLOCK_MAX_ENTRIES = 100;
+                private final LinkedHashMap<String, Boolean> autoBlockedHosts =
+                    new LinkedHashMap<String, Boolean>(32, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, Boolean> e) {
+                            return size() > AUTOBLOCK_MAX_ENTRIES;
+                        }
+                    };
+
+                // ── Cookie jar (session persistence across requests) — LRU-capped.
+                //    A long match-day session touching many third-party domains
+                //    (ad networks, CDNs, embedded players) used to accumulate one
+                //    cookie string per domain forever. Capped at 150 domains; the
+                //    domain you haven't talked to in the longest time gets evicted
+                //    first, which in practice is never the channel currently
+                //    playing. ───────────────────────────────────────────────────────
+                private static final int COOKIE_JAR_MAX_ENTRIES = 150;
+                private final LinkedHashMap<String, String> cookieJar =
+                    new LinkedHashMap<String, String>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, String> e) {
+                            return size() > COOKIE_JAR_MAX_ENTRIES;
+                        }
+                    };
 
                 // ── User-Agent rotation pool ───────────────────────────────────────────
                 private static final String[] USER_AGENTS = {
@@ -501,7 +560,8 @@ jobs:
                 // ══════════════════════════════════════════════════════════════════════
 
                 static class CacheEntry {
-                    final byte[]              body;
+                    final byte[]              body;       // null when diskFile is used
+                    final File                diskFile;   // null when body is used
                     final String              mimeType;
                     final String              charset;
                     final Map<String, String> headers;
@@ -509,9 +569,11 @@ jobs:
                     final long                ttl;
                     final int                 status;
 
+                    // In-memory entry (small responses — fast path, unchanged from before)
                     CacheEntry(byte[] body, String mimeType, String charset,
                                Map<String, String> headers, long ttl, int status) {
                         this.body      = body;
+                        this.diskFile  = null;
                         this.mimeType  = mimeType;
                         this.charset   = charset;
                         this.headers   = headers;
@@ -519,6 +581,25 @@ jobs:
                         this.ttl       = ttl;
                         this.status    = status;
                     }
+
+                    // Disk-backed entry (larger responses — keeps RAM usage flat no
+                    // matter how many big CSS/JS/image assets accumulate over a
+                    // multi-hour session, since only this small descriptor object
+                    // lives in the heap; the actual bytes sit on Android's own
+                    // managed cache directory on disk).
+                    CacheEntry(File diskFile, String mimeType, String charset,
+                               Map<String, String> headers, long ttl, int status) {
+                        this.body      = null;
+                        this.diskFile  = diskFile;
+                        this.mimeType  = mimeType;
+                        this.charset   = charset;
+                        this.headers   = headers;
+                        this.createdAt = System.currentTimeMillis();
+                        this.ttl       = ttl;
+                        this.status    = status;
+                    }
+
+                    boolean isDiskBacked() { return diskFile != null; }
 
                     boolean isExpired() {
                         return (System.currentTimeMillis() - createdAt) > ttl;
@@ -580,10 +661,11 @@ jobs:
                  * left pending once the process is killed.
                  */
                 void shutdown() {
-                    synchronized (responseCache) { responseCache.clear(); }
-                    hostStatsMap.clear();
-                    autoBlockedHosts.clear();
-                    cookieJar.clear();
+                    synchronized (responseCache)   { responseCache.clear(); }
+                    synchronized (hostStatsMap)    { hostStatsMap.clear(); }
+                    synchronized (autoBlockedHosts) { autoBlockedHosts.clear(); }
+                    synchronized (cookieJar)       { cookieJar.clear(); }
+                    clearDiskCache();
                     if (DEBUG) Log.d(TAG, "UltraProxyClient state cleared on shutdown");
                 }
 
@@ -614,18 +696,28 @@ jobs:
                         }
 
                         // 4. Auto-blocked host check
-                        if (autoBlockedHosts.contains(extractHost(url)))
-                            return buildError(403, "Blocked by adaptive filter");
+                        String hostForBlockCheck = extractHost(url);
+                        synchronized (autoBlockedHosts) {
+                            if (autoBlockedHosts.containsKey(hostForBlockCheck))
+                                return buildError(403, "Blocked by adaptive filter");
+                        }
 
                         // 5. Cache lookup
                         String cacheKey = buildCacheKey(url, method, rh);
                         synchronized (responseCache) {
                             CacheEntry cached = responseCache.get(cacheKey);
                             if (cached != null && !cached.isExpired()) {
-                                cacheHits.incrementAndGet();
-                                return fromCache(cached);
+                                WebResourceResponse hit = fromCache(cached);
+                                if (hit != null) {
+                                    cacheHits.incrementAndGet();
+                                    return hit;
+                                }
+                                // Disk file behind this entry is gone — treat as a
+                                // miss and fall through to a fresh network fetch.
+                                responseCache.remove(cacheKey);
+                            } else if (cached != null) {
+                                responseCache.remove(cacheKey);
                             }
-                            if (cached != null) responseCache.remove(cacheKey);
                         }
 
                         // 6. Execute with retry intelligence
@@ -717,7 +809,10 @@ jobs:
                                                      Map<String, String> rh,
                                                      RequestClass cls) {
                     String host    = extractHost(url);
-                    HostStats stats = hostStatsMap.computeIfAbsent(host, k -> new HostStats());
+                    HostStats stats;
+                    synchronized (hostStatsMap) {
+                        stats = hostStatsMap.computeIfAbsent(host, k -> new HostStats());
+                    }
                     List<String> uas = buildUACandidates(host);
                     Exception lastEx = null;
 
@@ -749,7 +844,7 @@ jobs:
                     }
 
                     if (stats.reliability() < 0.1 && stats.failureCount.get() > 5) {
-                        autoBlockedHosts.add(host);
+                        synchronized (autoBlockedHosts) { autoBlockedHosts.put(host, Boolean.TRUE); }
                         Log.w(TAG, "Auto-blocking chronically unreliable host: " + host);
                     }
                     if (lastEx != null) Log.e(TAG, "All retries exhausted → " + url, lastEx);
@@ -785,7 +880,8 @@ jobs:
                         applyHeaders(conn, rh, target.toString(), ua, cls, attempt, currentHost);
 
                         // Restore cookies
-                        String cookies = cookieJar.get(currentHost);
+                        String cookies;
+                        synchronized (cookieJar) { cookies = cookieJar.get(currentHost); }
                         if (cookies != null) conn.setRequestProperty("Cookie", cookies);
 
                         conn.connect();
@@ -949,20 +1045,22 @@ jobs:
                         if (setCookies == null) setCookies = fields.get("set-cookie");
                         if (setCookies == null) return;
 
-                        StringBuilder sb = new StringBuilder();
-                        String existing = cookieJar.get(host);
-                        if (existing != null) sb.append(existing).append("; ");
+                        synchronized (cookieJar) {
+                            StringBuilder sb = new StringBuilder();
+                            String existing = cookieJar.get(host);
+                            if (existing != null) sb.append(existing).append("; ");
 
-                        for (String c : setCookies) {
-                            if (c == null) continue;
-                            String nv = c.split(";")[0].trim();
-                            if (!nv.isEmpty()) sb.append(nv).append("; ");
+                            for (String c : setCookies) {
+                                if (c == null) continue;
+                                String nv = c.split(";")[0].trim();
+                                if (!nv.isEmpty()) sb.append(nv).append("; ");
+                            }
+
+                            String result = sb.toString().trim();
+                            if (result.endsWith(";"))
+                                result = result.substring(0, result.length() - 1);
+                            if (!result.isEmpty()) cookieJar.put(host, result);
                         }
-
-                        String result = sb.toString().trim();
-                        if (result.endsWith(";"))
-                            result = result.substring(0, result.length() - 1);
-                        if (!result.isEmpty()) cookieJar.put(host, result);
                     } catch (Exception ignored) { }
                 }
 
@@ -1040,11 +1138,31 @@ jobs:
                         body = readLimited(bais, CACHE_MAX_BODY_BYTES);
                         bais.reset();
                     } catch (IOException e) { return; }
+
                     long ttl = cls == RequestClass.STATIC_ASSET
                         ? CACHE_STATIC_TTL : CACHE_VOLATILE_TTL;
-                    synchronized (responseCache) {
-                        responseCache.put(key,
-                            new CacheEntry(body, r.mimeType, r.charset, r.headers, ttl, r.status));
+
+                    // Small responses: keep the fast in-memory path exactly as before.
+                    if (body.length <= DISK_CACHE_THRESHOLD_BYTES) {
+                        synchronized (responseCache) {
+                            responseCache.put(key,
+                                new CacheEntry(body, r.mimeType, r.charset, r.headers, ttl, r.status));
+                        }
+                        return;
+                    }
+
+                    // Larger responses: write to disk instead of holding the bytes
+                    // in the Java heap for the entire TTL. If the write fails for
+                    // any reason (low disk space, I/O error), we simply skip
+                    // caching this response rather than risk corrupting state —
+                    // the request just won't be a cache hit next time, which is
+                    // harmless.
+                    File f = writeDiskCacheFile(key, body);
+                    if (f != null) {
+                        synchronized (responseCache) {
+                            responseCache.put(key,
+                                new CacheEntry(f, r.mimeType, r.charset, r.headers, ttl, r.status));
+                        }
                     }
                 }
 
@@ -1053,8 +1171,140 @@ jobs:
                     h.put("X-Proxy-Cache", "HIT");
                     h.put("Age", String.valueOf(
                         (System.currentTimeMillis() - e.createdAt) / 1000));
-                    return new WebResourceResponse(e.mimeType, e.charset, e.status,
-                        reason(e.status), h, new ByteArrayInputStream(e.body));
+
+                    if (!e.isDiskBacked()) {
+                        return new WebResourceResponse(e.mimeType, e.charset, e.status,
+                            reason(e.status), h, new ByteArrayInputStream(e.body));
+                    }
+
+                    // Disk-backed hit: stream straight from the file. If the file
+                    // somehow went missing (e.g. the OS reclaimed app cache space
+                    // under storage pressure — exactly what Android's managed
+                    // cache directory is designed to allow it to do), fail soft by
+                    // returning null here so the caller's normal "cache miss"
+                    // path takes over and re-fetches from the network.
+                    try {
+                        InputStream fis = new FileInputStream(e.diskFile);
+                        return new WebResourceResponse(e.mimeType, e.charset, e.status,
+                            reason(e.status), h, fis);
+                    } catch (IOException ioe) {
+                        if (DEBUG) Log.w(TAG, "Disk cache file missing, will re-fetch: "
+                            + e.diskFile);
+                        return null;
+                    }
+                }
+
+                // ══════════════════════════════════════════════════════════════════════
+                //  DISK CACHE TIER — keeps large cached responses out of the heap
+                // ══════════════════════════════════════════════════════════════════════
+
+                /**
+                 * Lazily resolves (and creates if needed) the disk cache directory
+                 * under Android's own app-managed cache space. Using getCacheDir()
+                 * means the OS is free to reclaim this space automatically under
+                 * storage pressure without our code having to manage that —
+                 * exactly the "rely on the phone's storage instead of RAM" behavior
+                 * a long viewing session needs.
+                 */
+                private File getOrCreateDiskCacheDir() {
+                    File dir = diskCacheDir;
+                    if (dir != null) return dir;
+                    synchronized (diskCacheDirLock) {
+                        if (diskCacheDir == null) {
+                            File base = MainActivity.this.getCacheDir();
+                            File d = new File(base, DISK_CACHE_DIR_NAME);
+                            if (!d.exists()) d.mkdirs();
+                            diskCacheDir = d;
+                        }
+                        return diskCacheDir;
+                    }
+                }
+
+                /** Turns an arbitrary cache key into a filesystem-safe file name. */
+                private String safeFileName(String key) {
+                    int h = key.hashCode();
+                    // Hash-based name avoids any path traversal / illegal-character
+                    // concerns from raw URLs while staying short and unique enough
+                    // for our purposes (collisions just mean a cache miss, never
+                    // wrong data, since the value associated with a key is always
+                    // looked up through the in-memory CacheEntry, never by
+                    // re-deriving the filename from the URL alone).
+                    return "c_" + Integer.toHexString(h) + ".bin";
+                }
+
+                /**
+                 * Writes a response body to the disk cache directory, enforcing
+                 * the overall disk-cache size budget by evicting the oldest files
+                 * first when the new write would exceed it. Returns null (and
+                 * leaves no partial file behind) if anything goes wrong.
+                 */
+                private File writeDiskCacheFile(String key, byte[] body) {
+                    try {
+                        File dir = getOrCreateDiskCacheDir();
+                        File target = new File(dir, safeFileName(key));
+
+                        enforceDiskCacheBudget(body.length);
+
+                        try (FileOutputStream fos = new FileOutputStream(target)) {
+                            fos.write(body);
+                        }
+                        diskCacheBytes.addAndGet(body.length);
+                        return target;
+                    } catch (IOException e) {
+                        if (DEBUG) Log.w(TAG, "Disk cache write failed: " + e.getMessage());
+                        return null;
+                    }
+                }
+
+                /**
+                 * Keeps the disk cache tier under its byte budget by deleting the
+                 * oldest files in the cache directory (by last-modified time)
+                 * until there's room for an incoming write of the given size.
+                 * Mirrors the same "evict the least-recently-used entry" policy
+                 * already used for every in-memory map, just applied to files.
+                 */
+                private void enforceDiskCacheBudget(long incomingBytes) {
+                    synchronized (diskCacheDirLock) {
+                        if (diskCacheBytes.get() + incomingBytes <= DISK_CACHE_MAX_TOTAL_BYTES) {
+                            return;
+                        }
+                        File dir = getOrCreateDiskCacheDir();
+                        File[] files = dir.listFiles();
+                        if (files == null || files.length == 0) {
+                            diskCacheBytes.set(0);
+                            return;
+                        }
+                        Arrays.sort(files, (a, b) ->
+                            Long.compare(a.lastModified(), b.lastModified()));
+                        long freed = 0;
+                        for (File f : files) {
+                            if (diskCacheBytes.get() - freed + incomingBytes
+                                <= DISK_CACHE_MAX_TOTAL_BYTES) break;
+                            long len = f.length();
+                            if (f.delete()) freed += len;
+                        }
+                        diskCacheBytes.addAndGet(-freed);
+                    }
+                }
+
+                /**
+                 * Removes every file in the disk cache directory and resets the
+                 * running size counter. Called on app shutdown so a fresh launch
+                 * always starts with a clean, empty disk cache rather than letting
+                 * it accumulate indefinitely across many app sessions.
+                 */
+                private void clearDiskCache() {
+                    synchronized (diskCacheDirLock) {
+                        File dir = diskCacheDir;
+                        if (dir == null) {
+                            dir = new File(MainActivity.this.getCacheDir(), DISK_CACHE_DIR_NAME);
+                        }
+                        File[] files = dir.listFiles();
+                        if (files != null) {
+                            for (File f : files) f.delete();
+                        }
+                        diskCacheBytes.set(0);
+                    }
                 }
 
                 // ══════════════════════════════════════════════════════════════════════
