@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -9,7 +10,6 @@
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
@@ -547,7 +547,6 @@
         let poemsChannels = [];
         let currentTab = "main";
         let hls = null;
-        let mpegtsPlayer = null;
         let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
@@ -718,10 +717,6 @@
 
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
-            if (mpegtsPlayer) {
-                try { mpegtsPlayer.destroy(); } catch (e) {}
-                mpegtsPlayer = null;
-            }
             if (plyr) { plyr.destroy(); plyr = null; }
             document.getElementById('dynamic-player-root').innerHTML = "";
             
@@ -731,10 +726,7 @@
                 oldIframe.remove();
             }
 
-            const errScreenEl = document.getElementById('errorScreen');
-            errScreenEl.classList.add('hidden');
-            const errP = errScreenEl.querySelector('p');
-            if (errP) errP.textContent = 'المصدر غير متاح حالياً';
+            document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
             currentAspectRatio = 0;
             controlsVisible = true;
@@ -876,209 +868,44 @@
                     }
                 };
 
-                // كشف نوع الرابط: هل هو HLS playlist (.m3u8) أم بث MPEG-TS خام مباشر (.ts)؟
-                // .m3u8 هو ملف نصي (قائمة تشغيل) -> يذهب لـ hls.js
-                // .ts (أو extension=ts) هو بث ثنائي مباشر بدون قائمة تشغيل -> يحتاج mpegts.js
-                // (محاولة تمرير TS الخام لـ hls.js تفشل بخطأ "manifest parsing error" لأنه يحاول قراءته كنص)
-                const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
-                const isM3U8 = cleanUrl.endsWith('.m3u8') || url.includes('.m3u8');
-                const isRawTS = !isM3U8 && (cleanUrl.endsWith('.ts') || url.toLowerCase().includes('extension=ts') || url.toLowerCase().includes('.ts&') || url.toLowerCase().includes('.ts?'));
-
-                let tsRetryCount = 0;
-                const MAX_TS_RETRIES = 5;
-                let codecUnsupportedDetected = false;
-
-                const showFatalError = (msgEl) => {
-                    document.getElementById('placeholderScreen').classList.add('hidden');
-                    const errScreen = document.getElementById('errorScreen');
-                    errScreen.classList.remove('hidden');
-                    const p = errScreen.querySelector('p');
-                    if (p) p.textContent = msgEl || 'المصدر غير متاح حالياً';
-                };
-
-                if (isRawTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {
-                    // ===== بث MPEG-TS خام مباشر =====
-
-                    // فحص رسمي مسبق من مكتبة mpegts.js نفسها: هل الجهاز/المتصفح يدعم فك تشفير HEVC عبر MSE؟
-                    // هذا أدق من الانتظار حتى يفشل addSourceBuffer، ويعطي رسالة واضحة فوراً بدل تعليق الشاشة.
-                    // ملاحظة: هذا الفحص العام لا يعرف كوديك القناة المحددة مسبقاً (h264 أو h265)،
-                    // لذلك لا نمنع المحاولة، لكن نستخدمه لتأكيد التشخيص بسرعة إذا حدث فشل لاحق.
-                    const featureList = mpegts.getFeatureList ? mpegts.getFeatureList() : null;
-                    const deviceSupportsHEVC = featureList ? !!featureList.mseH265Playback : true;
-
-                    // اعتراض رسائل الخطأ الداخلية لمكتبة mpegts.js للتمييز بين خطأ شبكة عادي
-                    // وخطأ "الكوديك غير مدعوم" (يحدث عند بث H.265/HEVC على جهاز بلا فك تشفير عتاد له)
-                    if (typeof mpegts.LoggingControl !== 'undefined') {
-                        mpegts.LoggingControl.addLogListener((type, str) => {
-                            if (typeof str === 'string' && str.includes('addSourceBuffer') && (str.includes('unsupported') || str.includes('hvc1') || str.includes('hev1'))) {
-                                codecUnsupportedDetected = true;
-                            }
-                        });
-                    }
-
-                    mpegtsPlayer = mpegts.createPlayer({
-                        type: 'mpegts',
-                        isLive: true,
-                        url: url
-                    }, {
-                        enableWorker: true,
-                        liveBufferLatencyChasing: true, // يلاحق البث المباشر تلقائياً ويتجنب تراكم التأخير
-                        liveBufferLatencyMaxLatency: 6,
-                        liveBufferLatencyMinRemain: 1
-                    });
-
-                    mpegtsPlayer.attachMediaElement(video);
-
-                    mpegtsPlayer.on(mpegts.Events.ERROR, (errType, errDetail, errInfo) => {
-                        console.warn('mpegts error:', errType, errDetail, errInfo);
-
-                        // خطأ MediaMSEError بسبب كوديك غير مدعوم (مثل HEVC على جهاز بلا فك تشفير عتاد)
-                        // لا فائدة من إعادة المحاولة هنا لأن السبب ثابت (قيد جهاز)، وليس انقطاع شبكة عابر
-                        const isCodecIssue = codecUnsupportedDetected ||
-                            (errDetail && typeof errDetail === 'string' && errDetail.toLowerCase().includes('mse'));
-
-                        if (isCodecIssue) {
-                            showFatalError('هذه القناة تستخدم ترميز فيديو (HEVC/H.265) غير مدعوم على هذا الجهاز. جرّب فتحها من جهاز أندرويد أو آيفون حديث.');
-                            return;
-                        }
-
-                        if (tsRetryCount < MAX_TS_RETRIES) {
-                            tsRetryCount++;
-                            console.warn(`إعادة محاولة الاتصال بالبث (${tsRetryCount}/${MAX_TS_RETRIES})...`);
-                            setTimeout(() => {
-                                try {
-                                    mpegtsPlayer.unload();
-                                    mpegtsPlayer.load();
-                                    mpegtsPlayer.play();
-                                } catch (e) {}
-                            }, 1200 * tsRetryCount);
-                        } else {
-                            showFatalError();
-                        }
-                    });
-
-                    video.addEventListener('playing', () => {
-                        tsRetryCount = 0;
-                        document.getElementById('placeholderScreen').classList.add('hidden');
-                        document.getElementById('errorScreen').classList.add('hidden');
-                        if (!plyr) setupPlyr();
-                    });
-
-                    try {
-                        mpegtsPlayer.load();
-                        mpegtsPlayer.play();
-                    } catch (e) {
-                        console.error('فشل تشغيل بث TS:', e);
-                        showFatalError();
-                    }
-
-                    // تأمين: في حال ظهر خطأ كوديك لكن الصوت استمر بالتشغيل بصمت (الفيديو فقط فشل)،
-                    // بدون أن يصدر mpegts.js حدث ERROR رسمي (يحدث هذا في بعض إصدارات المتصفح).
-                    // إذا كان الصوت يعمل (currentTime يتقدم) لكن لا توجد أبعاد فيديو، وجهازنا لا يدعم HEVC
-                    // رسمياً حسب فحص المكتبة، فهذا تأكيد قوي على أن السبب هو كوديك الفيديو غير المدعوم.
-                    setTimeout(() => {
-                        const audioPlayingButNoVideo = video.currentTime > 0 && video.videoWidth === 0;
-                        if (codecUnsupportedDetected || (!deviceSupportsHEVC && audioPlayingButNoVideo)) {
-                            showFatalError('هذه القناة تستخدم ترميز فيديو (HEVC/H.265) غير مدعوم على هذا الجهاز. جرّب فتحها من جهاز أندرويد أو آيفون حديث.');
-                        } else if (video.paused || video.readyState < 2) {
-                            console.warn('البث لم يبدأ بعد المهلة، قد تكون مشكلة CORS من السيرفر');
-                        }
-                    }, 8000);
-
-
-                } else if (Hls.isSupported() && isM3U8) {
-                    // ===== HLS playlist (.m3u8) =====
-                    const hlsConfig = {
-                        enableWorker: true,
-                        lowLatencyMode: false,
-                        fragLoadingMaxRetry: 8,
-                        fragLoadingRetryDelay: 1000,
-                        fragLoadingMaxRetryTimeout: 8000,
-                        manifestLoadingMaxRetry: 6,
-                        manifestLoadingRetryDelay: 1000,
-                        levelLoadingMaxRetry: 6,
-                        levelLoadingRetryDelay: 1000,
-                        maxBufferLength: 30,
-                        maxMaxBufferLength: 90,
-                        liveDurationInfinity: true,
-                        backBufferLength: 30
-                    };
-
+                if (Hls.isSupported() && url.includes('.m3u8')) {
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
-                        hlsConfig.liveSyncDuration = 20; // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
+                        hls = new Hls({
+                            liveSyncDuration: 20, // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
+                            enableWorker: true
+                        });
+                    } else {
+                        hls = new Hls(); // القنوات الأخرى تعمل بدون تأخير كالمعتاد
                     }
-
-                    hls = new Hls(hlsConfig);
                     hls.loadSource(url);
                     hls.attachMedia(video);
 
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        tsRetryCount = 0;
-                        const availableQualities = hls.levels.map(l => l.height).filter(h => h).sort((a, b) => b - a);
-                        if (availableQualities.length > 0) {
-                            plyrOptions.quality = {
-                                default: 0,
-                                options: [0, ...availableQualities],
-                                forced: true,
-                                onChange: (q) => {
-                                    if (q === 0) hls.currentLevel = -1;
-                                    else hls.levels.forEach((level, idx) => {
-                                        if (level.height === q) hls.currentLevel = idx;
-                                    });
-                                }
-                            };
-                            plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
-                        }
+                        const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
+                        plyrOptions.quality = {
+                            default: 0,
+                            options: [0, ...availableQualities],
+                            forced: true,
+                            onChange: (q) => {
+                                if (q === 0) hls.currentLevel = -1;
+                                else hls.levels.forEach((level, idx) => {
+                                    if (level.height === q) hls.currentLevel = idx;
+                                });
+                            }
+                        };
+                        plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
                         setupPlyr();
                     });
 
-                    // hls.js يصدر هذا الحدث عند نجاح تحميل أي قطعة (fragment) من البث،
-                    // يُستخدم هنا لإعادة تصفير عداد المحاولات وإخفاء شاشة الخطأ إن ظهرت سابقاً
-                    hls.on(Hls.Events.FRAG_LOADED, () => {
-                        tsRetryCount = 0;
-                        document.getElementById('errorScreen').classList.add('hidden');
-                    });
-
                     hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (!data) return;
-
-                        // أخطاء غير قاتلة (مثل سقوط fragment واحد) — hls.js يتعافى منها تلقائياً، لا حاجة لفعل شيء
-                        if (!data.fatal) return;
-
-                        // معالجة الأخطاء القاتلة بمحاولات استرجاع ذكية بدل الاستسلام الفوري
-                        switch (data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                if (tsRetryCount < MAX_TS_RETRIES) {
-                                    tsRetryCount++;
-                                    console.warn(`إعادة محاولة الاتصال بالبث (${tsRetryCount}/${MAX_TS_RETRIES})...`);
-                                    setTimeout(() => {
-                                        try { hls.startLoad(); } catch (e) {}
-                                    }, 1200 * tsRetryCount);
-                                } else {
-                                    showFatalError();
-                                }
-                                break;
-
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                if (tsRetryCount < MAX_TS_RETRIES) {
-                                    tsRetryCount++;
-                                    console.warn(`إصلاح خطأ الميديا ومحاولة الاستمرار (${tsRetryCount}/${MAX_TS_RETRIES})...`);
-                                    try { hls.recoverMediaError(); } catch (e) {}
-                                } else {
-                                    showFatalError();
-                                }
-                                break;
-
-                            default:
-                                showFatalError();
-                                break;
+                        if (data.fatal) {
+                            document.getElementById('placeholderScreen').classList.add('hidden');
+                            document.getElementById('errorScreen').classList.remove('hidden');
                         }
                     });
                 } else {
-                    // ===== فيديو عادي (mp4 وغيره) أو متصفح لا يدعم MSE =====
                     video.src = url;
-                    video.onerror = () => showFatalError();
                     setupPlyr();
                 }
             }
