@@ -871,7 +871,7 @@
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
                         hls = new Hls({
-                            liveSyncDuration: 15, // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
+                            liveSyncDuration: 20, // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
                             enableWorker: true
                         });
                     } else {
