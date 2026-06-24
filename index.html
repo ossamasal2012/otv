@@ -867,44 +867,116 @@
                     }
                 };
 
-                if (Hls.isSupported() && url.includes('.m3u8')) {
+                // كشف نوع الرابط: هل هو HLS playlist (.m3u8) أم بث MPEG-TS خام مباشر (.ts)؟
+                // كلاهما يُمرّر إلى hls.js لأن المتصفحات لا تشغّل MPEG-TS الخام عبر <video> مباشرة،
+                // وhls.js يحتوي على transmuxer داخلي يحوّل TS إلى fMP4 لحظياً عبر MSE.
+                const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
+                const isM3U8 = cleanUrl.endsWith('.m3u8') || url.includes('.m3u8');
+                const isRawTS = !isM3U8 && (cleanUrl.endsWith('.ts') || url.toLowerCase().includes('extension=ts') || url.toLowerCase().includes('.ts&') || url.toLowerCase().includes('.ts?'));
+                const useHls = isM3U8 || isRawTS;
+
+                if (Hls.isSupported() && useHls) {
+                    const hlsConfig = {
+                        enableWorker: true,
+                        lowLatencyMode: false,
+                        // إعدادات استرجاع قوية: ضرورية جداً لروابط TS المباشرة من سيرفرات IPTV
+                        // (مثل man1ted / light-ott وغيرها) التي تنقطع بشكل طبيعي بسبب طبيعة البث الحي
+                        fragLoadingMaxRetry: 8,
+                        fragLoadingRetryDelay: 1000,
+                        fragLoadingMaxRetryTimeout: 8000,
+                        manifestLoadingMaxRetry: 6,
+                        manifestLoadingRetryDelay: 1000,
+                        levelLoadingMaxRetry: 6,
+                        levelLoadingRetryDelay: 1000,
+                        maxBufferLength: 30,
+                        maxMaxBufferLength: 90,
+                        liveDurationInfinity: true,
+                        backBufferLength: 30
+                    };
+
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
-                        hls = new Hls({
-                            liveSyncDuration: 20, // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
-                            enableWorker: true
-                        });
-                    } else {
-                        hls = new Hls(); // القنوات الأخرى تعمل بدون تأخير كالمعتاد
+                        hlsConfig.liveSyncDuration = 20; // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
                     }
+
+                    hls = new Hls(hlsConfig);
                     hls.loadSource(url);
                     hls.attachMedia(video);
 
+                    let tsRetryCount = 0;
+                    const MAX_TS_RETRIES = 5;
+
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
-                        plyrOptions.quality = {
-                            default: 0,
-                            options: [0, ...availableQualities],
-                            forced: true,
-                            onChange: (q) => {
-                                if (q === 0) hls.currentLevel = -1;
-                                else hls.levels.forEach((level, idx) => {
-                                    if (level.height === q) hls.currentLevel = idx;
-                                });
-                            }
-                        };
-                        plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
+                        tsRetryCount = 0;
+                        const availableQualities = hls.levels.map(l => l.height).filter(h => h).sort((a, b) => b - a);
+                        if (availableQualities.length > 0) {
+                            plyrOptions.quality = {
+                                default: 0,
+                                options: [0, ...availableQualities],
+                                forced: true,
+                                onChange: (q) => {
+                                    if (q === 0) hls.currentLevel = -1;
+                                    else hls.levels.forEach((level, idx) => {
+                                        if (level.height === q) hls.currentLevel = idx;
+                                    });
+                                }
+                            };
+                            plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
+                        }
                         setupPlyr();
                     });
 
+                    // hls.js يصدر هذا الحدث عند نجاح تحميل أي قطعة (fragment) من البث،
+                    // يُستخدم هنا لإعادة تصفير عداد المحاولات وإخفاء شاشة الخطأ إن ظهرت سابقاً
+                    hls.on(Hls.Events.FRAG_LOADED, () => {
+                        tsRetryCount = 0;
+                        document.getElementById('errorScreen').classList.add('hidden');
+                    });
+
                     hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            document.getElementById('placeholderScreen').classList.add('hidden');
-                            document.getElementById('errorScreen').classList.remove('hidden');
+                        if (!data) return;
+
+                        // أخطاء غير قاتلة (مثل سقوط fragment واحد) — hls.js يتعافى منها تلقائياً، لا حاجة لفعل شيء
+                        if (!data.fatal) return;
+
+                        // معالجة الأخطاء القاتلة بمحاولات استرجاع ذكية بدل الاستسلام الفوري
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                if (tsRetryCount < MAX_TS_RETRIES) {
+                                    tsRetryCount++;
+                                    console.warn(`إعادة محاولة الاتصال بالبث (${tsRetryCount}/${MAX_TS_RETRIES})...`);
+                                    setTimeout(() => {
+                                        try { hls.startLoad(); } catch (e) {}
+                                    }, 1200 * tsRetryCount);
+                                } else {
+                                    document.getElementById('placeholderScreen').classList.add('hidden');
+                                    document.getElementById('errorScreen').classList.remove('hidden');
+                                }
+                                break;
+
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                if (tsRetryCount < MAX_TS_RETRIES) {
+                                    tsRetryCount++;
+                                    console.warn(`إصلاح خطأ الميديا ومحاولة الاستمرار (${tsRetryCount}/${MAX_TS_RETRIES})...`);
+                                    try { hls.recoverMediaError(); } catch (e) {}
+                                } else {
+                                    document.getElementById('placeholderScreen').classList.add('hidden');
+                                    document.getElementById('errorScreen').classList.remove('hidden');
+                                }
+                                break;
+
+                            default:
+                                document.getElementById('placeholderScreen').classList.add('hidden');
+                                document.getElementById('errorScreen').classList.remove('hidden');
+                                break;
                         }
                     });
                 } else {
                     video.src = url;
+                    video.onerror = () => {
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        document.getElementById('errorScreen').classList.remove('hidden');
+                    };
                     setupPlyr();
                 }
             }
