@@ -766,10 +766,25 @@
             renderChannels();
         }
 
-        function playChannel(url, type, name, el) {
+        async function playChannel(url, type, name, el) {
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             el.classList.add('active-card');
             cleanup();
+            // التحقق إذا كان الرابط يحتاج إلى جلب وتحديث تلقائي من Vercel API
+            if (url.includes('/api/channel')) {
+                try {
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    if (data && data.stream_url) {
+                        url = data.stream_url; // استبدال الرابط الثابت بالرابط المتجدد الحقيقي
+                    }
+                } catch (err) {
+                    console.error("خطأ في جلب الرابط المتجدد:", err);
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                    document.getElementById('errorScreen').classList.remove('hidden');
+                    return;
+                }
+            }
 
             if (type === 'i') {
                 // التعديل السحري الثاني: إنشاء iframe جديد كلياً لتفادي احتكار الذاكرة من السكربتات القديمة
