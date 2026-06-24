@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -548,18 +550,10 @@
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
-        let lastPlayedArgs = null; 
-        let streamCheckInterval = null; // مؤقت فحص تجمد وتجديد البث
-        let lastCurrentTime = -1;       // لمراقبة تجمد الوقت
-        let freezeCounter = 0;          // عداد ثواني التجمد      // لحساب عدد محاولات إعادة الاتصال
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
         let currentAspectRatio = 0;
         let controlsVisible = true;
-        retryCount = 0; // تصفير عداد المحاولات عند الانتقال أو تنظيف المشغل
-        if (streamCheckInterval) { clearInterval(streamCheckInterval); streamCheckInterval = null; }
-            lastCurrentTime = -1;
-            freezeCounter = 0;
 
         async function loadChannels() {
             try {
@@ -778,7 +772,6 @@
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             el.classList.add('active-card');
             cleanup();
-            lastPlayedArgs = { url, type, name, el }; // حفظ النسخة الأصلية لإعادة المحاولة
             // التحقق إذا كان الرابط يحتاج إلى جلب وتحديث تلقائي من Vercel API
             if (url.includes('/api/channel')) {
                 try {
@@ -876,10 +869,7 @@
                     }
                 };
 
-                // التحقق إذا كان الرابط هو بث بتمديد ts أو رابط لوحة Xtream مباشر
-                const isTsStream = url.includes('.ts') || url.includes('extension=ts') || url.includes('live.php');
-
-                if (Hls.isSupported() && url.includes('.m3u8') && !isTsStream) {
+                if (Hls.isSupported() && url.includes('.m3u8')) {
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
                         hls = new Hls({
@@ -887,70 +877,10 @@
                             enableWorker: true
                         });
                     } else {
-                    // إذا كان الرابط من نوع ts، نقوم بتهيئة إعدادات الميديا لتعمل بسلاسة
-                    if (isTsStream) {
-                        video.setAttribute('type', 'video/mp2t'); // تحديد نوع صيغة البث للمتصفح
+                        hls = new Hls(); // القنوات الأخرى تعمل بدون تأخير كالمعتاد
                     }
-                    video.src = url;
-                    setupPlyr();
-                }
                     hls.loadSource(url);
                     hls.attachMedia(video);
-                    // بدء المؤقت الذكي لفحص البث كل ثانية
-                    if (streamCheckInterval) clearInterval(streamCheckInterval);
-                    streamCheckInterval = setInterval(async () => {
-                        if (!video || !hls) return;
-
-                        // 1. الفحص الأول: التحديث قبل انتهاء وقت الفيديو (Duration) بـ 15 ثانية
-                        // نتحقق أن الفيديو ليس بثاً مباشراً لانهائياً (محدد المدة مثل الأفلام أو المقاطع المسجلة)
-                        if (video.duration && !isNaN(video.duration) && isFinite(video.duration)) {
-                            let timeLeft = video.duration - video.currentTime;
-                            if (timeLeft <= 15 && timeLeft > 0) {
-                                console.log("اقترب الرابط من الانتهاء (باقي أقل من 15 ثانية)، جاري التحديث الصامت...");
-                                if (lastPlayedArgs && lastPlayedArgs.url.includes('/api/channel')) {
-                                    try {
-                                        const res = await fetch(lastPlayedArgs.url);
-                                        const data = await res.json();
-                                        if (data && data.stream_url) {
-                                            hls.loadSource(data.stream_url); // تحديث المصدر صامتاً دون إعادة بناء المشغل
-                                            console.log("تم تجديد رابط البث بنجاح قبل الانتهاء.");
-                                        }
-                                    } catch (e) { console.error("فشل التجديد التلقائي:", e); }
-                                }
-                            }
-                        }
-
-                        // 2. الفحص الثاني: فحص تجمد البث (Freeze Detection)
-                        // إذا كان الفيديو في وضع التشغيل ولكن الوقت لا يتحرك (متجمد)
-                        if (!video.paused) {
-                            if (video.currentTime === lastCurrentTime) {
-                                freezeCounter++;
-                                // إذا استمر التجمد لـ 4 ثوانٍ متواصلة، نقوم بعمل ريلود داخلي صامت للبث
-                                if (freezeCounter >= 4) {
-                                    console.log("تم رصد تجمد في البث، جاري إعادة التحميل الصامت...");
-                                    freezeCounter = 0;
-                                    
-                                    if (lastPlayedArgs && lastPlayedArgs.url.includes('/api/channel')) {
-                                        try {
-                                            const res = await fetch(lastPlayedArgs.url);
-                                            const data = await res.json();
-                                            if (data && data.stream_url) {
-                                                hls.loadSource(data.stream_url);
-                                                video.play().catch(() => {});
-                                                return;
-                                            }
-                                        } catch(e) {}
-                                    }
-                                    // في حال لم يكن رابط API، يعيد تحميل الرابط الحالي نفسه
-                                    hls.loadSource(video.src || url);
-                                    video.play().catch(() => {});
-                                }
-                            } else {
-                                freezeCounter = 0; // البث يعمل بشكل سليم، صفر العداد
-                            }
-                            lastCurrentTime = video.currentTime;
-                        }
-                    }, 1000);
 
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
@@ -971,20 +901,8 @@
 
                     hls.on(Hls.Events.ERROR, (event, data) => {
                         if (data.fatal) {
-                            // إذا كان الخطأ بسبب الشبكة أو انتهاء الصلاحية، نحاول إعادة التشغيل تلقائياً لـ 3 مرات
-                            if (retryCount < 3 && lastPlayedArgs) {
-                                retryCount++;
-                                console.log(`محاولة إعادة الاتصال التلقائي رقم ${retryCount}...`);
-                                
-                                // إعادة تشغيل القناة الحالية برابط متجدد دون ريلود للصفحة
-                                setTimeout(() => {
-                                    playChannel(lastPlayedArgs.url, lastPlayedArgs.type, lastPlayedArgs.name, lastPlayedArgs.el);
-                                }, 1500); // تأخير بسيط ثانية ونصف قبل المحاولة
-                            } else {
-                                // إذا فشلت كل المحاولات يظهر خيار الخطأ
-                                document.getElementById('placeholderScreen').classList.add('hidden');
-                                document.getElementById('errorScreen').classList.remove('hidden');
-                            }
+                            document.getElementById('placeholderScreen').classList.add('hidden');
+                            document.getElementById('errorScreen').classList.remove('hidden');
                         }
                     });
                 } else {
