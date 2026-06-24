@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js@latest/dist/mpegts.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
@@ -546,6 +547,7 @@
         let poemsChannels = [];
         let currentTab = "main";
         let hls = null;
+        let mpegtsPlayer = null;
         let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
@@ -716,6 +718,10 @@
 
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
+            if (mpegtsPlayer) {
+                try { mpegtsPlayer.destroy(); } catch (e) {}
+                mpegtsPlayer = null;
+            }
             if (plyr) { plyr.destroy(); plyr = null; }
             document.getElementById('dynamic-player-root').innerHTML = "";
             
@@ -868,19 +874,80 @@
                 };
 
                 // كشف نوع الرابط: هل هو HLS playlist (.m3u8) أم بث MPEG-TS خام مباشر (.ts)؟
-                // كلاهما يُمرّر إلى hls.js لأن المتصفحات لا تشغّل MPEG-TS الخام عبر <video> مباشرة،
-                // وhls.js يحتوي على transmuxer داخلي يحوّل TS إلى fMP4 لحظياً عبر MSE.
+                // .m3u8 هو ملف نصي (قائمة تشغيل) -> يذهب لـ hls.js
+                // .ts (أو extension=ts) هو بث ثنائي مباشر بدون قائمة تشغيل -> يحتاج mpegts.js
+                // (محاولة تمرير TS الخام لـ hls.js تفشل بخطأ "manifest parsing error" لأنه يحاول قراءته كنص)
                 const cleanUrl = url.split('?')[0].split('#')[0].toLowerCase();
                 const isM3U8 = cleanUrl.endsWith('.m3u8') || url.includes('.m3u8');
                 const isRawTS = !isM3U8 && (cleanUrl.endsWith('.ts') || url.toLowerCase().includes('extension=ts') || url.toLowerCase().includes('.ts&') || url.toLowerCase().includes('.ts?'));
-                const useHls = isM3U8 || isRawTS;
 
-                if (Hls.isSupported() && useHls) {
+                let tsRetryCount = 0;
+                const MAX_TS_RETRIES = 5;
+
+                const showFatalError = () => {
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                    document.getElementById('errorScreen').classList.remove('hidden');
+                };
+
+                if (isRawTS && typeof mpegts !== 'undefined' && mpegts.isSupported()) {
+                    // ===== بث MPEG-TS خام مباشر =====
+                    mpegtsPlayer = mpegts.createPlayer({
+                        type: 'mpegts',
+                        isLive: true,
+                        url: url
+                    }, {
+                        enableWorker: true,
+                        liveBufferLatencyChasing: true, // يلاحق البث المباشر تلقائياً ويتجنب تراكم التأخير
+                        liveBufferLatencyMaxLatency: 6,
+                        liveBufferLatencyMinRemain: 1
+                    });
+
+                    mpegtsPlayer.attachMediaElement(video);
+
+                    mpegtsPlayer.on(mpegts.Events.ERROR, (errType, errDetail) => {
+                        console.warn('mpegts error:', errType, errDetail);
+                        if (tsRetryCount < MAX_TS_RETRIES) {
+                            tsRetryCount++;
+                            console.warn(`إعادة محاولة الاتصال بالبث (${tsRetryCount}/${MAX_TS_RETRIES})...`);
+                            setTimeout(() => {
+                                try {
+                                    mpegtsPlayer.unload();
+                                    mpegtsPlayer.load();
+                                    mpegtsPlayer.play();
+                                } catch (e) {}
+                            }, 1200 * tsRetryCount);
+                        } else {
+                            showFatalError();
+                        }
+                    });
+
+                    video.addEventListener('playing', () => {
+                        tsRetryCount = 0;
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        document.getElementById('errorScreen').classList.add('hidden');
+                        if (!plyr) setupPlyr();
+                    });
+
+                    try {
+                        mpegtsPlayer.load();
+                        mpegtsPlayer.play();
+                    } catch (e) {
+                        console.error('فشل تشغيل بث TS:', e);
+                        showFatalError();
+                    }
+
+                    // تأمين: في حال لم يبدأ التشغيل خلال مهلة معقولة
+                    setTimeout(() => {
+                        if (video.paused || video.readyState < 2) {
+                            console.warn('البث لم يبدأ بعد المهلة، قد تكون مشكلة CORS من السيرفر');
+                        }
+                    }, 8000);
+
+                } else if (Hls.isSupported() && isM3U8) {
+                    // ===== HLS playlist (.m3u8) =====
                     const hlsConfig = {
                         enableWorker: true,
                         lowLatencyMode: false,
-                        // إعدادات استرجاع قوية: ضرورية جداً لروابط TS المباشرة من سيرفرات IPTV
-                        // (مثل man1ted / light-ott وغيرها) التي تنقطع بشكل طبيعي بسبب طبيعة البث الحي
                         fragLoadingMaxRetry: 8,
                         fragLoadingRetryDelay: 1000,
                         fragLoadingMaxRetryTimeout: 8000,
@@ -902,9 +969,6 @@
                     hls = new Hls(hlsConfig);
                     hls.loadSource(url);
                     hls.attachMedia(video);
-
-                    let tsRetryCount = 0;
-                    const MAX_TS_RETRIES = 5;
 
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         tsRetryCount = 0;
@@ -949,8 +1013,7 @@
                                         try { hls.startLoad(); } catch (e) {}
                                     }, 1200 * tsRetryCount);
                                 } else {
-                                    document.getElementById('placeholderScreen').classList.add('hidden');
-                                    document.getElementById('errorScreen').classList.remove('hidden');
+                                    showFatalError();
                                 }
                                 break;
 
@@ -960,23 +1023,19 @@
                                     console.warn(`إصلاح خطأ الميديا ومحاولة الاستمرار (${tsRetryCount}/${MAX_TS_RETRIES})...`);
                                     try { hls.recoverMediaError(); } catch (e) {}
                                 } else {
-                                    document.getElementById('placeholderScreen').classList.add('hidden');
-                                    document.getElementById('errorScreen').classList.remove('hidden');
+                                    showFatalError();
                                 }
                                 break;
 
                             default:
-                                document.getElementById('placeholderScreen').classList.add('hidden');
-                                document.getElementById('errorScreen').classList.remove('hidden');
+                                showFatalError();
                                 break;
                         }
                     });
                 } else {
+                    // ===== فيديو عادي (mp4 وغيره) أو متصفح لا يدعم MSE =====
                     video.src = url;
-                    video.onerror = () => {
-                        document.getElementById('placeholderScreen').classList.add('hidden');
-                        document.getElementById('errorScreen').classList.remove('hidden');
-                    };
+                    video.onerror = showFatalError;
                     setupPlyr();
                 }
             }
