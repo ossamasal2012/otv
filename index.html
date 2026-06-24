@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -549,10 +548,13 @@
         let hls = null;
         let plyr = null;
         let currentCat = "الكل";
+        let lastPlayedArgs = null; // لحفظ بيانات آخر قناة تم تشغيلها
+        let retryCount = 0;        // لحساب عدد محاولات إعادة الاتصال
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
         let currentAspectRatio = 0;
         let controlsVisible = true;
+        retryCount = 0; // تصفير عداد المحاولات عند الانتقال أو تنظيف المشغل
 
         async function loadChannels() {
             try {
@@ -771,6 +773,7 @@
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             el.classList.add('active-card');
             cleanup();
+            lastPlayedArgs = { url, type, name, el }; // حفظ النسخة الأصلية لإعادة المحاولة
             // التحقق إذا كان الرابط يحتاج إلى جلب وتحديث تلقائي من Vercel API
             if (url.includes('/api/channel')) {
                 try {
@@ -868,7 +871,10 @@
                     }
                 };
 
-                if (Hls.isSupported() && url.includes('.m3u8')) {
+                // التحقق إذا كان الرابط هو بث بتمديد ts أو رابط لوحة Xtream مباشر
+                const isTsStream = url.includes('.ts') || url.includes('extension=ts') || url.includes('live.php');
+
+                if (Hls.isSupported() && url.includes('.m3u8') && !isTsStream) {
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
                         hls = new Hls({
@@ -876,8 +882,13 @@
                             enableWorker: true
                         });
                     } else {
-                        hls = new Hls(); // القنوات الأخرى تعمل بدون تأخير كالمعتاد
+                    // إذا كان الرابط من نوع ts، نقوم بتهيئة إعدادات الميديا لتعمل بسلاسة
+                    if (isTsStream) {
+                        video.setAttribute('type', 'video/mp2t'); // تحديد نوع صيغة البث للمتصفح
                     }
+                    video.src = url;
+                    setupPlyr();
+                }
                     hls.loadSource(url);
                     hls.attachMedia(video);
 
@@ -900,8 +911,20 @@
 
                     hls.on(Hls.Events.ERROR, (event, data) => {
                         if (data.fatal) {
-                            document.getElementById('placeholderScreen').classList.add('hidden');
-                            document.getElementById('errorScreen').classList.remove('hidden');
+                            // إذا كان الخطأ بسبب الشبكة أو انتهاء الصلاحية، نحاول إعادة التشغيل تلقائياً لـ 3 مرات
+                            if (retryCount < 3 && lastPlayedArgs) {
+                                retryCount++;
+                                console.log(`محاولة إعادة الاتصال التلقائي رقم ${retryCount}...`);
+                                
+                                // إعادة تشغيل القناة الحالية برابط متجدد دون ريلود للصفحة
+                                setTimeout(() => {
+                                    playChannel(lastPlayedArgs.url, lastPlayedArgs.type, lastPlayedArgs.name, lastPlayedArgs.el);
+                                }, 1500); // تأخير بسيط ثانية ونصف قبل المحاولة
+                            } else {
+                                // إذا فشلت كل المحاولات يظهر خيار الخطأ
+                                document.getElementById('placeholderScreen').classList.add('hidden');
+                                document.getElementById('errorScreen').classList.remove('hidden');
+                            }
                         }
                     });
                 } else {
