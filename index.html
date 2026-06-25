@@ -1,5 +1,6 @@
 
 
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -491,7 +492,10 @@
         <div id="errorScreen" class="overlay-screen hidden text-center px-10">
             <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-3"></i>
             <h3 class="text-base font-bold">خطأ في التشغيل</h3>
-            <p class="text-[11px] text-slate-500">المصدر غير متاح حالياً</p>
+            <p id="errorScreenText" class="text-[11px] text-slate-500">المصدر غير متاح حالياً</p>
+            <button onclick="retryCurrentAction()" class="mt-4 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors">
+                <i class="fa-solid fa-rotate-right ml-1"></i> إعادة المحاولة
+            </button>
         </div>
 
         <div id="dynamic-player-root"></div>
@@ -555,25 +559,130 @@
         let currentAspectRatio = 0;
         let controlsVisible = true;
 
-        async function loadChannels() {
-            try {
-                document.getElementById('placeholderScreen').classList.remove('hidden');
-                const [resMain, resQuran, resPoems] = await Promise.all([
-                    fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json").then(r => r.json()).catch(() => []),
-                    fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json").then(r => r.json()).catch(() => []),
-                    fetch("https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json").then(r => r.json()).catch(() => [])
-                ]);
+        // الرابط الصحيح والكامل لمصدر القنوات (تم تصحيحه ليطابق رابط GitHub الفعلي)
+        const MAIN_CHANNELS_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/channels.json";
+        const QURAN_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
+        const POEMS_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
-                quranChannels = resQuran.map(ch => [ch[0], ch[1], "القرآن الكريم", ch[3]]);
-                poemsChannels = resPoems.map(ch => [ch[0], ch[1], "قصائد حسينية", ch[3]]);
-                myChannels = resMain; 
-                
-                renderMenu();
-                renderChannels();
-                document.getElementById('placeholderScreen').classList.add('hidden');
-            } catch (err) {
-                console.error("خطأ في تحميل القنوات", err);
-                document.getElementById('errorScreen').classList.remove('hidden');
+        // مرايا احتياطية (CDN بديل لـ GitHub) تُستخدم تلقائياً إذا فشل الرابط الأساسي
+        function buildFallbackUrls(rawUrl) {
+            try {
+                const u = new URL(rawUrl);
+                const parts = u.pathname.split('/').filter(Boolean); // [user, repo, refs, heads, branch, ...path]
+                let user, repo, branch, filePath;
+                if (parts[2] === 'refs' && parts[3] === 'heads') {
+                    user = parts[0]; repo = parts[1]; branch = parts[4]; filePath = parts.slice(5).join('/');
+                } else {
+                    user = parts[0]; repo = parts[1]; branch = parts[2]; filePath = parts.slice(3).join('/');
+                }
+                return [
+                    `https://cdn.jsdelivr.net/gh/${user}/${repo}@${branch}/${filePath}`,
+                    `https://raw.githack.com/${user}/${repo}/${branch}/${filePath}`
+                ];
+            } catch (e) {
+                return [];
+            }
+        }
+
+        // جلب JSON مع: كاش-باستينگ، فحص حقيقي لحالة HTTP، إعادة محاولة، ومرايا بديلة عند الفشل
+        async function fetchJsonRobust(url, { retries = 2, timeoutMs = 9000 } = {}) {
+            const candidates = [url, ...buildFallbackUrls(url)];
+            let lastError = null;
+
+            for (const candidateUrl of candidates) {
+                for (let attempt = 0; attempt <= retries; attempt++) {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeoutMs);
+                    try {
+                        const bustedUrl = candidateUrl + (candidateUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
+                        const res = await fetch(bustedUrl, { cache: 'no-store', signal: controller.signal });
+                        clearTimeout(timer);
+                        if (!res.ok) throw new Error(`HTTP ${res.status} من ${candidateUrl}`);
+                        const text = await res.text();
+                        try {
+                            return JSON.parse(text);
+                        } catch (parseErr) {
+                            throw new Error(`الاستجابة ليست JSON صالح من ${candidateUrl}`);
+                        }
+                    } catch (err) {
+                        clearTimeout(timer);
+                        lastError = err;
+                        console.warn(`فشل جلب ${candidateUrl} (محاولة ${attempt + 1}/${retries + 1}):`, err.message || err);
+                        // تأخير صغير قبل إعادة المحاولة لتفادي إغلاق متكرر فوري
+                        if (attempt < retries) await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+                    }
+                }
+            }
+            throw lastError || new Error(`تعذر الوصول إلى ${url} من جميع المصادر`);
+        }
+
+        function showLoadError(message) {
+            const errBox = document.getElementById('errorScreen');
+            const errText = document.getElementById('errorScreenText');
+            if (errText) errText.textContent = message;
+            errBox.classList.remove('hidden');
+            document.getElementById('placeholderScreen').classList.add('hidden');
+        }
+
+        async function loadChannels(isRetry = false) {
+            document.getElementById('errorScreen').classList.add('hidden');
+            document.getElementById('placeholderScreen').classList.remove('hidden');
+
+            // كل مصدر بيانات يُجلب ويُعالَج بشكل مستقل تماماً عن البقية:
+            // فشل مصدر واحد (مثلاً ملف القصائد) لا يجب أن يُسقط القنوات الرئيسية أو القرآن.
+            const [mainResult, quranResult, poemsResult] = await Promise.allSettled([
+                fetchJsonRobust(MAIN_CHANNELS_URL),
+                fetchJsonRobust(QURAN_JSON_URL),
+                fetchJsonRobust(POEMS_JSON_URL)
+            ]);
+
+            const sourceErrors = [];
+
+            if (mainResult.status === 'fulfilled' && Array.isArray(mainResult.value)) {
+                // تنظيف أي قنوات فاسدة الشكل (سطور لا تحتوي 4 عناصر، أو روابط فاضية) بدل أن تكسر العرض كله
+                myChannels = mainResult.value.filter(ch =>
+                    Array.isArray(ch) && ch.length >= 4 &&
+                    typeof ch[0] === 'string' && ch[0].trim() !== '' &&
+                    typeof ch[1] === 'string' && ch[1].trim() !== ''
+                ).map(ch => [ch[0].trim(), ch[1].trim(), (ch[2] || 'غير مصنف').toString().trim(), ch[3]]);
+            } else {
+                myChannels = [];
+                sourceErrors.push('القنوات الرئيسية');
+                console.error("فشل تحميل القنوات الرئيسية:", mainResult.reason);
+            }
+
+            if (quranResult.status === 'fulfilled' && Array.isArray(quranResult.value)) {
+                quranChannels = quranResult.value
+                    .filter(ch => Array.isArray(ch) && ch.length >= 2 && ch[0] && ch[1])
+                    .map(ch => [ch[0], ch[1], "القرآن الكريم", ch[3]]);
+            } else {
+                quranChannels = [];
+                sourceErrors.push('قنوات القرآن الكريم');
+                console.error("فشل تحميل قنوات القرآن:", quranResult.reason);
+            }
+
+            if (poemsResult.status === 'fulfilled' && Array.isArray(poemsResult.value)) {
+                poemsChannels = poemsResult.value
+                    .filter(ch => Array.isArray(ch) && ch.length >= 2 && ch[0] && ch[1])
+                    .map(ch => [ch[0], ch[1], "قصائد حسينية", ch[3]]);
+            } else {
+                poemsChannels = [];
+                sourceErrors.push('قصائد حسينية');
+                console.error("فشل تحميل القصائد:", poemsResult.reason);
+            }
+
+            // إذا فشل المصدر الرئيسي (الأهم) بالكامل ولم نحصل على أي قناة من أي مصدر، نعرض رسالة خطأ حقيقية مع زر إعادة محاولة
+            if (myChannels.length === 0 && quranChannels.length === 0 && poemsChannels.length === 0) {
+                showLoadError('تعذر تحميل قائمة القنوات. تأكد من اتصالك بالإنترنت ثم حاول مجدداً.');
+                return;
+            }
+
+            renderMenu();
+            renderChannels();
+            document.getElementById('placeholderScreen').classList.add('hidden');
+
+            if (sourceErrors.length > 0) {
+                console.warn('تم التحميل جزئياً، فشلت هذه المصادر: ' + sourceErrors.join('، '));
             }
         }
 
@@ -656,7 +765,7 @@
             }
 
             if (currentCat === "الكل") {
-                const filteredPoemsCount = poemsChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery).length);
+                const filteredPoemsCount = poemsChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery)).length;
                 if (filteredPoemsCount > 0 || searchQuery.trim() === "") {
                     htmlContent += `
                     <div onclick="switchTab('poems')" class="channel-item folder-item p-3 rounded-lg flex items-center justify-between group mb-2">
@@ -768,22 +877,55 @@
             renderChannels();
         }
 
-        async function playChannel(url, type, name, el) {
+        let lastPlayedChannel = null; // { url, type, name, el } لإعادة المحاولة دون إجبار المستخدم على إعادة النقر
+
+        function retryCurrentAction() {
+            document.getElementById('errorScreen').classList.add('hidden');
+            if (lastPlayedChannel) {
+                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true);
+            } else {
+                loadChannels();
+            }
+        }
+
+        // جلب رابط البث المتجدد من API مع فحص حقيقي لحالة HTTP، مهلة زمنية، وإعادة محاولة قبل الاستسلام
+        async function resolveStreamUrl(apiUrl, { retries = 2, timeoutMs = 8000 } = {}) {
+            let lastErr = null;
+            for (let attempt = 0; attempt <= retries; attempt++) {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const res = await fetch(apiUrl, { cache: 'no-store', signal: controller.signal });
+                    clearTimeout(timer);
+                    if (!res.ok) throw new Error(`خادم الرابط المتجدد أعاد خطأ HTTP ${res.status}`);
+                    const data = await res.json();
+                    if (data && data.ok === false) throw new Error('انتهت صلاحية القناة من المصدر (ok:false)');
+                    if (!data || !data.stream_url) throw new Error('استجابة API لا تحتوي على stream_url');
+                    return data.stream_url;
+                } catch (err) {
+                    clearTimeout(timer);
+                    lastErr = err;
+                    console.warn(`فشل جلب رابط البث المتجدد (محاولة ${attempt + 1}/${retries + 1}):`, err.message || err);
+                    if (attempt < retries) await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+                }
+            }
+            throw lastErr || new Error('تعذر جلب رابط البث المتجدد');
+        }
+
+        async function playChannel(url, type, name, el, isRetry = false) {
+            lastPlayedChannel = { url, type, name, el };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
-            el.classList.add('active-card');
+            if (el) el.classList.add('active-card');
             cleanup();
+            document.getElementById('placeholderScreen').classList.remove('hidden');
+
             // التحقق إذا كان الرابط يحتاج إلى جلب وتحديث تلقائي من Vercel API
             if (url.includes('/api/channel')) {
                 try {
-                    const res = await fetch(url);
-                    const data = await res.json();
-                    if (data && data.stream_url) {
-                        url = data.stream_url; // استبدال الرابط الثابت بالرابط المتجدد الحقيقي
-                    }
+                    url = await resolveStreamUrl(url);
                 } catch (err) {
                     console.error("خطأ في جلب الرابط المتجدد:", err);
-                    document.getElementById('placeholderScreen').classList.add('hidden');
-                    document.getElementById('errorScreen').classList.remove('hidden');
+                    showLoadError('تعذر تحديث رابط البث لهذه القناة. قد تكون القناة متوقفة مؤقتاً من المصدر.');
                     return;
                 }
             }
@@ -811,6 +953,9 @@
                 // إخفاء مؤشر التحميل عند استجابة الـ iframe
                 iframe.onload = () => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
+                };
+                iframe.onerror = () => {
+                    showLoadError('تعذر تحميل مصدر هذه القناة (iframe).');
                 };
 
                 // حقن الـ iframe في الصفحة
@@ -845,7 +990,10 @@
                     i18n: { quality: 'الجودة', speed: 'السرعة' }
                 };
 
+                let plyrSetupDone = false;
                 const setupPlyr = () => {
+                    if (plyrSetupDone) return;
+                    plyrSetupDone = true;
                     plyr = new Plyr(video, plyrOptions);
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     controlsVisible = true;
@@ -899,15 +1047,54 @@
                         setupPlyr();
                     });
 
+                    // معالجة أخطاء HLS بذكاء بدل الاستسلام الفوري عند أي خطأ:
+                    // أخطاء الشبكة وتحميل المانيفست تُعاد محاولتها تلقائياً قبل عرض شاشة الخطأ،
+                    // وأخطاء الميديا (decode/buffer) تتم معالجتها بـ recoverMediaError بدل اعتبارها فاتال فوراً.
+                    let networkRetryCount = 0;
+                    const MAX_NETWORK_RETRIES = 3;
+
                     hls.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal) {
-                            document.getElementById('placeholderScreen').classList.add('hidden');
-                            document.getElementById('errorScreen').classList.remove('hidden');
+                        if (!data.fatal) return; // الأخطاء غير الفاتال (تجزيء واحد فشل مثلاً) لا تستدعي أي رد فعل
+
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                if (networkRetryCount < MAX_NETWORK_RETRIES) {
+                                    networkRetryCount++;
+                                    console.warn(`خطأ شبكة في HLS، إعادة محاولة ${networkRetryCount}/${MAX_NETWORK_RETRIES}`);
+                                    setTimeout(() => {
+                                        try { hls.startLoad(); } catch (e) { /* تم تدمير hls بالفعل */ }
+                                    }, 1000 * networkRetryCount);
+                                } else {
+                                    showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً.');
+                                }
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.warn('خطأ ميديا في HLS، محاولة استعادة التشغيل...');
+                                try { hls.recoverMediaError(); } catch (e) {
+                                    showLoadError('تعذر تشغيل تنسيق هذا البث على هذا المتصفح.');
+                                }
+                                break;
+                            default:
+                                showLoadError('المصدر غير متاح حالياً أو تم تغييره من مزود القناة.');
+                                break;
                         }
                     });
-                } else {
+
+                    // تأمين: لو لم يصدر أي حدث نهائياً (لا نجاح ولا فشل فاتال) بعد فترة طويلة، أعلم المستخدم
+                    setTimeout(() => {
+                        if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
+                            showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر قناة أخرى.');
+                        }
+                    }, 15000);
+
+                } else if (Hls.isSupported() || video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = url;
+                    video.addEventListener('error', () => {
+                        showLoadError('تعذر تشغيل هذا الرابط مباشرة على هذا المتصفح.');
+                    }, { once: true });
                     setupPlyr();
+                } else {
+                    showLoadError('متصفحك لا يدعم تشغيل بث HLS. يرجى تحديث المتصفح أو استخدام متصفح آخر.');
                 }
             }
         }
