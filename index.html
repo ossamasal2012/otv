@@ -557,6 +557,10 @@
         // مؤقت تجديد رابط البث للقنوات المتجددة (API channels) — يعمل في الخلفية بصمت تام
         let streamRefreshTimer = null;
         let activeApiChannelUrl = null; // رابط الـ API الأصلي للقناة الحالية، يُستخدم للتحديث الدوري
+        // خريطة "مرايا القنوات": قنوات بنفس الاسم (متجاهلين الفروقات الطفيفة كالجودة بين قوسين) تُعامَل كروابط بديلة لنفس القناة.
+        // عند فشل رابط، نُجرّب تلقائياً الرابط التالي في القائمة قبل أن نُظهر أي خطأ للمستخدم.
+        let channelMirrors = {};
+        let currentMirrorAttempt = { key: null, urls: [], index: 0 };
         let controlsVisible = true;
 
         // الرابط الصحيح والكامل لمصدر القنوات (تم تصحيحه ليطابق رابط GitHub الفعلي)
@@ -624,6 +628,24 @@
             document.getElementById('placeholderScreen').classList.add('hidden');
         }
 
+        // يبني خريطة المرايا: يُجمّع كل القنوات التي تتشابه أسماؤها الأساسية (بعد تجاهل الجودة بين قوسين
+        // مثل (1080p) أو الحالة بين أقواس مربعة مثل [Not 24/7]) في مفتاح واحد، فتصبح روابطها بدائل تلقائية لبعضها.
+        function channelMirrorKey(name) {
+            return normalizeArabic(
+                name.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '')
+            );
+        }
+
+        function buildChannelMirrorsMap() {
+            channelMirrors = {};
+            for (const ch of myChannels) {
+                const key = channelMirrorKey(ch[0]);
+                if (!key) continue;
+                if (!channelMirrors[key]) channelMirrors[key] = [];
+                if (!channelMirrors[key].includes(ch[1])) channelMirrors[key].push(ch[1]);
+            }
+        }
+
         async function loadChannels(isRetry = false) {
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
@@ -645,8 +667,11 @@
                     typeof ch[0] === 'string' && ch[0].trim() !== '' &&
                     typeof ch[1] === 'string' && ch[1].trim() !== ''
                 ).map(ch => [ch[0].trim(), ch[1].trim(), (ch[2] || 'غير مصنف').toString().trim(), ch[3]]);
+
+                buildChannelMirrorsMap();
             } else {
                 myChannels = [];
+                channelMirrors = {};
                 sourceErrors.push('القنوات الرئيسية');
                 console.error("فشل تحميل القنوات الرئيسية:", mainResult.reason);
             }
@@ -1005,7 +1030,6 @@
                 const shadowVideo = document.createElement('video');
                 shadowVideo.muted = true; // يجب أن يكون مكتوماً مؤقتاً أثناء التحميل الخفي لتفادي أي صوت مزدوج
                 shadowVideo.setAttribute('playsinline', '');
-                shadowVideo.setAttribute('crossorigin', '');
                 shadowVideo.style.position = 'absolute';
                 shadowVideo.style.inset = '0';
                 shadowVideo.style.width = '100%';
@@ -1086,12 +1110,38 @@
             });
         }
 
-        async function playChannel(url, type, name, el, isRetry = false) {
+        // يُجرّب الرابط التالي المعروف لنفس القناة (إن وُجد) بدل الاستسلام المباشر.
+        // يُرجع true إذا كانت هناك محاولة جديدة قيد التنفيذ (فلا تُظهر شاشة خطأ)، أو false إذا استُنفدت كل المرايا.
+        function tryNextMirror(name, el) {
+            const attempt = currentMirrorAttempt;
+            if (!attempt || channelMirrorKey(name) !== attempt.key) return false;
+            const nextIndex = attempt.index + 1;
+            if (nextIndex >= attempt.urls.length) return false;
+
+            attempt.index = nextIndex;
+            const nextUrl = attempt.urls[nextIndex];
+            // نبحث عن النوع الصحيح (فيديو مباشر 'v' أو iframe 'i') لهذا الرابط البديل من القائمة الأصلية
+            const matchingChannel = myChannels.find(c => c[1] === nextUrl);
+            const nextType = matchingChannel ? matchingChannel[3] : 'v';
+            console.warn(`فشل الرابط الحالي للقناة "${name}"، تجربة الرابط البديل ${nextIndex + 1}/${attempt.urls.length} تلقائياً...`);
+            playChannel(nextUrl, nextType, name, el, false, true);
+            return true;
+        }
+
+        async function playChannel(url, type, name, el, isRetry = false, isMirrorAttempt = false) {
             lastPlayedChannel = { url, type, name, el };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             if (el) el.classList.add('active-card');
             cleanup();
             document.getElementById('placeholderScreen').classList.remove('hidden');
+
+            // تهيئة قائمة المرايا البديلة لهذه القناة (روابط أخرى بنفس الاسم الأساسي) إن لم تكن هذه محاولة مرايا جارية فعلاً
+            if (!isMirrorAttempt) {
+                const key = channelMirrorKey(name);
+                const mirrorUrls = channelMirrors[key] || [url];
+                currentMirrorAttempt = { key, urls: mirrorUrls, index: mirrorUrls.indexOf(url) };
+                if (currentMirrorAttempt.index === -1) currentMirrorAttempt.index = 0;
+            }
 
             const originalApiUrl = url.includes('/api/channel') ? url : null;
             let initialExpiresInSeconds = null;
@@ -1104,6 +1154,7 @@
                     initialExpiresInSeconds = resolved.expiresInSeconds;
                 } catch (err) {
                     console.error("خطأ في جلب الرابط المتجدد:", err);
+                    if (tryNextMirror(name, el)) return;
                     showLoadError('تعذر تحديث رابط البث لهذه القناة. قد تكون القناة متوقفة مؤقتاً من المصدر.');
                     return;
                 }
@@ -1134,6 +1185,7 @@
                     document.getElementById('placeholderScreen').classList.add('hidden');
                 };
                 iframe.onerror = () => {
+                    if (tryNextMirror(name, el)) return;
                     showLoadError('تعذر تحميل مصدر هذه القناة (iframe).');
                 };
 
@@ -1152,7 +1204,11 @@
                 video.className = "w-full h-full video-fit-contain";
                 video.autoplay = true;
                 video.setAttribute('playsinline', '');
-                video.setAttribute('crossorigin', '');
+                // ملاحظة مهمة: تمت إزالة crossorigin="anonymous" عمداً.
+                // هذا الخاصية كانت تفرض على المتصفح طلب الفيديو بنمط CORS صارم،
+                // فيرفض أي بث لا يرسل Access-Control-Allow-Origin بشكل مثالي (شائع جداً في سيرفرات IPTV المجانية)
+                // بصمت تام، حتى لو الرابط نفسه سليم 100% ويعمل في مشغلات خارجية كـ VLC التي لا تفرض CORS أصلاً.
+                // هذا كان السبب الجذري لظاهرة "يعمل خارجياً لكن لا يعمل داخل التطبيق".
                 root.appendChild(video);
 
                 root.onclick = (e) => {
@@ -1197,6 +1253,17 @@
                 };
 
                 if (Hls.isSupported() && url.includes('.m3u8')) {
+                    // فحص أولي حاسم: Mixed Content — المتصفح يحظر بصمت تام أي رابط http:// غير مشفّر
+                    // إذا كانت صفحتنا نفسها مفتوحة عبر https://. هذا الحظر لا يظهر كخطأ HLS واضح؛
+                    // المشغلات الخارجية (VLC) لا تطبّق هذا القيد أصلاً، وهذا يفسّر "يعمل خارجياً ولا يعمل بالتطبيق".
+                    if (location.protocol === 'https:' && url.startsWith('http://')) {
+                        const upgradedUrl = 'https://' + url.slice('http://'.length);
+                        console.warn('رابط HTTP غير مشفّر داخل صفحة HTTPS (Mixed Content) — محاولة ترقية تلقائية إلى HTTPS:', upgradedUrl);
+                        url = upgradedUrl;
+                        // ملاحظة: لو السيرفر لا يدعم HTTPS أصلاً، ستفشل هذه المحاولة بخطأ شبكة واضح أدناه،
+                        // وهو أفضل من فشل صامت تام بدون أي تفسير.
+                    }
+
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
                         hls = new Hls({
@@ -1252,29 +1319,45 @@
                             case Hls.ErrorTypes.NETWORK_ERROR:
                                 if (networkRetryCount < MAX_NETWORK_RETRIES) {
                                     networkRetryCount++;
-                                    console.warn(`خطأ شبكة في HLS، إعادة محاولة ${networkRetryCount}/${MAX_NETWORK_RETRIES}`);
+                                    console.warn(`خطأ شبكة في HLS، إعادة محاولة ${networkRetryCount}/${MAX_NETWORK_RETRIES}`, data.details);
                                     setTimeout(() => {
                                         try { boundHlsInstance.startLoad(); } catch (e) { /* تم تدمير hls بالفعل */ }
                                     }, 1000 * networkRetryCount);
                                 } else {
-                                    showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً.');
+                                    // توقيع نموذجي لحظر CORS من المتصفح: لا يوجد رمز HTTP حقيقي (status 0)
+                                    // لأن المتصفح يرفض الطلب قبل أن يصل أي رد فعلي من السيرفر
+                                    const looksLikeCors = data.response && (data.response.code === 0 || data.response.code === undefined);
+                                    if (looksLikeCors) {
+                                        console.error('فشل يبدو أنه بسبب CORS — السيرفر لا يسمح بطلبات من هذا الموقع (Access-Control-Allow-Origin مفقود). الرابط قد يعمل في مشغلات خارجية كـ VLC لأنها لا تطبّق قيود CORS.', data);
+                                    }
+                                    // قبل إظهار أي خطأ، نُجرّب تلقائياً وبصمت أي رابط بديل معروف لنفس القناة
+                                    if (tryNextMirror(name, el)) break;
+                                    if (looksLikeCors) {
+                                        showLoadError('السيرفر المصدر يرفض الاتصال من المتصفح (قيود CORS من جهة المصدر). هذا غالباً سبب خارج عن تحكمنا ويعتمد على مزود البث، وقد يعمل الرابط في مشغلات خارجية كـ VLC لأنها لا تطبّق هذا القيد.');
+                                    } else {
+                                        showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً مؤقتاً.');
+                                    }
                                 }
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
                                 console.warn('خطأ ميديا في HLS، محاولة استعادة التشغيل...');
                                 try { boundHlsInstance.recoverMediaError(); } catch (e) {
+                                    if (tryNextMirror(name, el)) break;
                                     showLoadError('تعذر تشغيل تنسيق هذا البث على هذا المتصفح.');
                                 }
                                 break;
                             default:
+                                if (tryNextMirror(name, el)) break;
                                 showLoadError('المصدر غير متاح حالياً أو تم تغييره من مزود القناة.');
                                 break;
                         }
                     });
 
-                    // تأمين: لو لم يصدر أي حدث نهائياً (لا نجاح ولا فشل فاتال) بعد فترة طويلة، أعلم المستخدم
+                    // تأمين: لو لم يصدر أي حدث نهائياً (لا نجاح ولا فشل فاتال) بعد فترة طويلة، نُجرّب رابطاً بديلاً
+                    // بصمت قبل إزعاج المستخدم بأي رسالة
                     setTimeout(() => {
                         if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
+                            if (tryNextMirror(name, el)) return;
                             showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر قناة أخرى.');
                         }
                     }, 15000);
@@ -1282,6 +1365,7 @@
                 } else if (Hls.isSupported() || video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = url;
                     video.addEventListener('error', () => {
+                        if (tryNextMirror(name, el)) return;
                         showLoadError('تعذر تشغيل هذا الرابط مباشرة على هذا المتصفح.');
                     }, { once: true });
                     setupPlyr();
