@@ -467,20 +467,95 @@ jobs:
                         }
                     };
 
-                // ── Auto-learned block list — LRU-capped with the same reasoning
-                //    as hostStatsMap above: an unbounded Set<String> would grow for
-                //    as long as the app runs. Capped at 100 hosts; the oldest block
-                //    is forgotten once the cap is hit (a host that was blocked
-                //    hours ago and hasn't been retried since is safe to re-evaluate
-                //    fresh anyway). ─────────────────────────────────────────────────
-                private static final int AUTOBLOCK_MAX_ENTRIES = 100;
-                private final LinkedHashMap<String, Boolean> autoBlockedHosts =
-                    new LinkedHashMap<String, Boolean>(32, 0.75f, true) {
+                // ── Circuit Breaker (replaces the old permanent auto-block) ──────────
+                //    Industry-standard three-state breaker (CLOSED → OPEN → HALF_OPEN)
+                //    instead of a permanent ban. A live IPTV channel fires hundreds of
+                //    segment requests per hour to the SAME CDN host; a single transient
+                //    network blip of just a few seconds was previously enough to
+                //    accumulate 6 consecutive failures and permanently blacklist that
+                //    host for the rest of the session — silently killing a channel that
+                //    was otherwise working perfectly. Now: after OPEN_DURATION_MS of
+                //    being blocked, the breaker automatically moves to HALF_OPEN and
+                //    lets exactly one probe request through; success closes the breaker
+                //    (host fully trusted again), failure re-opens it for another cooldown
+                //    window. This is the actual root-cause fix for streams that "just
+                //    stop working" after a while.
+                private static final long BREAKER_OPEN_DURATION_MS   = 20_000; // cooldown before retry probe
+                private static final int  AUTOBLOCK_MAX_ENTRIES = 100;
+
+                enum BreakerState { CLOSED, OPEN, HALF_OPEN }
+
+                static class CircuitBreaker {
+                    volatile BreakerState state = BreakerState.CLOSED;
+                    volatile long openedAt = 0;
+                    volatile boolean probeInFlight = false;
+                }
+
+                private final LinkedHashMap<String, CircuitBreaker> breakers =
+                    new LinkedHashMap<String, CircuitBreaker>(32, 0.75f, true) {
                         @Override
-                        protected boolean removeEldestEntry(Map.Entry<String, Boolean> e) {
+                        protected boolean removeEldestEntry(Map.Entry<String, CircuitBreaker> e) {
                             return size() > AUTOBLOCK_MAX_ENTRIES;
                         }
                     };
+
+                /**
+                 * Returns true if this request should be allowed to actually hit the
+                 * network. CLOSED → always allowed. OPEN → blocked until the cooldown
+                 * window elapses, at which point we transition to HALF_OPEN and allow
+                 * exactly one probe through (probeInFlight guards against a burst of
+                 * concurrent requests all trying to be "the" probe at once — only the
+                 * first one through gets to test the water; the rest stay blocked
+                 * until that probe resolves).
+                 */
+                private boolean breakerAllows(String host) {
+                    CircuitBreaker cb;
+                    synchronized (breakers) {
+                        cb = breakers.computeIfAbsent(host, k -> new CircuitBreaker());
+                    }
+                    synchronized (cb) {
+                        if (cb.state == BreakerState.CLOSED) return true;
+                        if (cb.state == BreakerState.OPEN) {
+                            if (System.currentTimeMillis() - cb.openedAt >= BREAKER_OPEN_DURATION_MS) {
+                                cb.state = BreakerState.HALF_OPEN;
+                                cb.probeInFlight = true;
+                                if (DEBUG) Log.d(TAG, "Circuit breaker HALF_OPEN probe → " + host);
+                                return true;
+                            }
+                            return false;
+                        }
+                        // HALF_OPEN: only the in-flight probe itself is allowed through;
+                        // anything else arriving while the probe is pending stays blocked
+                        // so we don't fire a stampede of requests at a host we're not
+                        // sure has recovered yet.
+                        return false;
+                    }
+                }
+
+                private void breakerRecordSuccess(String host) {
+                    synchronized (breakers) {
+                        CircuitBreaker cb = breakers.get(host);
+                        if (cb == null) return;
+                        synchronized (cb) {
+                            cb.state = BreakerState.CLOSED;
+                            cb.probeInFlight = false;
+                            if (DEBUG) Log.d(TAG, "Circuit breaker CLOSED (recovered) → " + host);
+                        }
+                    }
+                }
+
+                private void breakerRecordFailure(String host) {
+                    synchronized (breakers) {
+                        CircuitBreaker cb = breakers.computeIfAbsent(host, k -> new CircuitBreaker());
+                        synchronized (cb) {
+                            cb.state = BreakerState.OPEN;
+                            cb.openedAt = System.currentTimeMillis();
+                            cb.probeInFlight = false;
+                            Log.w(TAG, "Circuit breaker OPEN for " + BREAKER_OPEN_DURATION_MS
+                                + "ms → " + host + " (will auto-retry after cooldown)");
+                        }
+                    }
+                }
 
                 // ── Cookie jar (session persistence across requests) — LRU-capped.
                 //    A long match-day session touching many third-party domains
@@ -762,7 +837,7 @@ jobs:
                 void shutdown() {
                     synchronized (responseCache)   { responseCache.clear(); }
                     synchronized (hostStatsMap)    { hostStatsMap.clear(); }
-                    synchronized (autoBlockedHosts) { autoBlockedHosts.clear(); }
+                    synchronized (breakers)        { breakers.clear(); }
                     synchronized (cookieJar)       { cookieJar.clear(); }
                     synchronized (warmedHosts)     { warmedHosts.clear(); }
                     dnsWarmupExecutor.shutdownNow();
@@ -796,11 +871,19 @@ jobs:
                             return super.shouldInterceptRequest(wv, req);
                         }
 
-                        // 4. Auto-blocked host check
+                        // 4. Circuit breaker check (replaces the old permanent auto-block).
+                        //    CLOSED → proceed normally. OPEN/HALF_OPEN-but-not-the-probe →
+                        //    instead of guaranteeing failure with a hard 403, we fall back
+                        //    to the native WebView network stack so the player still gets
+                        //    a real chance to fetch this segment through a different path
+                        //    (e.g. the WebView's own cookie/TLS session) while our proxy
+                        //    engine waits out the cooldown for this specific host.
                         String hostForBlockCheck = extractHost(url);
-                        synchronized (autoBlockedHosts) {
-                            if (autoBlockedHosts.containsKey(hostForBlockCheck))
-                                return buildError(403, "Blocked by adaptive filter");
+                        if (!breakerAllows(hostForBlockCheck)) {
+                            bypassedReqs.incrementAndGet();
+                            if (DEBUG) Log.d(TAG, "Breaker OPEN, falling back to native fetch → "
+                                + hostForBlockCheck);
+                            return super.shouldInterceptRequest(wv, req);
                         }
 
                         // 5. Cache lookup
@@ -923,9 +1006,10 @@ jobs:
                         long t0     = System.currentTimeMillis();
 
                         try {
-                            ProxyResult r = doRequest(url, method, rh, cls, ua, timeout, attempt);
+                            ProxyResult r = doRequest(url, method, rh, cls, ua, timeout, attempt, stats);
                             if (r != null) {
                                 stats.recordSuccess(System.currentTimeMillis() - t0);
+                                breakerRecordSuccess(host); // عودة فعلية للعمل — أُغلق القاطع فوراً وأُلغي أي حظر سابق
                                 if (attempt > 0)
                                     Log.i(TAG, "✓ OK attempt " + (attempt + 1) + " → " + host);
                                 maybeWarmUpDns(host, stats);
@@ -945,10 +1029,10 @@ jobs:
                         }
                     }
 
-                    if (stats.reliability() < 0.1 && stats.failureCount.get() > 5) {
-                        synchronized (autoBlockedHosts) { autoBlockedHosts.put(host, Boolean.TRUE); }
-                        Log.w(TAG, "Auto-blocking chronically unreliable host: " + host);
-                    }
+                    // كل محاولات إعادة الطلب لهذا الطلب المحدد فشلت — هذا يعني عطلاً حقيقياً مرجّحاً
+                    // (لا مجرد جزء واحد بطيء)، فنفتح القاطع لمدة الانتظار (cooldown) المحدودة، لا حظراً دائماً.
+                    // بعد انتهاء الانتظار، سيُسمح تلقائياً بمحاولة فحص واحدة (half-open) دون أي تدخل بشري.
+                    breakerRecordFailure(host);
                     if (lastEx != null) Log.e(TAG, "All retries exhausted → " + url, lastEx);
                     return null;
                 }
@@ -1000,7 +1084,8 @@ jobs:
                 private ProxyResult doRequest(String rawUrl, String method,
                                               Map<String, String> rh,
                                               RequestClass cls, String ua,
-                                              int connectTimeout, int attempt)
+                                              int connectTimeout, int attempt,
+                                              HostStats stats)
                     throws IOException {
 
                     URL target         = new URL(rawUrl);
@@ -1012,9 +1097,15 @@ jobs:
                             (HttpURLConnection) target.openConnection();
                         conn.setRequestMethod(method);
                         conn.setConnectTimeout(connectTimeout);
+                        // مهلة القراءة الآن تعتمد على ذكاء هذا المضيف المحدد بدل قيمة ثابتة:
+                        // مضيف سريع عادة (bestTimeout صغير) لن يُنتظر له 30 ثانية كاملة عند تعثر جزء واحد —
+                        // هذا كان يُسبب تجميداً ملحوظاً جداً في التشغيل دون أي داعٍ حقيقي. نُبقي حداً أدنى
+                        // معقولاً (8 ثوان) للأجزاء الكبيرة التي تحتاج وقتاً طبيعياً أطول من الـ API الخفيف.
+                        int adaptiveStreamTimeout = (int) Math.max(8_000,
+                            Math.min(stats.bestTimeout * 2L, TIMEOUT_STREAM_MS));
                         conn.setReadTimeout(
                             cls == RequestClass.MEDIA_STREAM
-                                ? TIMEOUT_STREAM_MS : TIMEOUT_READ_MS);
+                                ? adaptiveStreamTimeout : TIMEOUT_READ_MS);
                         conn.setInstanceFollowRedirects(false);
                         conn.setUseCaches(false);
 
@@ -1124,7 +1215,14 @@ jobs:
                         case MEDIA_STREAM:
                             conn.setRequestProperty("Accept",
                                 "application/vnd.apple.mpegurl,application/x-mpegURL,video/mp4,*/*;q=0.9");
-                            if (!hasRange(rh)) conn.setRequestProperty("Range", "bytes=0-");
+                            // Range مفيد فقط لملفات الفيديو الثنائية الفعلية (الأجزاء/الحاويات)؛ على ملف
+                            // مانيفست نصي صغير (m3u8/mpd) لا معنى له، وبعض سيرفرات CDN الأقل تطوراً
+                            // (شائعة جداً في مصادر IPTV المجانية) قد ترفض الطلب أو تتعامل معه بشكل غريب.
+                            String loUrl = url.toLowerCase(Locale.ROOT);
+                            boolean isTextManifest = loUrl.contains(".m3u8") || loUrl.contains(".mpd")
+                                || loUrl.contains("manifest") || loUrl.contains("playlist");
+                            if (!isTextManifest && !hasRange(rh))
+                                conn.setRequestProperty("Range", "bytes=0-");
                             conn.setRequestProperty("Sec-Fetch-Dest", "video");
                             break;
                         case API_CALL:
