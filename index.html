@@ -321,6 +321,11 @@
             min-width: 45px;
             text-align: center;
         }
+        .custom-aspect-btn.active {
+            background: rgba(245, 158, 11, 0.25) !important;
+            border: 1px solid rgba(245, 158, 11, 0.6) !important;
+            color: #f59e0b !important;
+        }
 
         @media (min-width: 1536px) {
             .aside-container { width: 450px !important; }
@@ -572,6 +577,17 @@
         let activeApiChannelUrl = null; // رابط الـ API الأصلي للقناة الحالية، يُستخدم للتحديث الدوري
         let currentActiveStreamUrl = null; // رابط البث الفعلي الحالي (لاكتشاف الردود المكررة من الـ API)
         let isCurrentSessionProxied = false; // هل البث الحالي يعمل عبر بروكسي CORS؟ يُستخدم لضمان أن التجديد التلقائي يُعيد تغليف الرابط الجديد بالبروكسي أيضاً، لا أن "يهرب" منه عند التجديد
+
+        // ===== وضع "أضعف انترنت" (Low-Bandwidth Mode) =====
+        // عند التفعيل: يبدأ التشغيل بأدنى جودة متاحة فوراً (بدل الاختيار التلقائي الذي قد يبدأ بجودة
+        // عالية فتتقطع فوراً)، ويُمنع الـ ABR من الترقية لجودة أعلى تلقائياً — يبقى المستخدم في أدنى جودة
+        // مستقرة دائماً حتى يُغيّرها يدوياً. هذا الخيار محفوظ في localStorage فيبقى مفعّلاً بين الجلسات.
+        let lowBandwidthMode = localStorage.getItem('yalla_low_bandwidth_mode') === 'true';
+        // إن لاحظ النظام تجمّداً متكرراً (3 مرات تجمّد حقيقي خلال جلسة واحدة لنفس القناة)، يُفعّل وضع
+        // "أضعف انترنت" تلقائياً من تلقاء نفسه فوراً دون انتظار طلب من المستخدم — استجابة آلية لواقع شبكته الحالي.
+        let consecutiveStallsThisChannel = 0;
+        const AUTO_LOW_BANDWIDTH_STALL_THRESHOLD = 3;
+
         // مراقب صحة البث: يرصد تجمّد التشغيل الفعلي لحظياً (لا يعتمد على أي توقيت مُعلن من مصدر خارجي)
         let healthMonitorInterval = null;
         let healthMonitorLastTime = -1;
@@ -895,6 +911,7 @@
             isCurrentSessionProxied = false;
             stopHealthMonitor();
             isRefreshInProgress = false; // تأمين إضافي: لا يجب أن يبقى القفل معلّقاً عند تبديل القناة بأي حال
+            consecutiveStallsThisChannel = 0; // عداد جديد لكل محاولة تشغيل قناة
 
             // إلغاء مؤقتات "انتظار القناة" الخاصة بالمحاولة السابقة بالكامل — هذا يضمن أن أي عدّ/انتظار
             // يبدأ من جديد تماماً مع كل قناة جديدة، ولا يستمر العدّ القديم في الخلفية مؤثراً على القناة الحالية
@@ -1007,6 +1024,54 @@
         //       بمجرد اكتشاف أي توقف حقيقي، بمعزل تام عن أي توقيت مُعلن — وهذا خط الدفاع الحاسم
         //       الذي يضمن عدم الاعتماد على بيانات قد تكون غير دقيقة من مصدر خارجي لا نتحكم به.
 
+        // ===== التفعيل التلقائي لوضع "أضعف انترنت" عند تكرار التجمّد الحقيقي =====
+        // مستقل تماماً عن نظام تجديد روابط API — يعمل على كل القنوات بدون استثناء. إذا تكرر التجمّد
+        // الحقيقي (وليس مجرد تذبذب لحظي عابر يُعالجه nudge أو buffer) عدة مرات لنفس القناة، فهذا توقيع
+        // واضح لشبكة ضعيفة فعلياً الآن، فنُفعّل وضع أضعف انترنت تلقائياً ونعيد تحميل القناة بأدنى جودة
+        // مستقرة فوراً، دون انتظار أن يكتشف المستخدم بنفسه أن عليه تغيير الإعداد يدوياً.
+        function reportRealStall(channelName, channelEl) {
+            consecutiveStallsThisChannel++;
+            console.warn(`تجمّد حقيقي مرصود (${consecutiveStallsThisChannel}/${AUTO_LOW_BANDWIDTH_STALL_THRESHOLD}) للقناة الحالية`);
+            if (!lowBandwidthMode && consecutiveStallsThisChannel >= AUTO_LOW_BANDWIDTH_STALL_THRESHOLD) {
+                console.error('تكرار تجمّد حقيقي — تفعيل وضع "أضعف انترنت" تلقائياً وإعادة تشغيل القناة بأدنى جودة مستقرة.');
+                setLowBandwidthMode(true, true);
+                if (lastPlayedChannel) {
+                    playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true);
+                }
+            }
+        }
+
+        function setLowBandwidthMode(enabled, isAutoTriggered = false) {
+            lowBandwidthMode = enabled;
+            try { localStorage.setItem('yalla_low_bandwidth_mode', enabled ? 'true' : 'false'); } catch (e) {}
+            const btn = document.getElementById('lowBandwidthToggle');
+            if (btn) btn.classList.toggle('active', enabled);
+            if (enabled && isAutoTriggered) {
+                showAutoLowBandwidthNotice();
+            }
+        }
+
+        // إشعار لطيف وغير مزعج (يختفي تلقائياً) يُعلم المستخدم أن النظام فعّل الوضع من تلقاء نفسه،
+        // بصدق وشفافية، بدل أن يتغير شيء في الواجهة دون أي تفسير له.
+        function showAutoLowBandwidthNotice() {
+            let notice = document.getElementById('autoLowBandwidthNotice');
+            if (notice) notice.remove();
+            notice = document.createElement('div');
+            notice.id = 'autoLowBandwidthNotice';
+            notice.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-amber-600 text-white text-xs px-4 py-2 rounded-full shadow-lg';
+            notice.style.transition = 'opacity 0.4s ease';
+            notice.textContent = 'تم تفعيل وضع "أضعف انترنت" تلقائياً لتقليل التقطيع';
+            document.body.appendChild(notice);
+            setTimeout(() => {
+                notice.style.opacity = '0';
+                setTimeout(() => notice.remove(), 400);
+            }, 4000);
+        }
+
+        function resetStallCounter() {
+            consecutiveStallsThisChannel = 0;
+        }
+
         // ===== مراقب صحة البث (Health Monitor) =====
         // هذا هو خط الدفاع الحاسم: بدل الاعتماد على وقت مُعلن من سيرفر خارجي قد يكون غير دقيق (كما اكتشفنا)،
         // نراقب تقدّم زمن التشغيل الفعلي في الفيديو نفسه كل 5 ثوان. لو لم يتقدّم الزمن لمدة كافية بينما الفيديو
@@ -1020,9 +1085,6 @@
             healthMonitorStallTicks = 0;
 
             healthMonitorInterval = setInterval(() => {
-                // فقط القنوات المتجددة (API) تحتاج هذا المراقب؛ القنوات الثابتة لا تنتهي صلاحيتها
-                if (!activeApiChannelUrl) return;
-
                 const video = document.getElementById('vPlayer');
                 if (!video) return;
 
@@ -1037,10 +1099,14 @@
                     healthMonitorStallTicks++;
                     console.warn(`مراقب الصحة: لم يتقدّم زمن التشغيل (فحص ${healthMonitorStallTicks}/${HEALTH_STALL_TICKS_THRESHOLD})`);
                     if (healthMonitorStallTicks >= HEALTH_STALL_TICKS_THRESHOLD) {
-                        console.error('مراقب الصحة: توقف حقيقي مؤكد في البث — تجديد فوري بمعزل عن أي جدولة سابقة.');
+                        console.error('مراقب الصحة: توقف حقيقي مؤكد في البث.');
                         healthMonitorStallTicks = 0; // تفادي إطلاق عدة تجديدات متتالية لنفس التوقف
-                        if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                        performSeamlessRefresh(activeApiChannelUrl, 1);
+                        if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
+                        // التجديد التلقائي للرابط يبقى مقتصراً على القنوات المتجددة (API) فقط، كما كان
+                        if (activeApiChannelUrl) {
+                            if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                            performSeamlessRefresh(activeApiChannelUrl, 1);
+                        }
                     }
                 } else {
                     healthMonitorLastTime = video.currentTime;
@@ -1457,7 +1523,6 @@
                 // من انتظار 5 ثوان لدورة فحص مراقب الصحة، فيتيح استجابة فورية تقريباً لأي تجمّد حقيقي
                 let instantStallTimer = null;
                 video.addEventListener('waiting', () => {
-                    if (!activeApiChannelUrl) return; // فقط القنوات المتجددة تحتاج تجديداً تلقائياً عند التجمّد
                     console.warn('الفيديو في وضع الانتظار (waiting) — رصد فوري لاحتمال تجمّد، سيُعاد الفحص خلال ثوانٍ قليلة إن استمر');
                     // لا نتصرف فوراً عند أول 'waiting' (شائع جداً وطبيعي عند كل تبديل جزء صغير)، بل نمنحه
                     // فرصة قصيرة جداً (3 ثوان) ليتعافى تلقائياً (مثلاً عبر نظام nudge) قبل اعتباره تجمّداً حقيقياً
@@ -1465,9 +1530,13 @@
                     instantStallTimer = setTimeout(() => {
                         if (video.paused || video.seeking) return;
                         if (!video.readyState || video.readyState < 2) {
-                            console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر — تجديد فوري بمعزل عن أي جدولة سابقة.');
-                            if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                            if (activeApiChannelUrl) performSeamlessRefresh(activeApiChannelUrl, 1);
+                            console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر.');
+                            if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
+                            // تجديد الرابط الفعلي يبقى مقتصراً على القنوات المتجددة (API) فقط
+                            if (activeApiChannelUrl) {
+                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                                performSeamlessRefresh(activeApiChannelUrl, 1);
+                            }
                         }
                     }, 3000);
                 });
@@ -1519,6 +1588,24 @@
                         const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
                         if (fullscreenBtn) controls.insertBefore(aspectBtn, fullscreenBtn);
                         else controls.appendChild(aspectBtn);
+
+                        // زر تفعيل/إلغاء وضع "أضعف انترنت" يدوياً — يبقى متاحاً للمستخدم دائماً
+                        // بصرف النظر عن التفعيل التلقائي، لأن المستخدم قد يعرف حالة شبكته قبل أن يكتشفها النظام
+                        const lowBwBtn = document.createElement('button');
+                        lowBwBtn.type = 'button';
+                        lowBwBtn.id = 'lowBandwidthToggle';
+                        lowBwBtn.className = 'plyr__control custom-aspect-btn' + (lowBandwidthMode ? ' active' : '');
+                        lowBwBtn.innerHTML = '<i class="fa-solid fa-wifi" style="font-size:11px"></i>';
+                        lowBwBtn.title = 'وضع أضعف انترنت (جودة منخفضة ثابتة لتقليل التقطيع)';
+                        lowBwBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            setLowBandwidthMode(!lowBandwidthMode);
+                            if (lastPlayedChannel) {
+                                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true);
+                            }
+                        };
+                        if (fullscreenBtn) controls.insertBefore(lowBwBtn, fullscreenBtn);
+                        else controls.appendChild(lowBwBtn);
                     }
                 };
 
@@ -1535,59 +1622,60 @@
                     }
 
                     // ===== إعدادات Hls.js محسّنة بدقة لأقصى سلاسة ممكنة وأقل تقطيع (Lag) =====
-                    // هذه القيم مُختارة بعناية فائقة بعد تحليل شامل لكل مصادر التقطيع الممكنة في بث IPTV:
+                    // هذه القيم مُختارة بعناية فائقة بعد تحليل شامل لكل مصادر التقطيع الممكنة في بث IPTV،
+                    // وتُبنى ديناميكياً حسب وضع "أضعف انترنت" (lowBandwidthMode) إن كان مفعّلاً.
                     //
-                    // المجموعة 1 - التخزين المؤقت (Buffering):
-                    // - maxBufferLength/maxMaxBufferLength أكبر من الافتراضي: يمتص تذبذب الشبكة قبل أن يتحول لتقطيع ملحوظ
-                    // - backBufferLength محدود: يمنع تراكم الذاكرة المخزَّنة بلا حد أثناء مشاهدة طويلة (ساعات)
+                    // ملاحظة صادقة مهمة: لا توجد طريقة تقنية لجعل البث "بلا أي تقطيع تماماً" إذا كانت سرعة
+                    // الإنترنت الفعلية أقل بثبات من معدل بتات الفيديو نفسه — هذا حد فيزيائي للشبكة لا يتجاوزه
+                    // أي تطبيق (يوتيوب، نتفليكس، أي مشغّل آخر). ما يمكن فعله، وهو ما يلي، هو تقليل احتمال
+                    // وتكرار وحدّة التقطيع إلى أدنى مستوى ممكن عملياً، عبر مخزون مؤقت ضخم وتحكم ذكي بالجودة.
                     //
-                    // المجموعة 2 - التحكم بالجودة التكيّفي (ABR) - وهذا الأهم فعلياً والسبب الأشهر للتقطيع المتكرر:
-                    // المشغّل الافتراضي قد يكون "متفائلاً" جداً ويقفز لجودة أعلى من سعة الشبكة الفعلية بمجرد رؤية
-                    // تحسن مؤقت بالسرعة، فيتعثر فوراً عند أول تذبذب. نفس المبدأ الذي تستخدمه يوتيوب ونتفليكس:
-                    // معامل تحفّظ يجعل القفز لجودة أعلى أبطأ وأكثر أماناً من القفز لجودة أدنى (الذي يجب أن يكون سريعاً
-                    // لتفادي أي تجمّد فوري)
-                    //
-                    // المجموعة 3 - إعادة المحاولة الذكية: تمتص الانقطاعات اللحظية تلقائياً بدل أن تتحول لتجمّد ملحوظ
-                    const SHARED_HLS_PERFORMANCE_CONFIG = {
-                        enableWorker: true,            // تحليل البيانات في Thread منفصل = واجهة مستخدم سلسة دون تجميد
-                        lowLatencyMode: false,          // هذه قنوات IPTV عادية لا تحتاج وضع البث منخفض التأخير (LL-HLS)
+                    // المجموعة 1 - التخزين المؤقت (Buffering) — مخزون احترازي ضخم يمتص انقطاعات طويلة فعلياً:
+                    // المجموعة 2 - التحكم بالجودة التكيّفي (ABR) - الأهم لمنع التقطيع المتكرر، بمعامل تحفّظ
+                    //   شديد وهبوط فوري شبه-آلي للجودة الأدنى عند أول إشارة جدية لضعف الشبكة
+                    // المجموعة 3 - وضع "أضعف انترنت": يُجمّد الجودة على الأدنى ابتداءً وباستمرار
+                    // المجموعة 4 - إعادة المحاولة الذكية: تمتص الانقطاعات اللحظية تلقائياً بدل أن تتحول لتجمّد ملحوظ
+                    function buildHlsPerformanceConfig() {
+                        return {
+                            enableWorker: true,            // تحليل البيانات في Thread منفصل = واجهة مستخدم سلسة دون تجميد
+                            lowLatencyMode: false,          // هذه قنوات IPTV عادية لا تحتاج وضع البث منخفض التأخير (LL-HLS)
 
-                        // --- التخزين المؤقت ---
-                        maxBufferLength: 30,             // (ثانية) ثقة أكبر بالتخزين المؤقت الأمامي = صمود أكبر أمام تذبذب الشبكة
-                        maxMaxBufferLength: 120,         // الحد الأعلى المطلق (سقف فقط، لا يُفرض إلا إذا احتاجه ولم تُحدّه الذاكرة) —
-                                                          // أعلى من الافتراضي بقليل ضمن حدود معقولة، يسمح بهامش أكبر في الشبكات الجيدة
-                                                          // دون التأثير على الاستخدام العادي الذي يحدده maxBufferLength و maxBufferSize
-                        backBufferLength: 30,             // (ثانية) لا حاجة للاحتفاظ بأكثر من هذا من الماضي — يحرر الذاكرة بثبات
-                        maxBufferHole: 0.5,               // يتجاوز الثغرات الصغيرة جداً بين الأجزاء دون توقف مرئي
-                        maxFragLookUpTolerance: 0.25,
-                        maxBufferSize: 60 * 1000 * 1000,  // (بايت) ~60MB حد أعلى معقول لمنع استهلاك ذاكرة مفرط مع بقاء هامش جيد
+                            // --- التخزين المؤقت: مخزون احترازي ضخم جداً ---
+                            maxBufferLength: 60,              // (ثانية) الهدف الطبيعي للمخزون الأمامي — يمتص انقطاعات حقيقية تمتد لعشرات الثواني
+                            maxMaxBufferLength: 180,          // الحد الأعلى المطلق (سقف فقط) في الشبكات الجيدة، لا يؤثر على الاستخدام العادي
+                            backBufferLength: 30,              // (ثانية) لا حاجة للاحتفاظ بأكثر من هذا من الماضي — يحرر الذاكرة بثبات
+                            maxBufferHole: 0.5,                // يتجاوز الثغرات الصغيرة جداً بين الأجزاء دون توقف مرئي
+                            maxFragLookUpTolerance: 0.25,
+                            maxBufferSize: 90 * 1000 * 1000,   // (بايت) ~90MB حد أعلى أكبر يتيح مخزوناً أطول زمنياً بدون استهلاك ذاكرة مفرط
 
-                        // --- التحكم بالجودة التكيّفي (ABR) — أهم مجموعة لمنع التقطيع المتكرر ---
-                        abrEwmaDefaultEstimate: 500000,    // تقدير أولي متحفظ لسرعة الشبكة يمنع بدء التشغيل بجودة عالية جداً فتتقطع فوراً
-                        abrEwmaFastLive: 3.0,               // متوسط سريع متحفظ لحالات البث المباشر (استجابة أسرع للتراجع عند الحاجة)
-                        abrEwmaSlowLive: 9.0,                // متوسط بطيء لتفادي قرارات متسرعة بناء على تذبذب لحظي قصير
-                        abrBandWidthFactor: 0.85,            // (الأهم) لا نسمح باستخدام أكثر من 85% من السرعة المقاسة فعلياً —
-                                                              // هامش أمان يمنع القفز لجودة تستهلك كل السرعة المتاحة فتتقطع فوراً
-                        abrBandWidthUpFactor: 0.6,           // القفز لجودة أعلى يتطلب هامشاً أكبر بكثير (60% فقط من النطاق المتاح)
-                                                              // قبل الترقية — تدرّج حذر يمنع التذبذب المستمر بين الجودات (وهو
-                                                              // بذاته مصدر شائع جداً للتقطيع المرئي والمسموع)
-                        abrMaxWithRealBitrate: true,          // استخدام معدل البت الحقيقي المقاس للأجزاء بدل القيمة المُعلنة فقط
-                        maxStarvationDelay: 4,                // (ثانية) إن كان التخزين المؤقت سينتهي خلال 4 ثوان، تراجع فوراً
-                                                              // لجودة أدنى بدل الانتظار حتى يتجمّد التشغيل فعلياً
-                        maxLoadingDelay: 4,                   // مماثل له لكن عند بدء تحميل جزء جديد
-                        startLevel: -1,                       // اختيار تلقائي للجودة الأولى المناسبة بدل القفز لأعلى جودة فوراً
+                            // --- التحكم بالجودة التكيّفي (ABR) — معامل تحفّظ شديد لمنع التقطيع المتكرر ---
+                            abrEwmaDefaultEstimate: lowBandwidthMode ? 200000 : 500000, // تقدير أولي أكثر تحفظاً في وضع أضعف انترنت
+                            abrEwmaFastLive: 3.0,
+                            abrEwmaSlowLive: 9.0,
+                            abrBandWidthFactor: lowBandwidthMode ? 0.6 : 0.75,      // هامش أمان أكبر بكثير من السابق (كان 0.85)
+                            abrBandWidthUpFactor: lowBandwidthMode ? 0.4 : 0.5,     // الترقية لجودة أعلى تتطلب هامشاً أكبر بكثير قبل المحاولة
+                            abrMaxWithRealBitrate: true,
+                            maxStarvationDelay: 1,             // (ثانية) هبوط شبه-فوري للجودة الأدنى عند أول إشارة جدية لنفاد المخزون —
+                                                                // كان 4 ثوان، خفضناه لأقل قيمة عملية ممكنة لمنع التجمّد قبل حدوثه أصلاً
+                            maxLoadingDelay: 2,
 
-                        // --- إعادة المحاولة الذكية ---
-                        nudgeMaxRetry: 6,                 // محاولات أكثر لتجاوز نقاط التجمّد الدقيقة آلياً قبل اعتبارها خطأ فعلي
-                        manifestLoadingMaxRetry: 4,
-                        manifestLoadingRetryDelay: 1000,
-                        manifestLoadingMaxRetryTimeout: 8000,
-                        levelLoadingMaxRetry: 4,
-                        levelLoadingRetryDelay: 1000,
-                        fragLoadingMaxRetry: 6,
-                        fragLoadingRetryDelay: 700,
-                        fragLoadingMaxRetryTimeout: 8000
-                    };
+                            // --- وضع "أضعف انترنت": تجميد الجودة على الأدنى دائماً ---
+                            startLevel: lowBandwidthMode ? 0 : -1,   // يبدأ بأدنى جودة فوراً بدل المحاولة بجودة قد تتقطع
+                            capLevelToPlayerSize: false,             // لا نسمح بأي قفز جودة إضافي مرتبط بحجم نافذة العرض
+
+                            // --- إعادة المحاولة الذكية ---
+                            nudgeMaxRetry: 8,
+                            manifestLoadingMaxRetry: 5,
+                            manifestLoadingRetryDelay: 800,
+                            manifestLoadingMaxRetryTimeout: 8000,
+                            levelLoadingMaxRetry: 5,
+                            levelLoadingRetryDelay: 800,
+                            fragLoadingMaxRetry: 8,
+                            fragLoadingRetryDelay: 500,
+                            fragLoadingMaxRetryTimeout: 8000
+                        };
+                    }
+                    const SHARED_HLS_PERFORMANCE_CONFIG = buildHlsPerformanceConfig();
 
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية (لزيادة هامش الأمان من تذبذب هذا المصدر بالتحديد)
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
@@ -1604,8 +1692,8 @@
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
                         const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
                         plyrOptions.quality = {
-                            default: 0,
-                            options: [0, ...availableQualities],
+                            default: lowBandwidthMode ? Math.min(...availableQualities) : 0,
+                            options: lowBandwidthMode ? availableQualities : [0, ...availableQualities],
                             forced: true,
                             onChange: (q) => {
                                 if (q === 0) hls.currentLevel = -1;
@@ -1617,6 +1705,20 @@
                         plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
                         setupPlyr();
 
+                        // وضع "أضعف انترنت": نُثبّت أدنى جودة متاحة فعلياً ونمنع الـ ABR من الترقية
+                        // التلقائية لأعلى منها (حتى لو لاحت لحظة سرعة جيدة) — الثبات على جودة واحدة منخفضة
+                        // مضمونة العمل أفضل بكثير من تذبذب بين جودات يُسبب تقطيعاً متكرراً عند كل تبديل.
+                        if (lowBandwidthMode && hls.levels.length > 0) {
+                            let lowestIdx = 0;
+                            for (let i = 1; i < hls.levels.length; i++) {
+                                if (hls.levels[i].height < hls.levels[lowestIdx].height) lowestIdx = i;
+                            }
+                            hls.currentLevel = lowestIdx;
+                            hls.autoLevelCapping = lowestIdx; // يمنع ABR من تجاوز هذا المستوى تلقائياً نهائياً
+                            console.warn('وضع أضعف انترنت مفعّل: تثبيت الجودة على أدنى مستوى متاح (' +
+                                hls.levels[lowestIdx].height + 'p) ومنع أي ترقية تلقائية.');
+                        }
+
                         // إذا كانت هذه قناة "متجددة" (API)، نُفعّل نظام التجديد الصامت في الخلفية الآن
                         // بعد أن تأكدنا أن البث يعمل فعلياً — المستخدم لن يشعر بهذا مطلقاً
                         if (originalApiUrl && initialExpiresInSeconds) {
@@ -1624,8 +1726,11 @@
                             currentActiveStreamUrl = resolvedRealStreamUrl || url;
                             isCurrentSessionProxied = isProxyAttempt;
                             scheduleStreamRefresh(initialExpiresInSeconds, false);
-                            startHealthMonitor(); // خط الدفاع الحاسم: مراقبة حقيقية للتجمّد بمعزل عن أي توقيت مُعلن
                         }
+                        // مراقب الصحة يعمل على كل القنوات بدون استثناء (لا فقط القنوات المتجددة) لأن رصد
+                        // التجمّد الحقيقي وتفعيل وضع "أضعف انترنت" تلقائياً مفيد لكل أنواع القنوات
+                        startHealthMonitor();
+                        resetStallCounter(); // نجح التشغيل فعلياً — نُعيد عداد التجمّدات المتتالية للصفر
                     });
 
                     // معالجة أخطاء HLS بذكاء بدل الاستسلام الفوري عند أي خطأ:
@@ -1725,8 +1830,9 @@
                         currentActiveStreamUrl = resolvedRealStreamUrl || url;
                         isCurrentSessionProxied = isProxyAttempt;
                         scheduleStreamRefresh(initialExpiresInSeconds, false);
-                        startHealthMonitor();
                     }
+                    startHealthMonitor();
+                    resetStallCounter();
                 } else {
                     showLoadError('متصفحك لا يدعم تشغيل بث HLS. يرجى تحديث المتصفح أو استخدام متصفح آخر.');
                 }
