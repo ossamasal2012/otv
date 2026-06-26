@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>يلا گـــول | Yalla Goal</title>
+    <!-- تلميحات اتصال مسبق (Preconnect) لتقليل زمن DNS/TLS handshake عند جلب بيانات القنوات -->
+    <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
+    <link rel="dns-prefetch" href="https://raw.githubusercontent.com">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
@@ -573,6 +576,11 @@
         let healthMonitorInterval = null;
         let healthMonitorLastTime = -1;
         let healthMonitorStallTicks = 0;
+        // مؤقتات خاصة بمحاولة تشغيل القناة الحالية (شاشة "انتظار القناة" ومؤقت الانتظار الطويل):
+        // يجب تتبعها وإلغاؤها عند أي تبديل قناة، وإلا فإن مؤقت القناة القديمة يستمر بالعمل في الخلفية
+        // ويؤثر على القناة الجديدة (وهذا تحديداً سبب ظاهرة "العدّ يستكمل من القناة السابقة بدل أن يبدأ من جديد")
+        let currentChannelLoadWatchdog = null;
+        let currentIframeFallbackTimer = null;
         // خريطة "مرايا القنوات": قنوات بنفس الاسم (متجاهلين الفروقات الطفيفة كالجودة بين قوسين) تُعامَل كروابط بديلة لنفس القناة.
         // عند فشل رابط، نُجرّب تلقائياً الرابط التالي في القائمة قبل أن نُظهر أي خطأ للمستخدم.
         let channelMirrors = {};
@@ -887,6 +895,17 @@
             isCurrentSessionProxied = false;
             stopHealthMonitor();
             isRefreshInProgress = false; // تأمين إضافي: لا يجب أن يبقى القفل معلّقاً عند تبديل القناة بأي حال
+
+            // إلغاء مؤقتات "انتظار القناة" الخاصة بالمحاولة السابقة بالكامل — هذا يضمن أن أي عدّ/انتظار
+            // يبدأ من جديد تماماً مع كل قناة جديدة، ولا يستمر العدّ القديم في الخلفية مؤثراً على القناة الحالية
+            if (currentChannelLoadWatchdog) {
+                clearTimeout(currentChannelLoadWatchdog);
+                currentChannelLoadWatchdog = null;
+            }
+            if (currentIframeFallbackTimer) {
+                clearTimeout(currentIframeFallbackTimer);
+                currentIframeFallbackTimer = null;
+            }
 
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
@@ -1299,10 +1318,28 @@
             playChannel(proxiedUrl, originalType, name, el, false, true, true, apiSourceUrl);
         }
 
+        // يُضيف تلميح اتصال مسبق (preconnect) لمضيف رابط معيّن، فيُنهي المتصفح DNS/TLS handshake
+        // في الخلفية فوراً بدل الانتظار حتى أول طلب فعلي للفيديو — هذا يُسرّع بداية كل تجزيء جديد طوال
+        // مدة المشاهدة، خصوصاً عند أول تشغيل أو عند تبديل مستوى الجودة لاحقاً.
+        const preconnectedHosts = new Set();
+        function preconnectToStreamHost(streamUrl) {
+            try {
+                const host = new URL(streamUrl).origin;
+                if (preconnectedHosts.has(host)) return;
+                preconnectedHosts.add(host);
+                const link = document.createElement('link');
+                link.rel = 'preconnect';
+                link.href = host;
+                link.crossOrigin = 'anonymous';
+                document.head.appendChild(link);
+            } catch (e) { /* رابط غير صالح للتحليل — نتجاهل بأمان دون أي تأثير على التشغيل */ }
+        }
+
         async function playChannel(url, type, name, el, isRetry = false, isMirrorAttempt = false, isProxyAttempt = false, apiSourceUrl = null) {
             lastPlayedChannel = { url, type, name, el };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             if (el) el.classList.add('active-card');
+            preconnectToStreamHost(url); // اتصال مسبق فوري بمضيف الرابط، قبل أي خطوة أخرى، لتوفير وقت البداية
             cleanup();
             document.getElementById('placeholderScreen').classList.remove('hidden');
 
@@ -1329,6 +1366,7 @@
                     url = resolved.streamUrl;
                     resolvedRealStreamUrl = resolved.streamUrl;
                     initialExpiresInSeconds = resolved.expiresInSeconds;
+                    preconnectToStreamHost(resolved.streamUrl); // اتصال مسبق بمضيف CDN الحقيقي الآن أنه معروف
                 } catch (err) {
                     console.error("خطأ في جلب الرابط المتجدد:", err);
                     if (tryNextMirror(name, el)) return;
@@ -1373,6 +1411,10 @@
                 // إخفاء مؤشر التحميل عند استجابة الـ iframe
                 iframe.onload = () => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
+                    if (currentIframeFallbackTimer) {
+                        clearTimeout(currentIframeFallbackTimer);
+                        currentIframeFallbackTimer = null;
+                    }
                 };
                 iframe.onerror = () => {
                     if (tryNextMirror(name, el)) return;
@@ -1383,8 +1425,10 @@
                 document.getElementById('mainPlayerArea').appendChild(iframe);
                 
                 // تأمين: في حال كان الموقع ثقيلاً جداً وتأخر حدث onload
-                setTimeout(() => {
+                // (مُتتبَّع في متغيّر عام ليتم إلغاؤه فوراً عند تبديل القناة، فلا "يستمر بالعدّ" على قناة تركها المستخدم)
+                currentIframeFallbackTimer = setTimeout(() => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
+                    currentIframeFallbackTimer = null;
                 }, 2000);
 
             } else {
@@ -1394,12 +1438,43 @@
                 video.className = "w-full h-full video-fit-contain";
                 video.autoplay = true;
                 video.setAttribute('playsinline', '');
+                // قفل معدل التشغيل على السرعة الطبيعية دائماً: بعض المتصفحات تُسرّع/تُبطئ المعدل تلقائياً بشكل
+                // دقيق جداً (غير ملحوظ كرقم لكن ملحوظ كـ"تقطيع خفيف" في الصوت والصورة) لمزامنة الصوت مع الفيديو
+                // عند تذبذب الشبكة. نُثبّته على 1.0 ونُعيد ضبطه فوراً لو غيّره المتصفح من تلقاء نفسه.
+                video.playbackRate = 1.0;
+                video.addEventListener('ratechange', () => {
+                    if (video.playbackRate !== 1.0) video.playbackRate = 1.0;
+                });
                 // ملاحظة مهمة: تمت إزالة crossorigin="anonymous" عمداً.
                 // هذا الخاصية كانت تفرض على المتصفح طلب الفيديو بنمط CORS صارم،
                 // فيرفض أي بث لا يرسل Access-Control-Allow-Origin بشكل مثالي (شائع جداً في سيرفرات IPTV المجانية)
                 // بصمت تام، حتى لو الرابط نفسه سليم 100% ويعمل في مشغلات خارجية كـ VLC التي لا تفرض CORS أصلاً.
                 // هذا كان السبب الجذري لظاهرة "يعمل خارجياً لكن لا يعمل داخل التطبيق".
                 root.appendChild(video);
+
+                // ===== كشف فوري للتجمّد (Instant Stall Detection) عبر أحداث الفيديو نفسها =====
+                // حدث 'waiting' يصدر من المتصفح خلال أجزاء من الثانية عند نفاد المخزن المؤقت — هذا أسرع بكثير
+                // من انتظار 5 ثوان لدورة فحص مراقب الصحة، فيتيح استجابة فورية تقريباً لأي تجمّد حقيقي
+                let instantStallTimer = null;
+                video.addEventListener('waiting', () => {
+                    if (!activeApiChannelUrl) return; // فقط القنوات المتجددة تحتاج تجديداً تلقائياً عند التجمّد
+                    console.warn('الفيديو في وضع الانتظار (waiting) — رصد فوري لاحتمال تجمّد، سيُعاد الفحص خلال ثوانٍ قليلة إن استمر');
+                    // لا نتصرف فوراً عند أول 'waiting' (شائع جداً وطبيعي عند كل تبديل جزء صغير)، بل نمنحه
+                    // فرصة قصيرة جداً (3 ثوان) ليتعافى تلقائياً (مثلاً عبر نظام nudge) قبل اعتباره تجمّداً حقيقياً
+                    if (instantStallTimer) clearTimeout(instantStallTimer);
+                    instantStallTimer = setTimeout(() => {
+                        if (video.paused || video.seeking) return;
+                        if (!video.readyState || video.readyState < 2) {
+                            console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر — تجديد فوري بمعزل عن أي جدولة سابقة.');
+                            if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                            if (activeApiChannelUrl) performSeamlessRefresh(activeApiChannelUrl, 1);
+                        }
+                    }, 3000);
+                });
+                video.addEventListener('playing', () => {
+                    // البث يعمل فعلياً الآن — أي مؤقت رصد تجمّد سابق أصبح غير ذي صلة
+                    if (instantStallTimer) { clearTimeout(instantStallTimer); instantStallTimer = null; }
+                });
 
                 root.onclick = (e) => {
                     if (e.target.closest('.plyr__controls')) return;
@@ -1419,6 +1494,11 @@
                 const setupPlyr = () => {
                     if (plyrSetupDone) return;
                     plyrSetupDone = true;
+                    // نجح التشغيل — لا حاجة لمؤقت "الانتظار الطويل" بعد الآن، نُلغيه فوراً
+                    if (currentChannelLoadWatchdog) {
+                        clearTimeout(currentChannelLoadWatchdog);
+                        currentChannelLoadWatchdog = null;
+                    }
                     plyr = new Plyr(video, plyrOptions);
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     controlsVisible = true;
@@ -1455,20 +1535,49 @@
                     }
 
                     // ===== إعدادات Hls.js محسّنة بدقة لأقصى سلاسة ممكنة وأقل تقطيع (Lag) =====
-                    // هذه القيم مُختارة خصيصاً لطبيعة قنوات IPTV المجانية التي تكون شبكاتها غير مستقرة غالباً:
+                    // هذه القيم مُختارة بعناية فائقة بعد تحليل شامل لكل مصادر التقطيع الممكنة في بث IPTV:
+                    //
+                    // المجموعة 1 - التخزين المؤقت (Buffering):
                     // - maxBufferLength/maxMaxBufferLength أكبر من الافتراضي: يمتص تذبذب الشبكة قبل أن يتحول لتقطيع ملحوظ
-                    // - backBufferLength محدود: يمنع تراكم الذاكرة المخزَّنة بلا حد أثناء مشاهدة طويلة (ساعات)، وهذا
-                    //   التراكم هو سبب شائع لـ "تباطؤ التطبيق تدريجياً" بعد مشاهدة طويلة
-                    // - تأخيرات إعادة المحاولة (retryDelay) مضبوطة لتمتص الانقطاعات اللحظية القصيرة من سيرفرات
-                    //   CDN غير المستقرة تلقائياً، بدل أن تتحول لتجمّد واضح يحتاج تدخل المستخدم
+                    // - backBufferLength محدود: يمنع تراكم الذاكرة المخزَّنة بلا حد أثناء مشاهدة طويلة (ساعات)
+                    //
+                    // المجموعة 2 - التحكم بالجودة التكيّفي (ABR) - وهذا الأهم فعلياً والسبب الأشهر للتقطيع المتكرر:
+                    // المشغّل الافتراضي قد يكون "متفائلاً" جداً ويقفز لجودة أعلى من سعة الشبكة الفعلية بمجرد رؤية
+                    // تحسن مؤقت بالسرعة، فيتعثر فوراً عند أول تذبذب. نفس المبدأ الذي تستخدمه يوتيوب ونتفليكس:
+                    // معامل تحفّظ يجعل القفز لجودة أعلى أبطأ وأكثر أماناً من القفز لجودة أدنى (الذي يجب أن يكون سريعاً
+                    // لتفادي أي تجمّد فوري)
+                    //
+                    // المجموعة 3 - إعادة المحاولة الذكية: تمتص الانقطاعات اللحظية تلقائياً بدل أن تتحول لتجمّد ملحوظ
                     const SHARED_HLS_PERFORMANCE_CONFIG = {
                         enableWorker: true,            // تحليل البيانات في Thread منفصل = واجهة مستخدم سلسة دون تجميد
                         lowLatencyMode: false,          // هذه قنوات IPTV عادية لا تحتاج وضع البث منخفض التأخير (LL-HLS)
+
+                        // --- التخزين المؤقت ---
                         maxBufferLength: 30,             // (ثانية) ثقة أكبر بالتخزين المؤقت الأمامي = صمود أكبر أمام تذبذب الشبكة
-                        maxMaxBufferLength: 60,          // الحد الأعلى المطلق للتخزين المؤقت في الشبكات الجيدة
+                        maxMaxBufferLength: 120,         // الحد الأعلى المطلق (سقف فقط، لا يُفرض إلا إذا احتاجه ولم تُحدّه الذاكرة) —
+                                                          // أعلى من الافتراضي بقليل ضمن حدود معقولة، يسمح بهامش أكبر في الشبكات الجيدة
+                                                          // دون التأثير على الاستخدام العادي الذي يحدده maxBufferLength و maxBufferSize
                         backBufferLength: 30,             // (ثانية) لا حاجة للاحتفاظ بأكثر من هذا من الماضي — يحرر الذاكرة بثبات
                         maxBufferHole: 0.5,               // يتجاوز الثغرات الصغيرة جداً بين الأجزاء دون توقف مرئي
                         maxFragLookUpTolerance: 0.25,
+                        maxBufferSize: 60 * 1000 * 1000,  // (بايت) ~60MB حد أعلى معقول لمنع استهلاك ذاكرة مفرط مع بقاء هامش جيد
+
+                        // --- التحكم بالجودة التكيّفي (ABR) — أهم مجموعة لمنع التقطيع المتكرر ---
+                        abrEwmaDefaultEstimate: 500000,    // تقدير أولي متحفظ لسرعة الشبكة يمنع بدء التشغيل بجودة عالية جداً فتتقطع فوراً
+                        abrEwmaFastLive: 3.0,               // متوسط سريع متحفظ لحالات البث المباشر (استجابة أسرع للتراجع عند الحاجة)
+                        abrEwmaSlowLive: 9.0,                // متوسط بطيء لتفادي قرارات متسرعة بناء على تذبذب لحظي قصير
+                        abrBandWidthFactor: 0.85,            // (الأهم) لا نسمح باستخدام أكثر من 85% من السرعة المقاسة فعلياً —
+                                                              // هامش أمان يمنع القفز لجودة تستهلك كل السرعة المتاحة فتتقطع فوراً
+                        abrBandWidthUpFactor: 0.6,           // القفز لجودة أعلى يتطلب هامشاً أكبر بكثير (60% فقط من النطاق المتاح)
+                                                              // قبل الترقية — تدرّج حذر يمنع التذبذب المستمر بين الجودات (وهو
+                                                              // بذاته مصدر شائع جداً للتقطيع المرئي والمسموع)
+                        abrMaxWithRealBitrate: true,          // استخدام معدل البت الحقيقي المقاس للأجزاء بدل القيمة المُعلنة فقط
+                        maxStarvationDelay: 4,                // (ثانية) إن كان التخزين المؤقت سينتهي خلال 4 ثوان، تراجع فوراً
+                                                              // لجودة أدنى بدل الانتظار حتى يتجمّد التشغيل فعلياً
+                        maxLoadingDelay: 4,                   // مماثل له لكن عند بدء تحميل جزء جديد
+                        startLevel: -1,                       // اختيار تلقائي للجودة الأولى المناسبة بدل القفز لأعلى جودة فوراً
+
+                        // --- إعادة المحاولة الذكية ---
                         nudgeMaxRetry: 6,                 // محاولات أكثر لتجاوز نقاط التجمّد الدقيقة آلياً قبل اعتبارها خطأ فعلي
                         manifestLoadingMaxRetry: 4,
                         manifestLoadingRetryDelay: 1000,
@@ -1477,9 +1586,7 @@
                         levelLoadingRetryDelay: 1000,
                         fragLoadingMaxRetry: 6,
                         fragLoadingRetryDelay: 700,
-                        fragLoadingMaxRetryTimeout: 8000,
-                        abrEwmaDefaultEstimate: 500000,   // تقدير أولي متحفظ لسرعة الشبكة يمنع بدء التشغيل بجودة عالية جداً فتتقطع فوراً
-                        startLevel: -1                     // اختيار تلقائي للجودة الأولى المناسبة بدل القفز لأعلى جودة فوراً
+                        fragLoadingMaxRetryTimeout: 8000
                     };
 
                     // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية (لزيادة هامش الأمان من تذبذب هذا المصدر بالتحديد)
@@ -1593,7 +1700,12 @@
 
                     // تأمين: لو لم يصدر أي حدث نهائياً (لا نجاح ولا فشل فاتال) بعد فترة طويلة، نُجرّب رابطاً بديلاً
                     // بصمت قبل إزعاج المستخدم بأي رسالة
-                    setTimeout(() => {
+                    // (مُتتبَّع في متغيّر عام ليتم إلغاؤه فوراً عند تبديل القناة — هذا يُصلح تحديداً مشكلة
+                    // "العدّ يستمر من القناة السابقة بدل أن يبدأ من جديد" التي تم رصدها)
+                    currentChannelLoadWatchdog = setTimeout(() => {
+                        currentChannelLoadWatchdog = null;
+                        // تأمين إضافي: نتجاهل هذا المؤقت إن كان المحرّك الذي استمع إليه لم يعد نشطاً (تغيّرت القناة)
+                        if (hls !== boundHlsInstance) return;
                         if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
                             if (tryNextMirror(name, el)) return;
                             showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر قناة أخرى.');
