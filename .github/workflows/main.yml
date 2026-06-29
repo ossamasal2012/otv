@@ -30,14 +30,10 @@ jobs:
     - name: Initialize App Project & Capacitor
       run: |
         mkdir -p www
-        # نسخ ملف index.html إلى المجلد الذي سيتم تحويله
         cp index.html www/
-        
         npm init -y
-        # تثبيت الحزم الأساسية فقط لجعل التطبيق خفيفاً جداً
         npm install @capacitor/core @capacitor/cli @capacitor/android
 
-        # إعداد التطبيق ليعمل بدون شاشة بداية (Splash Screen) وبشكل مباشر
         cat <<'EOF' > capacitor.config.json
         {
           "appId": "com.yallagoal.app",
@@ -72,9 +68,8 @@ jobs:
           printf "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '1.9.22'\n            }\n        }\n    }\n}\n" >> $BUILD_FILE
         fi
 
-    - name: Configure AndroidManifest.xml (Performance & Permissions)
+    - name: Configure AndroidManifest.xml
       run: |
-        # إضافة الصلاحيات وتفعيل Hardware Acceleration لتسريع الأداء على الأجهزة الضعيفة
         sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' \
             android/app/src/main/AndroidManifest.xml
         sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' \
@@ -84,13 +79,12 @@ jobs:
 
     - name: Download & Apply App Custom Icon
       run: |
-        # تحميل الأيقونة الخاصة بك وتطبيقها على التطبيق
         curl -L -o app_icon.png "https://raw.githubusercontent.com/ossamasal2012/otv/main/icon.png"
         npm install -g @capacitor/assets
         mkdir -p assets
         cp app_icon.png assets/icon.png
-        # إنشاء الأيقونة فقط لتجنب إضافة صور Splash ثقيلة
-        npx capacitor-assets generate --android --icon
+        # استخدام الأمر المعتمد الذي يعمل بنجاح
+        npx capacitor-assets generate --android
 
     - name: Sync Capacitor Project
       run: npx cap sync android
@@ -99,7 +93,6 @@ jobs:
       run: |
         cd android
         chmod +x ./gradlew
-        # استخدام parallel لتسريع عملية البناء على سيرفرات جيت هاب
         ./gradlew assembleDebug --no-daemon --parallel
 
     - name: Upload APK Artifact
