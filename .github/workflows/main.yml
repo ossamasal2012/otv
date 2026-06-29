@@ -18,11 +18,11 @@ jobs:
       with:
         node-version: 18
 
-    - name: Set up JDK 21
+    - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '21'
+        java-version: '17'
 
     - name: Install Android SDK
       uses: android-actions/setup-android@v3
@@ -51,31 +51,24 @@ jobs:
 
         npx cap add android
 
+        # تعديل إصدارات Gradle لضمان الاستقرار
         PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
-        if [ -f "$PROPERTIES_FILE" ]; then
-          sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
-        fi
+        sed -i 's/gradle-.*-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
 
-        VARIABLES_FILE="android/variables.gradle"
-        if [ -f "$VARIABLES_FILE" ]; then
-          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/g' $VARIABLES_FILE
-          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/g' $VARIABLES_FILE
-        fi
-
-        BUILD_FILE="android/build.gradle"
-        if [ -f "$BUILD_FILE" ]; then
-          sed -i 's/ext {/ext {\n        kotlinVersion = "1.9.22"/g' $BUILD_FILE
-          printf "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '1.9.22'\n            }\n        }\n    }\n}\n" >> $BUILD_FILE
-        fi
-
-    - name: Configure AndroidManifest.xml
+    - name: Fix Android Build Compatibility
       run: |
-        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' \
-            android/app/src/main/AndroidManifest.xml
-        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' \
-            android/app/src/main/AndroidManifest.xml
-        sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' \
-            android/app/src/main/AndroidManifest.xml
+        # تحديث إعدادات البناء لضمان توافق الـ SDK
+        sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/g' android/variables.gradle
+        sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/g' android/variables.gradle
+        
+        # إزالة الصلاحيات المكررة وتفعيل تسريع الأداء
+        sed -i '/<uses-permission android:name="android.permission.INTERNET"/d' android/app/src/main/AndroidManifest.xml || true
+        sed -i '/<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/d' android/app/src/main/AndroidManifest.xml || true
+        
+        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' android/app/src/main/AndroidManifest.xml
+        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' android/app/src/main/AndroidManifest.xml
+        
+        sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' android/app/src/main/AndroidManifest.xml
 
     - name: Download & Apply App Custom Icon
       run: |
@@ -83,7 +76,6 @@ jobs:
         npm install -g @capacitor/assets
         mkdir -p assets
         cp app_icon.png assets/icon.png
-        # استخدام الأمر المعتمد الذي يعمل بنجاح
         npx capacitor-assets generate --android
 
     - name: Sync Capacitor Project
@@ -93,10 +85,11 @@ jobs:
       run: |
         cd android
         chmod +x ./gradlew
-        ./gradlew assembleDebug --no-daemon --parallel
+        # استخدام flags لتقليل استهلاك الموارد أثناء البناء
+        ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Yalla-Goal-Light-APK
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+        path: android/app/build/outputs/apk/debug/يلا سيف.apk
