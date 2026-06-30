@@ -561,6 +561,28 @@
         </main>
 
     <script>
+        // ============================================================
+        //  🔥 إعدادات البروكسي الجديد (بدون ?url= للروابط الداخلية)
+        // ============================================================
+        const DEFAULT_ORIGIN = 'http://ossamasal2012.github.io/otv';
+        // ⚠️ غيّر هذا إلى رابط الـ Worker الخاص بك (بدون شرطة مائلة في النهاية)
+        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; 
+
+        function buildProxiedUrl(originalUrl) {
+            if (!CORS_PROXY_BASE) return null;
+
+            // إذا كان الرابط من موقعنا الأساسي، نمرره مباشرةً عبر المسار (بدون ?url=)
+            if (originalUrl.startsWith(DEFAULT_ORIGIN)) {
+                const path = originalUrl.substring(DEFAULT_ORIGIN.length);
+                const finalPath = path.startsWith('/') ? path : '/' + path;
+                return `${CORS_PROXY_BASE}${finalPath}`;
+            }
+
+            // الروابط الخارجية تستخدم ?url= (للتوافق مع المواقع الأخرى)
+            return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
+        }
+        // ============================================================
+
         function togglePin() {
             const inp = document.getElementById('pinInput');
             const btn = document.getElementById('eyeBtn');
@@ -605,27 +627,6 @@
         
         const QURAN_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
-
-        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; // ضع رابط الـ Worker الجديد هنا (بدون شرطة مائلة في النهاية)
-
-        function buildProxiedUrl(originalUrl) {
-    if (!CORS_PROXY_BASE) return null;
-
-    // الرابط الأساسي لموقعك (حسب تعريف الـ Worker)
-    const DEFAULT_ORIGIN = 'http://ossamasal2012.github.io/otv';
-
-    // إذا كان الرابط من موقعك الأساسي، نستخرج المسار ونضيفه مباشرةً إلى Proxy (بدون ?url=)
-    if (originalUrl.startsWith(DEFAULT_ORIGIN)) {
-        // نأخذ الجزء بعد الموقع الأساسي (مثل /channel.m3u8)
-        const path = originalUrl.substring(DEFAULT_ORIGIN.length);
-        // نتأكد من وجود斜杠
-        const finalPath = path.startsWith('/') ? path : '/' + path;
-        return `${CORS_PROXY_BASE}${finalPath}`;
-    }
-
-    // وإلا (روابط خارجية) نستخدم الطريقة القديمة مع ?url=
-    return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
-}
 
         let myChannels = [];
         let quranChannels = [];
@@ -1389,7 +1390,21 @@
             lastPlayedChannel = { url, type, name, el, channelCtx };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             if (el) el.classList.add('active-card');
-            preconnectToStreamHost(url);
+
+            // ============================================================
+            //  🚀 التعديل الأساسي: استخدام البروكسي لكل روابط الفيديو (HLS)
+            // ============================================================
+            let finalUrl = url;
+            if (typeof CORS_PROXY_BASE !== 'undefined' && CORS_PROXY_BASE && type === 'v') {
+                const proxied = buildProxiedUrl(url);
+                if (proxied) {
+                    finalUrl = proxied;
+                    console.log(`✅ يتم تشغيل القناة عبر البروكسي: ${finalUrl}`);
+                }
+            }
+            // ============================================================
+
+            preconnectToStreamHost(finalUrl);
 
             currentOpenChannel = channelCtx ? channelCtx.channel : null;
             currentServerIndex = channelCtx ? (channelCtx.serverIndex || 0) : 0;
@@ -1407,7 +1422,13 @@
             if (isApiUrl(url)) {
                 try {
                     const resolved = await resolveStreamUrl(url);
-                    url = resolved.streamUrl;
+                    // في حالة الـ API، نستخدم الرابط الناتج لكن نمرره عبر البروكسي أيضاً
+                    let apiFinalUrl = resolved.streamUrl;
+                    if (typeof CORS_PROXY_BASE !== 'undefined' && CORS_PROXY_BASE && type === 'v') {
+                        const proxied = buildProxiedUrl(apiFinalUrl);
+                        if (proxied) apiFinalUrl = proxied;
+                    }
+                    finalUrl = apiFinalUrl;
                     resolvedRealStreamUrl = resolved.streamUrl;
                     initialExpiresInSeconds = resolved.expiresInSeconds;
                     preconnectToStreamHost(resolved.streamUrl);
@@ -1430,8 +1451,8 @@
             if (originalApiUrl) {
                 const expires = initialExpiresInSeconds || 600;
                 activeApiChannelUrl = originalApiUrl;
-                currentActiveStreamUrl = resolvedRealStreamUrl || url;
-                isCurrentSessionProxied = isProxyAttempt;
+                currentActiveStreamUrl = resolvedRealStreamUrl || finalUrl;
+                isCurrentSessionProxied = true;
                 scheduleStreamRefresh(expires, false);
             }
 
@@ -1449,7 +1470,7 @@
                 iframe.style.border = '0';
                 iframe.style.zIndex = '40';
                 iframe.style.backgroundColor = '#000';
-                iframe.src = url;
+                iframe.src = finalUrl;
 
                 iframe.onload = () => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
@@ -1489,7 +1510,6 @@
                         if (video.paused || video.seeking) return;
                         if (!video.readyState || video.readyState < 2) {
                             console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر.');
-                            // لا نبدل السيرفر تلقائياً
                             if (activeApiChannelUrl) {
                                 if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
                                 performSeamlessRefresh(activeApiChannelUrl, 1);
@@ -1573,11 +1593,14 @@
                     }
                 };
 
-                if (Hls.isSupported() && url.includes('.m3u8')) {
-                    if (location.protocol === 'https:' && url.startsWith('http://')) {
-                        const upgradedUrl = 'https://' + url.slice('http://'.length);
+                // ================================================================
+                //  🎬 تشغيل HLS باستخدام الرابط النهائي (المُعدّل عبر البروكسي)
+                // ================================================================
+                if (Hls.isSupported() && finalUrl.includes('.m3u8')) {
+                    if (location.protocol === 'https:' && finalUrl.startsWith('http://')) {
+                        const upgradedUrl = 'https://' + finalUrl.slice('http://'.length);
                         console.warn('رابط HTTP غير مشفّر داخل صفحة HTTPS (Mixed Content) — محاولة ترقية تلقائية إلى HTTPS:', upgradedUrl);
-                        url = upgradedUrl;
+                        finalUrl = upgradedUrl;
                     }
 
                     function buildHlsPerformanceConfig() {
@@ -1613,7 +1636,7 @@
                     }
                     const SHARED_HLS_PERFORMANCE_CONFIG = buildHlsPerformanceConfig();
 
-                    if (url.includes('man1ted.com') || url.includes('vercel.app')) {
+                    if (finalUrl.includes('man1ted.com') || finalUrl.includes('vercel.app')) {
                         hls = new Hls({
                             ...SHARED_HLS_PERFORMANCE_CONFIG,
                             liveSyncDuration: 20
@@ -1621,7 +1644,7 @@
                     } else {
                         hls = new Hls(SHARED_HLS_PERFORMANCE_CONFIG);
                     }
-                    hls.loadSource(url);
+                    hls.loadSource(finalUrl);
                     hls.attachMedia(video);
 
                     hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -1703,7 +1726,6 @@
                         currentChannelLoadWatchdog = null;
                         if (hls !== boundHlsInstance) return;
                         if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
-                            // لا نبدل السيرفر تلقائياً
                             if (activeApiChannelUrl) {
                                 if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
                                 performSeamlessRefresh(activeApiChannelUrl, 1);
@@ -1714,7 +1736,7 @@
                     }, 25000);
 
                 } else if (Hls.isSupported() || video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = url;
+                    video.src = finalUrl;
                     video.addEventListener('error', () => {
                         showLoadError('تعذر تشغيل هذا الرابط مباشرة على هذا المتصفح.');
                     }, { once: true });
