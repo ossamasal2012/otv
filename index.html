@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>يلا گـــول | Yalla Goal</title>
-    <!-- تلميحات اتصال مسبق (Preconnect) لتقليل زمن DNS/TLS handshake عند جلب بيانات القنوات -->
     <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
     <link rel="dns-prefetch" href="https://raw.githubusercontent.com">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -153,7 +152,6 @@
 
         .eye-toggle:hover { color: #10b981; }
 
-        /* ملاحظة الرابط */
         .notice-box {
             background: rgba(239, 68, 68, 0.08);
             border: 1px solid rgba(239, 68, 68, 0.35);
@@ -306,7 +304,58 @@
             gap: 1rem;
         }
 
-        /* تم إزالة #iPlayer من الـ CSS لأنه سيتم إنشاؤه برمجياً */
+        /* ===== شريط السيرفرات ===== */
+        .server-tab-bar {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            z-index: 110;
+            display: flex;
+            gap: 6px;
+            padding: 8px 10px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            background: linear-gradient(to bottom, rgba(2, 6, 23, 0.88) 0%, rgba(2, 6, 23, 0.5) 70%, transparent 100%);
+            transition: opacity 0.25s ease, visibility 0.25s ease;
+        }
+        .server-tab-bar.hidden-server-bar {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+        .server-tab-bar::-webkit-scrollbar { display: none; }
+
+        .server-chip {
+            flex-shrink: 0;
+            white-space: nowrap;
+            font-family: 'Tajawal', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(15, 23, 42, 0.6);
+            color: #cbd5e1;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+        .server-chip:hover { border-color: rgba(16, 185, 129, 0.55); color: #f1f5f9; }
+        .server-chip.active {
+            background: #10b981;
+            border-color: #10b981;
+            color: #022c22;
+        }
+
+        .server-count-badge {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            font-size: 9px;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 999px;
+            line-height: 1.5;
+            flex-shrink: 0;
+        }
 
         .custom-aspect-btn {
             background: rgba(16, 185, 129, 0.2) !important;
@@ -552,10 +601,7 @@
         const QURAN_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
-        // ===== بروكسي CORS لتشغيل القنوات على المتصفح كما تعمل في التطبيق =====
-        // ضع هنا رابط Cloudflare Worker الخاص بك بعد نشره (راجع ملف cors-proxy-worker.js المرفق للتعليمات الكاملة).
-        // اتركه فارغاً "" لتعطيل البروكسي مؤقتاً (التطبيق سيستمر بالعمل عبر الاتصال المباشر فقط، كما كان).
-        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev/"; // مثال بعد النشر: "https://yalla-cors-proxy.your-subdomain.workers.dev"
+        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev/";
 
         function buildProxiedUrl(originalUrl) {
             if (!CORS_PROXY_BASE) return null;
@@ -572,47 +618,35 @@
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
         let currentAspectRatio = 0;
-        // مؤقت تجديد رابط البث للقنوات المتجددة (API channels) — يعمل في الخلفية بصمت تام
         let streamRefreshTimer = null;
-        let activeApiChannelUrl = null; // رابط الـ API الأصلي للقناة الحالية، يُستخدم للتحديث الدوري
-        let currentActiveStreamUrl = null; // رابط البث الفعلي الحالي (لاكتشاف الردود المكررة من الـ API)
-        let isCurrentSessionProxied = false; // هل البث الحالي يعمل عبر بروكسي CORS؟ يُستخدم لضمان أن التجديد التلقائي يُعيد تغليف الرابط الجديد بالبروكسي أيضاً، لا أن "يهرب" منه عند التجديد
+        let activeApiChannelUrl = null;
+        let currentActiveStreamUrl = null;
+        let isCurrentSessionProxied = false;
 
-        // ===== وضع "أضعف انترنت" (Low-Bandwidth Mode) =====
-        // عند التفعيل: يبدأ التشغيل بأدنى جودة متاحة فوراً (بدل الاختيار التلقائي الذي قد يبدأ بجودة
-        // عالية فتتقطع فوراً)، ويُمنع الـ ABR من الترقية لجودة أعلى تلقائياً — يبقى المستخدم في أدنى جودة
-        // مستقرة دائماً حتى يُغيّرها يدوياً. هذا الخيار محفوظ في localStorage فيبقى مفعّلاً بين الجلسات.
         let lowBandwidthMode = localStorage.getItem('yalla_low_bandwidth_mode') === 'true';
-        // إن لاحظ النظام تجمّداً متكرراً (3 مرات تجمّد حقيقي خلال جلسة واحدة لنفس القناة)، يُفعّل وضع
-        // "أضعف انترنت" تلقائياً من تلقاء نفسه فوراً دون انتظار طلب من المستخدم — استجابة آلية لواقع شبكته الحالي.
         let consecutiveStallsThisChannel = 0;
         const AUTO_LOW_BANDWIDTH_STALL_THRESHOLD = 3;
 
-        // مراقب صحة البث: يرصد تجمّد التشغيل الفعلي لحظياً (لا يعتمد على أي توقيت مُعلن من مصدر خارجي)
         let healthMonitorInterval = null;
         let healthMonitorLastTime = -1;
         let healthMonitorStallTicks = 0;
-        // مؤقتات خاصة بمحاولة تشغيل القناة الحالية (شاشة "انتظار القناة" ومؤقت الانتظار الطويل):
-        // يجب تتبعها وإلغاؤها عند أي تبديل قناة، وإلا فإن مؤقت القناة القديمة يستمر بالعمل في الخلفية
-        // ويؤثر على القناة الجديدة (وهذا تحديداً سبب ظاهرة "العدّ يستكمل من القناة السابقة بدل أن يبدأ من جديد")
         let currentChannelLoadWatchdog = null;
         let currentIframeFallbackTimer = null;
-        // خريطة "مرايا القنوات": قنوات بنفس الاسم (متجاهلين الفروقات الطفيفة كالجودة بين قوسين) تُعامَل كروابط بديلة لنفس القناة.
-        // عند فشل رابط، نُجرّب تلقائياً الرابط التالي في القائمة قبل أن نُظهر أي خطأ للمستخدم.
         let channelMirrors = {};
         let currentMirrorAttempt = { key: null, urls: [], index: 0 };
         let controlsVisible = true;
 
-        // الرابط الصحيح والكامل لمصدر القنوات (تم تصحيحه ليطابق رابط GitHub الفعلي)
+        let currentOpenChannel = null;
+        let currentServerIndex = 0;
+
         const MAIN_CHANNELS_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/channels.json";
         const QURAN_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
-        // مرايا احتياطية (CDN بديل لـ GitHub) تُستخدم تلقائياً إذا فشل الرابط الأساسي
         function buildFallbackUrls(rawUrl) {
             try {
                 const u = new URL(rawUrl);
-                const parts = u.pathname.split('/').filter(Boolean); // [user, repo, refs, heads, branch, ...path]
+                const parts = u.pathname.split('/').filter(Boolean);
                 let user, repo, branch, filePath;
                 if (parts[2] === 'refs' && parts[3] === 'heads') {
                     user = parts[0]; repo = parts[1]; branch = parts[4]; filePath = parts.slice(5).join('/');
@@ -628,7 +662,6 @@
             }
         }
 
-        // جلب JSON مع: كاش-باستينگ، فحص حقيقي لحالة HTTP، إعادة محاولة، ومرايا بديلة عند الفشل
         async function fetchJsonRobust(url, { retries = 2, timeoutMs = 9000 } = {}) {
             const candidates = [url, ...buildFallbackUrls(url)];
             let lastError = null;
@@ -652,7 +685,6 @@
                         clearTimeout(timer);
                         lastError = err;
                         console.warn(`فشل جلب ${candidateUrl} (محاولة ${attempt + 1}/${retries + 1}):`, err.message || err);
-                        // تأخير صغير قبل إعادة المحاولة لتفادي إغلاق متكرر فوري
                         if (attempt < retries) await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
                     }
                 }
@@ -668,8 +700,6 @@
             document.getElementById('placeholderScreen').classList.add('hidden');
         }
 
-        // يبني خريطة المرايا: يُجمّع كل القنوات التي تتشابه أسماؤها الأساسية (بعد تجاهل الجودة بين قوسين
-        // مثل (1080p) أو الحالة بين أقواس مربعة مثل [Not 24/7]) في مفتاح واحد، فتصبح روابطها بدائل تلقائية لبعضها.
         function channelMirrorKey(name) {
             return normalizeArabic(
                 name.replace(/\([^)]*\)/g, '').replace(/\[[^\]]*\]/g, '')
@@ -690,8 +720,6 @@
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
 
-            // كل مصدر بيانات يُجلب ويُعالَج بشكل مستقل تماماً عن البقية:
-            // فشل مصدر واحد (مثلاً ملف القصائد) لا يجب أن يُسقط القنوات الرئيسية أو القرآن.
             const [mainResult, quranResult, poemsResult] = await Promise.allSettled([
                 fetchJsonRobust(MAIN_CHANNELS_URL),
                 fetchJsonRobust(QURAN_JSON_URL),
@@ -701,14 +729,25 @@
             const sourceErrors = [];
 
             if (mainResult.status === 'fulfilled' && Array.isArray(mainResult.value)) {
-                // تنظيف أي قنوات فاسدة الشكل (سطور لا تحتوي 4 عناصر، أو روابط فاضية) بدل أن تكسر العرض كله
-                myChannels = mainResult.value.filter(ch =>
-                    Array.isArray(ch) && ch.length >= 4 &&
-                    typeof ch[0] === 'string' && ch[0].trim() !== '' &&
-                    typeof ch[1] === 'string' && ch[1].trim() !== ''
-                ).map(ch => [ch[0].trim(), ch[1].trim(), (ch[2] || 'غير مصنف').toString().trim(), ch[3]]);
-
-                buildChannelMirrorsMap();
+                myChannels = mainResult.value
+                    .filter(ch => ch && typeof ch === 'object' && !Array.isArray(ch) &&
+                        typeof ch.n === 'string' && ch.n.trim() !== '' &&
+                        Array.isArray(ch.s) && ch.s.length > 0)
+                    .map(ch => {
+                        const servers = ch.s
+                            .filter(s => s && typeof s === 'object' && typeof s.u === 'string' && s.u.trim() !== '')
+                            .map((s, idx) => ({
+                                name: (typeof s.n === 'string' && s.n.trim() !== '') ? s.n.trim() : ('سيرفر ' + (idx + 1)),
+                                url: s.u.trim(),
+                                type: (s.t === 'i') ? 'i' : 'v'
+                            }));
+                        return {
+                            name: ch.n.trim(),
+                            category: (ch.c || 'غير مصنف').toString().trim(),
+                            servers
+                        };
+                    })
+                    .filter(ch => ch.servers.length > 0);
             } else {
                 myChannels = [];
                 channelMirrors = {};
@@ -736,7 +775,6 @@
                 console.error("فشل تحميل القصائد:", poemsResult.reason);
             }
 
-            // إذا فشل المصدر الرئيسي (الأهم) بالكامل ولم نحصل على أي قناة من أي مصدر، نعرض رسالة خطأ حقيقية مع زر إعادة محاولة
             if (myChannels.length === 0 && quranChannels.length === 0 && poemsChannels.length === 0) {
                 showLoadError('تعذر تحميل قائمة القنوات. تأكد من اتصالك بالإنترنت ثم حاول مجدداً.');
                 return;
@@ -752,7 +790,7 @@
         }
 
        function renderMenu() {
-            const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
+            const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c.category))];
             document.getElementById('categoryMenu').innerHTML = cats.map(c => `
                 <button onclick="filter('${c}')" class="px-3 py-1 rounded-md text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap hover:border-slate-700 ${currentCat === c ? 'active-btn' : ''}">
                     ${c}
@@ -775,6 +813,25 @@
                         <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
                     </div>
                     <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                    </button>
+                </div>`;
+            };
+
+            const generateMainChannelHTML = (ch) => {
+                const isFav = favorites.includes(ch.name);
+                const idx = myChannels.indexOf(ch);
+                const serverBadge = ch.servers.length > 1
+                    ? `<span class="server-count-badge">${ch.servers.length}</span>` : '';
+                return `
+                <div onclick="openChannel(${idx}, this)"
+                    class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100 shrink-0"></div>
+                        <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors truncate">${ch.name}</span>
+                        ${serverBadge}
+                    </div>
+                    <button onclick="toggleFavorite(event, '${escAttr(ch.name)}')" class="focus:outline-none p-1 shrink-0">
                         <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
                     </button>
                 </div>`;
@@ -847,8 +904,8 @@
             }
 
             const filteredMain = myChannels.filter(c => {
-                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
-                return matchCat && normalizeArabic(c[0]).includes(normalizedQuery);
+                const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c.name) : c.category === currentCat);
+                return matchCat && normalizeArabic(c.name).includes(normalizedQuery);
             });
 
             if (currentCat === "المفضلة") {
@@ -857,7 +914,7 @@
                 htmlContent += favFolders.map(ch => generateChannelHTML(ch)).join('');
             }
 
-            htmlContent += filteredMain.map(ch => generateChannelHTML(ch)).join('');
+            htmlContent += filteredMain.map(ch => generateMainChannelHTML(ch)).join('');
             box.innerHTML = htmlContent;
         }
 
@@ -885,6 +942,10 @@
                 .replace(/[-_.\s]/g, '');
         }
 
+        function escAttr(str) {
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
         function searchChannels() { 
              searchQuery = document.getElementById('searchInput').value; 
              renderChannels(); 
@@ -895,13 +956,16 @@
             if (plyr) { plyr.destroy(); plyr = null; }
             document.getElementById('dynamic-player-root').innerHTML = "";
             
-            // التعديل السحري: تدمير الـ iframe القديم بالكامل من الذاكرة والشاشة
             const oldIframe = document.getElementById('iPlayer');
             if (oldIframe) {
                 oldIframe.remove();
             }
 
-            // إيقاف مؤقت التجديد التلقائي الخاص بالقناة السابقة لمنع تراكم المؤقتات أو تحديث قناة تم تركها
+            const oldServerBar = document.getElementById('serverTabBar');
+            if (oldServerBar) {
+                oldServerBar.remove();
+            }
+
             if (streamRefreshTimer) {
                 clearTimeout(streamRefreshTimer);
                 streamRefreshTimer = null;
@@ -910,11 +974,9 @@
             currentActiveStreamUrl = null;
             isCurrentSessionProxied = false;
             stopHealthMonitor();
-            isRefreshInProgress = false; // تأمين إضافي: لا يجب أن يبقى القفل معلّقاً عند تبديل القناة بأي حال
-            consecutiveStallsThisChannel = 0; // عداد جديد لكل محاولة تشغيل قناة
+            isRefreshInProgress = false;
+            consecutiveStallsThisChannel = 0;
 
-            // إلغاء مؤقتات "انتظار القناة" الخاصة بالمحاولة السابقة بالكامل — هذا يضمن أن أي عدّ/انتظار
-            // يبدأ من جديد تماماً مع كل قناة جديدة، ولا يستمر العدّ القديم في الخلفية مؤثراً على القناة الحالية
             if (currentChannelLoadWatchdog) {
                 clearTimeout(currentChannelLoadWatchdog);
                 currentChannelLoadWatchdog = null;
@@ -938,7 +1000,7 @@
             if (currentAspectRatio === 0) video.classList.add('video-fit-contain');
             if (currentAspectRatio === 1) video.classList.add('video-fit-cover');
             if (currentAspectRatio === 2) video.classList.add('video-fit-fill');
-            document.querySelectorAll('.custom-aspect-btn').forEach(btn => {
+            document.querySelectorAll('.aspect-ratio-toggle').forEach(btn => {
                 btn.innerText = labels[currentAspectRatio];
             });
         }
@@ -954,6 +1016,13 @@
             if (!plyrContainer) return;
             if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
             else plyrContainer.classList.add('plyr--hide-manual-controls');
+
+            // التحكم في شريط السيرفرات بنفس الحالة
+            const serverBar = document.getElementById('serverTabBar');
+            if (serverBar) {
+                if (controlsVisible) serverBar.classList.remove('hidden-server-bar');
+                else serverBar.classList.add('hidden-server-bar');
+            }
         }
 
         function toggleFavorite(event, name) {
@@ -965,21 +1034,17 @@
             renderChannels();
         }
 
-        let lastPlayedChannel = null; // { url, type, name, el } لإعادة المحاولة دون إجبار المستخدم على إعادة النقر
+        let lastPlayedChannel = null;
 
         function retryCurrentAction() {
             document.getElementById('errorScreen').classList.add('hidden');
             if (lastPlayedChannel) {
-                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true);
+                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, false, null, lastPlayedChannel.channelCtx);
             } else {
                 loadChannels();
             }
         }
 
-        // جلب رابط البث المتجدد من API مع فحص حقيقي لحالة HTTP، مهلة زمنية، وإعادة محاولة قبل الاستسلام
-        // يُرجع كائن { streamUrl, expiresInSeconds, wasStale } — wasStale=true تعني أن الـ API نفسه أعاد
-        // نفس الرابط الموقّع القديم بالضبط (لم يولّد توقيعاً جديداً)، وهذا اكتشاف مهم جداً لأنه يعني أن
-        // قيمة expires_in_seconds المُعلنة قد لا تعكس الواقع الحقيقي لصلاحية الرابط على السيرفر الحقيقي.
         async function resolveStreamUrl(apiUrl, { retries = 2, timeoutMs = 8000, previousStreamUrl = null } = {}) {
             let lastErr = null;
             for (let attempt = 0; attempt <= retries; attempt++) {
@@ -996,7 +1061,6 @@
                     const wasStale = !!(previousStreamUrl && data.stream_url === previousStreamUrl);
                     return {
                         streamUrl: data.stream_url,
-                        // إذا لم يُرسل السيرفر expires_in_seconds، نفترض 600 ثانية (10 دقائق) كقيمة آمنة افتراضية
                         expiresInSeconds: (typeof data.expires_in_seconds === 'number' && data.expires_in_seconds > 0)
                             ? data.expires_in_seconds
                             : 600,
@@ -1012,23 +1076,6 @@
             throw lastErr || new Error('تعذر جلب رابط البث المتجدد');
         }
 
-        // ===== نظام التجديد الذكي والصامت لروابط القنوات المتجددة (API channels) =====
-        // الهدف: المستخدم لا يجب أن يشعر أبداً بأن الرابط تجدد. لا تجميد، لا شاشة تحميل، لا انقطاع صوت.
-        //
-        // اكتشاف مهم جداً (السبب الجذري لانقطاع قناتين تحديداً): بعض سيرفرات الـ API الخارجية (مثل Vercel)
-        // تُخزّن الرد مؤقتاً (cache) وقد تُعيد *نفس الرابط الموقّع القديم بالضبط* عند طلب "تجديد"، رغم أن
-        // الرابط الحقيقي على السيرفر الأصلي قد يكون انتهى فعلياً أو شارف على الانتهاء. لذلك لا يمكننا الاعتماد
-        // كلياً على قيمة expires_in_seconds المُعلنة من الـ API كمصدر وحيد للثقة. الحل: طبقتان متوازيتان:
-        //   (1) تجديد استباقي مبكر جداً (margin أكبر بكثير من السابق) كخط دفاع أول.
-        //   (2) "مراقب صحة البث" (Health Monitor) يرصد تجمّد التشغيل الفعلي لحظياً ويُجدد فوراً
-        //       بمجرد اكتشاف أي توقف حقيقي، بمعزل تام عن أي توقيت مُعلن — وهذا خط الدفاع الحاسم
-        //       الذي يضمن عدم الاعتماد على بيانات قد تكون غير دقيقة من مصدر خارجي لا نتحكم به.
-
-        // ===== التفعيل التلقائي لوضع "أضعف انترنت" عند تكرار التجمّد الحقيقي =====
-        // مستقل تماماً عن نظام تجديد روابط API — يعمل على كل القنوات بدون استثناء. إذا تكرر التجمّد
-        // الحقيقي (وليس مجرد تذبذب لحظي عابر يُعالجه nudge أو buffer) عدة مرات لنفس القناة، فهذا توقيع
-        // واضح لشبكة ضعيفة فعلياً الآن، فنُفعّل وضع أضعف انترنت تلقائياً ونعيد تحميل القناة بأدنى جودة
-        // مستقرة فوراً، دون انتظار أن يكتشف المستخدم بنفسه أن عليه تغيير الإعداد يدوياً.
         function reportRealStall(channelName, channelEl) {
             consecutiveStallsThisChannel++;
             console.warn(`تجمّد حقيقي مرصود (${consecutiveStallsThisChannel}/${AUTO_LOW_BANDWIDTH_STALL_THRESHOLD}) للقناة الحالية`);
@@ -1036,7 +1083,7 @@
                 console.error('تكرار تجمّد حقيقي — تفعيل وضع "أضعف انترنت" تلقائياً وإعادة تشغيل القناة بأدنى جودة مستقرة.');
                 setLowBandwidthMode(true, true);
                 if (lastPlayedChannel) {
-                    playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true);
+                    playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, false, null, lastPlayedChannel.channelCtx);
                 }
             }
         }
@@ -1051,8 +1098,6 @@
             }
         }
 
-        // إشعار لطيف وغير مزعج (يختفي تلقائياً) يُعلم المستخدم أن النظام فعّل الوضع من تلقاء نفسه،
-        // بصدق وشفافية، بدل أن يتغير شيء في الواجهة دون أي تفسير له.
         function showAutoLowBandwidthNotice() {
             let notice = document.getElementById('autoLowBandwidthNotice');
             if (notice) notice.remove();
@@ -1072,12 +1117,8 @@
             consecutiveStallsThisChannel = 0;
         }
 
-        // ===== مراقب صحة البث (Health Monitor) =====
-        // هذا هو خط الدفاع الحاسم: بدل الاعتماد على وقت مُعلن من سيرفر خارجي قد يكون غير دقيق (كما اكتشفنا)،
-        // نراقب تقدّم زمن التشغيل الفعلي في الفيديو نفسه كل 5 ثوان. لو لم يتقدّم الزمن لمدة كافية بينما الفيديو
-        // "يجب أن يكون يعمل" (غير متوقف يدوياً)، فهذا توقف حقيقي — نُطلق التجديد فوراً بمعزل تام عن أي جدولة.
         const HEALTH_CHECK_INTERVAL_MS = 5000;
-        const HEALTH_STALL_TICKS_THRESHOLD = 3; // 3 فحوصات متتالية بدون تقدم = ~15 ثانية توقف حقيقي = مشكلة فعلية
+        const HEALTH_STALL_TICKS_THRESHOLD = 3;
 
         function startHealthMonitor() {
             stopHealthMonitor();
@@ -1088,7 +1129,6 @@
                 const video = document.getElementById('vPlayer');
                 if (!video) return;
 
-                // لا نعتبرها مشكلة إذا كان المستخدم نفسه قد أوقف التشغيل يدوياً، أو الفيديو لا يزال يحمّل لأول مرة
                 if (video.paused || video.seeking || video.readyState < 2) {
                     healthMonitorLastTime = video.currentTime;
                     healthMonitorStallTicks = 0;
@@ -1100,9 +1140,8 @@
                     console.warn(`مراقب الصحة: لم يتقدّم زمن التشغيل (فحص ${healthMonitorStallTicks}/${HEALTH_STALL_TICKS_THRESHOLD})`);
                     if (healthMonitorStallTicks >= HEALTH_STALL_TICKS_THRESHOLD) {
                         console.error('مراقب الصحة: توقف حقيقي مؤكد في البث.');
-                        healthMonitorStallTicks = 0; // تفادي إطلاق عدة تجديدات متتالية لنفس التوقف
+                        healthMonitorStallTicks = 0;
                         if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
-                        // التجديد التلقائي للرابط يبقى مقتصراً على القنوات المتجددة (API) فقط، كما كان
                         if (activeApiChannelUrl) {
                             if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
                             performSeamlessRefresh(activeApiChannelUrl, 1);
@@ -1124,22 +1163,16 @@
             if (healthMonitorInterval) { clearInterval(healthMonitorInterval); healthMonitorInterval = null; }
         }
 
-        // قفل بسيط يمنع تشغيل أكثر من تجديد واحد في نفس اللحظة (مثلاً: مراقب الصحة والمؤقت المجدول
-        // قد يحاولان التجديد في نفس الوقت تقريباً)، لتفادي تضارب عمليتي تبديل خفي متزامنتين قد يفسد حالة المشغّل.
         let isRefreshInProgress = false;
 
         function scheduleStreamRefresh(expiresInSeconds, wasStale) {
             if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-            if (!activeApiChannelUrl) return; // القناة لم تعد متجددة (تم تبديلها) — لا تجدول شيئاً
+            if (!activeApiChannelUrl) return;
 
             let refreshAfterMs;
             if (wasStale) {
-                // الـ API أعاد رابطاً قديماً مكرراً — هذا يعني عدم ثقة بالوقت المُعلن إطلاقاً.
-                // نُعيد المحاولة بسرعة وبشكل متكرر حتى يصدر السيرفر توقيعاً جديداً فعلياً، لكن بدون إزعاج المستخدم.
                 refreshAfterMs = 15000;
             } else {
-                // هامش أمان كبير ومتحفظ جداً: نُجدد عند منتصف الوقت المُعلن تقريباً (وليس عند اقتراب الانتهاء فقط)،
-                // لأننا تعلمنا أن "الوقت المُعلن" قد لا يطابق واقع السيرفر الحقيقي. نُجدد مبكراً بكثير كاحتياط.
                 const safetyMarginSeconds = Math.max(45, expiresInSeconds * 0.5);
                 refreshAfterMs = Math.max(5000, (expiresInSeconds - safetyMarginSeconds) * 1000);
             }
@@ -1149,15 +1182,10 @@
             }, refreshAfterMs);
         }
 
-        // يحاول جلب رابط جديد وتبديله بهدوء تام. عند الفشل: يعيد المحاولة بصمت دون أي تنبيه للمستخدم،
-        // ويُبقي البث الحالي يعمل كما هو (حتى لو كان قريباً من الانتهاء) لأن مقاطعته بدون رابط بديل جاهز أسوأ.
         async function performSeamlessRefresh(apiUrl, attemptNumber) {
-            // إن كانت القناة قد تغيّرت (المستخدم اختار قناة أخرى) نوقف فوراً ولا نلمس أي شيء
             if (activeApiChannelUrl !== apiUrl) return;
-
-            // منع التشغيل المتزامن: لو هناك تجديد قيد التنفيذ فعلاً (من مراقب الصحة أو من المؤقت المجدول)، لا نبدأ آخر فوقه
             if (isRefreshInProgress) {
-                console.warn('تجديد آخر قيد التنفيذ فعلاً — تجاهل هذا الاستدعاء المتزامن لتفادي تضارب التبديل الخفي.');
+                console.warn('تجديد آخر قيد التنفيذ فعلاً — تجاهل هذا الاستدعاء المتزامن.');
                 return;
             }
             isRefreshInProgress = true;
@@ -1169,58 +1197,45 @@
                     timeoutMs: 8000,
                     previousStreamUrl: currentActiveStreamUrl
                 });
-                if (activeApiChannelUrl !== apiUrl) return; // تغيّرت القناة أثناء الانتظار
+                if (activeApiChannelUrl !== apiUrl) return;
 
                 if (wasStale) {
-                    // الـ API أعاد نفس الرابط القديم بالضبط — لا فائدة من "تبديل" رابط بنفس الرابط الحالي.
-                    // نُسجّل هذا ونُعيد المحاولة بسرعة أكبر، تاركين البث الحالي يعمل كما هو دون أي تدخل.
-                    console.warn('الـ API أعاد رابطاً مكرراً (cached) بدون توقيع جديد — سيُعاد المحاولة بسرعة أكبر بصمت.');
+                    console.warn('الـ API أعاد رابطاً مكرراً (cached) — إعادة محاولة بسرعة أكبر.');
                     scheduleStreamRefresh(expiresInSeconds, true);
                     return;
                 }
 
-                // إذا كانت الجلسة الحالية تعمل عبر بروكسي CORS، يجب تغليف الرابط الجديد بالبروكسي أيضاً قبل التبديل،
-                // وإلا فإن التجديد سيُعيد رابطاً مباشراً قد يفشل بسبب نفس مشكلة CORS التي عالجها البروكسي أصلاً
                 const urlToSwap = isCurrentSessionProxied ? (buildProxiedUrl(newUrl) || newUrl) : newUrl;
 
                 await hotSwapHlsSource(urlToSwap);
                 if (activeApiChannelUrl !== apiUrl) return;
 
-                currentActiveStreamUrl = newUrl; // نحتفظ بالرابط الحقيقي غير المُغلَّف لمقارنة "wasStale" بدقة في المرة القادمة
-                resetHealthMonitor(); // البث الجديد يعمل فعلياً — نُعيد ضبط مراقب الصحة على الرابط الجديد
-
-                // نجح التجديد — نُجدول التجديد التالي بناءً على الصلاحية الجديدة
+                currentActiveStreamUrl = newUrl;
+                resetHealthMonitor();
                 scheduleStreamRefresh(expiresInSeconds, false);
             } catch (err) {
                 console.warn(`فشل التجديد الصامت للرابط (محاولة ${attemptNumber}):`, err.message || err);
                 if (activeApiChannelUrl !== apiUrl) return;
 
                 if (attemptNumber < MAX_SILENT_ATTEMPTS) {
-                    // إعادة محاولة صامتة قريبة (كل 8 ثوان) دون أي إزعاج للمستخدم؛ البث الحالي يبقى يعمل كما هو
                     streamRefreshTimer = setTimeout(() => {
                         performSeamlessRefresh(apiUrl, attemptNumber + 1);
                     }, 8000);
                 } else {
-                    // بعد عدة محاولات صامتة فاشلة، نكتفي بالمحاولة بهدوء كل 20 ثانية إلى ما لا نهاية
-                    // (بدل إظهار خطأ للمستخدم بينما البث الحالي ربما لا يزال يعمل فعلياً)
                     streamRefreshTimer = setTimeout(() => {
                         performSeamlessRefresh(apiUrl, attemptNumber);
                     }, 20000);
                 }
             } finally {
-                // نُحرّر القفل دائماً، بغض النظر عن النجاح أو الفشل أو الخروج المبكر، لضمان عدم تعليق النظام للأبد
                 isRefreshInProgress = false;
             }
         }
 
-        // يبني مشغّل HLS مؤقت وخفي بالرابط الجديد، وعند استعداده الكامل يُبدّل العرض فوراً دون أي وميض أو انقطاع
-        // يدعم حالتين: (أ) تشغيل عبر Hls.js (التبديل الخفي الكامل)، (ب) تشغيل مباشر عبر video.src (المتصفح يدعم HLS أصلياً)
         function hotSwapHlsSource(newUrl) {
             return new Promise((resolve, reject) => {
                 const oldVideo = document.getElementById('vPlayer');
                 if (!oldVideo) { reject(new Error('لا يوجد مشغّل نشط للتبديل')); return; }
 
-                // الحالة (ب): لا يوجد Hls.js نشط (تشغيل مباشر عبر video.src)، فقط نُحدّث المصدر بهدوء
                 if (!hls) {
                     try {
                         const wasPaused = oldVideo.paused;
@@ -1233,10 +1248,9 @@
                     return;
                 }
 
-                // الحالة (أ): تبديل خفي كامل عبر مشغّل Hls.js ثانٍ
                 const root = document.getElementById('dynamic-player-root');
                 const shadowVideo = document.createElement('video');
-                shadowVideo.muted = true; // يجب أن يكون مكتوماً مؤقتاً أثناء التحميل الخفي لتفادي أي صوت مزدوج
+                shadowVideo.muted = true;
                 shadowVideo.setAttribute('playsinline', '');
                 shadowVideo.style.position = 'absolute';
                 shadowVideo.style.inset = '0';
@@ -1268,7 +1282,6 @@
                 });
 
                 shadowHls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    // جاهز للتشغيل — الآن نُنفّذ التبديل الفعلي في الوقت نفسه تقريباً (لا يشعر المستخدم بأي قطع)
                     const trySwap = () => {
                         if (settled) return;
                         settled = true;
@@ -1278,7 +1291,6 @@
                             const wasPaused = oldVideo.paused;
                             const oldCurrentTime = oldVideo.currentTime;
 
-                            // إيقاف المشغل القديم ونقل المشغل الجديد إلى مكانه بهدوء
                             const oldHls = hls;
                             hls = shadowHls;
 
@@ -1291,9 +1303,8 @@
                             oldVideo.id = '';
                             root.appendChild(shadowVideo);
 
-                            // ربط Plyr بالفيديو الجديد دون إعادة بناء كامل الواجهة (تفادي أي وميض في الأزرار)
                             if (plyr) {
-                                try { plyr.media = shadowVideo; } catch (e) { /* بعض إصدارات Plyr لا تدعم هذا، سنتجاهل بأمان */ }
+                                try { plyr.media = shadowVideo; } catch (e) { /* تجاهل */ }
                             }
 
                             if (!wasPaused) shadowVideo.play().catch(() => {});
@@ -1307,9 +1318,8 @@
                             reject(swapErr);
                         }
                     };
-                    // ننتظر لحظة بسيطة لضمان استقرار أول جزء من الفيديو قبل التبديل الفعلي
                     shadowVideo.addEventListener('canplay', trySwap, { once: true });
-                    setTimeout(trySwap, 1500); // تأمين إضافي لو لم يصدر canplay لأي سبب
+                    setTimeout(trySwap, 1500);
                 });
 
                 root.appendChild(shadowVideo);
@@ -1318,11 +1328,28 @@
             });
         }
 
-        // يُجرّب الرابط التالي المعروف لنفس القناة (إن وُجد) بدل الاستسلام المباشر.
-        // إن استُنفدت كل المرايا المباشرة، وكان بروكسي CORS مُهيَّأ، يُجرَّب الرابط الأصلي عبر البروكسي
-        // كمحاولة أخيرة ذكية — هذا يحل مشكلة "يعمل في التطبيق لكن لا يعمل في متصفح الويب".
-        // يُرجع true إذا كانت هناك محاولة جديدة قيد التنفيذ (فلا تُظهر شاشة خطأ)، أو false إذا استُنفد كل شيء فعلياً.
         function tryNextMirror(name, el, isProxyAttempt = false) {
+            if (currentOpenChannel && currentOpenChannel.name === name) {
+                const servers = currentOpenChannel.servers;
+                const nextIndex = currentServerIndex + 1;
+
+                if (nextIndex < servers.length) {
+                    console.warn(`فشل سيرفر "${servers[currentServerIndex].name}" للقناة "${name}"، تجربة "${servers[nextIndex].name}" تلقائياً...`);
+                    switchServer(nextIndex);
+                    return true;
+                }
+
+                if (!isProxyAttempt && CORS_PROXY_BASE) {
+                    const lastSrv = servers[currentServerIndex];
+                    if (lastSrv && lastSrv.type !== 'i') {
+                        console.warn(`استُنفدت كل سيرفرات القناة "${name}"، تجربة الاتصال عبر بروكسي CORS كمحاولة أخيرة...`);
+                        playChannelViaProxy(lastSrv.url, lastSrv.type, name, el, { channel: currentOpenChannel, serverIndex: currentServerIndex });
+                        return true;
+                    }
+                }
+                return false;
+            }
+
             const attempt = currentMirrorAttempt;
             if (!attempt || channelMirrorKey(name) !== attempt.key) return false;
             const nextIndex = attempt.index + 1;
@@ -1330,7 +1357,6 @@
             if (nextIndex < attempt.urls.length) {
                 attempt.index = nextIndex;
                 const nextUrl = attempt.urls[nextIndex];
-                // نبحث عن النوع الصحيح (فيديو مباشر 'v' أو iframe 'i') لهذا الرابط البديل من القائمة الأصلية
                 const matchingChannel = myChannels.find(c => c[1] === nextUrl);
                 const nextType = matchingChannel ? matchingChannel[3] : 'v';
                 console.warn(`فشل الرابط الحالي للقناة "${name}"، تجربة الرابط البديل ${nextIndex + 1}/${attempt.urls.length} تلقائياً...`);
@@ -1338,9 +1364,6 @@
                 return true;
             }
 
-            // استُنفدت كل المرايا المباشرة المعروفة — كمحاولة أخيرة، نُجرّب الرابط الأصلي عبر بروكسي CORS
-            // (إن كان مُهيَّأً) بدل الاستسلام مباشرة. هذا يحل تحديداً مشكلة عمل القناة على التطبيق دون المتصفح.
-            // ملاحظة: لا يُطبَّق على قنوات iframe ('i') لأن البروكسي يخدم بيانات بث خام (m3u8/segments) لا صفحات HTML كاملة.
             if (!isProxyAttempt && attempt.urls.length > 0 && CORS_PROXY_BASE) {
                 const originalUrl = attempt.urls[0];
                 const matchingChannel = myChannels.find(c => c[1] === originalUrl);
@@ -1348,8 +1371,6 @@
 
                 if (originalType !== 'i') {
                     console.warn(`استُنفدت كل المرايا المباشرة للقناة "${name}"، تجربة الاتصال عبر بروكسي CORS كمحاولة أخيرة...`);
-                    // مهم جداً: إن كان الرابط الأصلي رابط API متجدد (يُرجع JSON لا بثاً مباشراً)، يجب حل الرابط
-                    // الحقيقي للبث أولاً قبل تمريره للبروكسي — وإلا فإن البروكسي سيُعيد محتوى JSON بدل الفيديو.
                     playChannelViaProxy(originalUrl, originalType, name, el);
                     return true;
                 }
@@ -1358,10 +1379,7 @@
             return false;
         }
 
-        // يُحضّر رابطاً صالحاً للبروكسي: إن كان الرابط الأصلي رابط API متجدد، يُحل أولاً إلى رابط البث الحقيقي
-        // (استدعاء الـ API نفسه لا يواجه مشكلة CORS عادة؛ المشكلة في رابط البث المباشر من السيرفر الأصلي للفيديو)،
-        // ثم يُبنى رابط البروكسي حول رابط البث الفعلي. يُمرَّر رابط الـ API الأصلي صريحاً لضمان استمرار التجديد التلقائي.
-        async function playChannelViaProxy(originalUrl, originalType, name, el) {
+        async function playChannelViaProxy(originalUrl, originalType, name, el, channelCtx = null) {
             let streamUrlToProxy = originalUrl;
             const apiSourceUrl = originalUrl.includes('/api/channel') ? originalUrl : null;
 
@@ -1381,12 +1399,51 @@
                 showLoadError('تعذر تشغيل هذه القناة على المتصفح. قد تحتاج تفعيل بروكسي CORS (راجع الإعدادات).');
                 return;
             }
-            playChannel(proxiedUrl, originalType, name, el, false, true, true, apiSourceUrl);
+            playChannel(proxiedUrl, originalType, name, el, false, true, true, apiSourceUrl, channelCtx);
         }
 
-        // يُضيف تلميح اتصال مسبق (preconnect) لمضيف رابط معيّن، فيُنهي المتصفح DNS/TLS handshake
-        // في الخلفية فوراً بدل الانتظار حتى أول طلب فعلي للفيديو — هذا يُسرّع بداية كل تجزيء جديد طوال
-        // مدة المشاهدة، خصوصاً عند أول تشغيل أو عند تبديل مستوى الجودة لاحقاً.
+        function openChannel(channelIndex, el) {
+            const ch = myChannels[channelIndex];
+            if (!ch || !Array.isArray(ch.servers) || ch.servers.length === 0) return;
+            playChannel(ch.servers[0].url, ch.servers[0].type, ch.name, el, false, false, false, null,
+                { channel: ch, serverIndex: 0 });
+        }
+
+        function switchServer(serverIndex) {
+            if (!currentOpenChannel) return;
+            const srv = currentOpenChannel.servers[serverIndex];
+            if (!srv) return;
+            const targetEl = lastPlayedChannel ? lastPlayedChannel.el : null;
+            playChannel(srv.url, srv.type, currentOpenChannel.name, targetEl, false, false, false, null,
+                { channel: currentOpenChannel, serverIndex });
+        }
+
+        function renderServerBar() {
+            if (!currentOpenChannel || !Array.isArray(currentOpenChannel.servers) || currentOpenChannel.servers.length < 2) return;
+
+            const bar = document.createElement('div');
+            bar.id = 'serverTabBar';
+            bar.className = 'server-tab-bar';
+            bar.onclick = (e) => e.stopPropagation();
+
+            currentOpenChannel.servers.forEach((srv, idx) => {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'server-chip' + (idx === currentServerIndex ? ' active' : '');
+                chip.textContent = srv.name;
+                chip.onclick = (e) => {
+                    e.stopPropagation();
+                    if (idx === currentServerIndex) return;
+                    switchServer(idx);
+                };
+                bar.appendChild(chip);
+            });
+
+            document.getElementById('mainPlayerArea').appendChild(bar);
+            // تطبيق الحالة الحالية لعناصر التحكم على الشريط
+            updateControlsVisibility();
+        }
+
         const preconnectedHosts = new Set();
         function preconnectToStreamHost(streamUrl) {
             try {
@@ -1398,18 +1455,22 @@
                 link.href = host;
                 link.crossOrigin = 'anonymous';
                 document.head.appendChild(link);
-            } catch (e) { /* رابط غير صالح للتحليل — نتجاهل بأمان دون أي تأثير على التشغيل */ }
+            } catch (e) { /* تجاهل */ }
         }
 
-        async function playChannel(url, type, name, el, isRetry = false, isMirrorAttempt = false, isProxyAttempt = false, apiSourceUrl = null) {
-            lastPlayedChannel = { url, type, name, el };
+        async function playChannel(url, type, name, el, isRetry = false, isMirrorAttempt = false, isProxyAttempt = false, apiSourceUrl = null, channelCtx = null) {
+            lastPlayedChannel = { url, type, name, el, channelCtx };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             if (el) el.classList.add('active-card');
-            preconnectToStreamHost(url); // اتصال مسبق فوري بمضيف الرابط، قبل أي خطوة أخرى، لتوفير وقت البداية
+            preconnectToStreamHost(url);
+
+            currentOpenChannel = channelCtx ? channelCtx.channel : null;
+            currentServerIndex = channelCtx ? (channelCtx.serverIndex || 0) : 0;
+
             cleanup();
+            renderServerBar();
             document.getElementById('placeholderScreen').classList.remove('hidden');
 
-            // تهيئة قائمة المرايا البديلة لهذه القناة (روابط أخرى بنفس الاسم الأساسي) إن لم تكن هذه محاولة مرايا جارية فعلاً
             if (!isMirrorAttempt) {
                 const key = channelMirrorKey(name);
                 const mirrorUrls = channelMirrors[key] || [url];
@@ -1417,22 +1478,17 @@
                 if (currentMirrorAttempt.index === -1) currentMirrorAttempt.index = 0;
             }
 
-            // رابط الـ API الحقيقي لأغراض التجديد الدوري: قد يكون الرابط الحالي نفسه (الحالة العادية)،
-            // أو يكون مُمرَّراً صريحاً من مسار البروكسي (apiSourceUrl) لو كانت هذه قناة API يتم تشغيلها
-            // عبر البروكسي حالياً — في هذه الحالة الرابط الظاهر هو رابط بروكسي حول البث الفعلي المُحلّل مسبقاً،
-            // فيجب الاعتماد على apiSourceUrl للحفاظ على نظام التجديد التلقائي والمراقبة الصحية رغم البروكسي.
             const originalApiUrl = apiSourceUrl || (url.includes('/api/channel') ? url : null);
             let initialExpiresInSeconds = null;
-            let resolvedRealStreamUrl = null; // الرابط الحقيقي غير المُغلَّف بالبروكسي، لتتبّع دقيق لاكتشاف الردود المكررة من الـ API
+            let resolvedRealStreamUrl = null;
 
             if (url.includes('/api/channel')) {
-                // الحالة العادية: الرابط الظاهر هو رابط API مباشر، يجب حله إلى رابط البث الحقيقي أولاً
                 try {
                     const resolved = await resolveStreamUrl(url);
                     url = resolved.streamUrl;
                     resolvedRealStreamUrl = resolved.streamUrl;
                     initialExpiresInSeconds = resolved.expiresInSeconds;
-                    preconnectToStreamHost(resolved.streamUrl); // اتصال مسبق بمضيف CDN الحقيقي الآن أنه معروف
+                    preconnectToStreamHost(resolved.streamUrl);
                 } catch (err) {
                     console.error("خطأ في جلب الرابط المتجدد:", err);
                     if (tryNextMirror(name, el)) return;
@@ -1440,29 +1496,31 @@
                     return;
                 }
             } else if (apiSourceUrl) {
-                // الحالة عبر البروكسي: الرابط الظاهر جاهز للتشغيل فعلاً (تم حله وتغليفه بالبروكسي مسبقاً)،
-                // لكننا نحتاج معرفة وقت الصلاحية لجدولة التجديد، فنطلبه بشكل خفيف ومنفصل دون التأثير على رابط التشغيل
                 try {
                     const expiryInfo = await resolveStreamUrl(apiSourceUrl);
                     initialExpiresInSeconds = expiryInfo.expiresInSeconds;
                     resolvedRealStreamUrl = expiryInfo.streamUrl;
                 } catch (err) {
-                    // فشل معرفة وقت الصلاحية لا يجب أن يوقف التشغيل الحالي عبر البروكسي؛ سيتولى مراقب الصحة
-                    // اكتشاف أي توقف فعلي بمعزل عن هذا، فقط نُسجّل الملاحظة ونستمر بقيمة افتراضية متحفظة
                     console.warn('تعذر تحديد وقت صلاحية القناة عبر البروكسي؛ سيعتمد التجديد على مراقب الصحة فقط:', err.message || err);
-                    initialExpiresInSeconds = 300; // قيمة احتياطية متحفظة (5 دقائق) لضمان تفعيل جدولة احتياطية بدل تعطيل النظام كلياً
+                    initialExpiresInSeconds = 300;
                 }
             }
 
+            // دائماً نفعّل التجديد التلقائي إذا كان الرابط من نوع API (حتى لو لم نعرف expiry بالضبط)
+            if (originalApiUrl) {
+                const expires = initialExpiresInSeconds || 600;
+                activeApiChannelUrl = originalApiUrl;
+                currentActiveStreamUrl = resolvedRealStreamUrl || url;
+                isCurrentSessionProxied = isProxyAttempt;
+                scheduleStreamRefresh(expires, false);
+            }
+
             if (type === 'i') {
-                // التعديل السحري الثاني: إنشاء iframe جديد كلياً لتفادي احتكار الذاكرة من السكربتات القديمة
                 const iframe = document.createElement('iframe');
                 iframe.id = "iPlayer";
                 iframe.setAttribute('allowfullscreen', 'true');
                 iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
                 iframe.setAttribute('referrerpolicy', 'no-referrer');
-                
-                // التنسيقات لملء مساحة العرض
                 iframe.style.position = 'absolute';
                 iframe.style.top = '0';
                 iframe.style.left = '0';
@@ -1471,10 +1529,8 @@
                 iframe.style.border = '0';
                 iframe.style.zIndex = '40';
                 iframe.style.backgroundColor = '#000';
-                
                 iframe.src = url;
 
-                // إخفاء مؤشر التحميل عند استجابة الـ iframe
                 iframe.onload = () => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     if (currentIframeFallbackTimer) {
@@ -1487,11 +1543,7 @@
                     showLoadError('تعذر تحميل مصدر هذه القناة (iframe).');
                 };
 
-                // حقن الـ iframe في الصفحة
                 document.getElementById('mainPlayerArea').appendChild(iframe);
-                
-                // تأمين: في حال كان الموقع ثقيلاً جداً وتأخر حدث onload
-                // (مُتتبَّع في متغيّر عام ليتم إلغاؤه فوراً عند تبديل القناة، فلا "يستمر بالعدّ" على قناة تركها المستخدم)
                 currentIframeFallbackTimer = setTimeout(() => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     currentIframeFallbackTimer = null;
@@ -1504,35 +1556,21 @@
                 video.className = "w-full h-full video-fit-contain";
                 video.autoplay = true;
                 video.setAttribute('playsinline', '');
-                // قفل معدل التشغيل على السرعة الطبيعية دائماً: بعض المتصفحات تُسرّع/تُبطئ المعدل تلقائياً بشكل
-                // دقيق جداً (غير ملحوظ كرقم لكن ملحوظ كـ"تقطيع خفيف" في الصوت والصورة) لمزامنة الصوت مع الفيديو
-                // عند تذبذب الشبكة. نُثبّته على 1.0 ونُعيد ضبطه فوراً لو غيّره المتصفح من تلقاء نفسه.
                 video.playbackRate = 1.0;
                 video.addEventListener('ratechange', () => {
                     if (video.playbackRate !== 1.0) video.playbackRate = 1.0;
                 });
-                // ملاحظة مهمة: تمت إزالة crossorigin="anonymous" عمداً.
-                // هذا الخاصية كانت تفرض على المتصفح طلب الفيديو بنمط CORS صارم،
-                // فيرفض أي بث لا يرسل Access-Control-Allow-Origin بشكل مثالي (شائع جداً في سيرفرات IPTV المجانية)
-                // بصمت تام، حتى لو الرابط نفسه سليم 100% ويعمل في مشغلات خارجية كـ VLC التي لا تفرض CORS أصلاً.
-                // هذا كان السبب الجذري لظاهرة "يعمل خارجياً لكن لا يعمل داخل التطبيق".
                 root.appendChild(video);
 
-                // ===== كشف فوري للتجمّد (Instant Stall Detection) عبر أحداث الفيديو نفسها =====
-                // حدث 'waiting' يصدر من المتصفح خلال أجزاء من الثانية عند نفاد المخزن المؤقت — هذا أسرع بكثير
-                // من انتظار 5 ثوان لدورة فحص مراقب الصحة، فيتيح استجابة فورية تقريباً لأي تجمّد حقيقي
                 let instantStallTimer = null;
                 video.addEventListener('waiting', () => {
                     console.warn('الفيديو في وضع الانتظار (waiting) — رصد فوري لاحتمال تجمّد، سيُعاد الفحص خلال ثوانٍ قليلة إن استمر');
-                    // لا نتصرف فوراً عند أول 'waiting' (شائع جداً وطبيعي عند كل تبديل جزء صغير)، بل نمنحه
-                    // فرصة قصيرة جداً (3 ثوان) ليتعافى تلقائياً (مثلاً عبر نظام nudge) قبل اعتباره تجمّداً حقيقياً
                     if (instantStallTimer) clearTimeout(instantStallTimer);
                     instantStallTimer = setTimeout(() => {
                         if (video.paused || video.seeking) return;
                         if (!video.readyState || video.readyState < 2) {
                             console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر.');
                             if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
-                            // تجديد الرابط الفعلي يبقى مقتصراً على القنوات المتجددة (API) فقط
                             if (activeApiChannelUrl) {
                                 if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
                                 performSeamlessRefresh(activeApiChannelUrl, 1);
@@ -1541,7 +1579,6 @@
                     }, 3000);
                 });
                 video.addEventListener('playing', () => {
-                    // البث يعمل فعلياً الآن — أي مؤقت رصد تجمّد سابق أصبح غير ذي صلة
                     if (instantStallTimer) { clearTimeout(instantStallTimer); instantStallTimer = null; }
                 });
 
@@ -1563,7 +1600,6 @@
                 const setupPlyr = () => {
                     if (plyrSetupDone) return;
                     plyrSetupDone = true;
-                    // نجح التشغيل — لا حاجة لمؤقت "الانتظار الطويل" بعد الآن، نُلغيه فوراً
                     if (currentChannelLoadWatchdog) {
                         clearTimeout(currentChannelLoadWatchdog);
                         currentChannelLoadWatchdog = null;
@@ -1579,7 +1615,7 @@
                     if (controls) {
                         const aspectBtn = document.createElement('button');
                         aspectBtn.type = 'button';
-                        aspectBtn.className = 'plyr__control custom-aspect-btn';
+                        aspectBtn.className = 'plyr__control custom-aspect-btn aspect-ratio-toggle';
                         aspectBtn.innerText = 'Fit';
                         aspectBtn.onclick = (e) => {
                             e.stopPropagation();
@@ -1589,8 +1625,6 @@
                         if (fullscreenBtn) controls.insertBefore(aspectBtn, fullscreenBtn);
                         else controls.appendChild(aspectBtn);
 
-                        // زر تفعيل/إلغاء وضع "أضعف انترنت" يدوياً — يبقى متاحاً للمستخدم دائماً
-                        // بصرف النظر عن التفعيل التلقائي، لأن المستخدم قد يعرف حالة شبكته قبل أن يكتشفها النظام
                         const lowBwBtn = document.createElement('button');
                         lowBwBtn.type = 'button';
                         lowBwBtn.id = 'lowBandwidthToggle';
@@ -1601,7 +1635,7 @@
                             e.stopPropagation();
                             setLowBandwidthMode(!lowBandwidthMode);
                             if (lastPlayedChannel) {
-                                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true);
+                                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, false, null, lastPlayedChannel.channelCtx);
                             }
                         };
                         if (fullscreenBtn) controls.insertBefore(lowBwBtn, fullscreenBtn);
@@ -1610,60 +1644,32 @@
                 };
 
                 if (Hls.isSupported() && url.includes('.m3u8')) {
-                    // فحص أولي حاسم: Mixed Content — المتصفح يحظر بصمت تام أي رابط http:// غير مشفّر
-                    // إذا كانت صفحتنا نفسها مفتوحة عبر https://. هذا الحظر لا يظهر كخطأ HLS واضح؛
-                    // المشغلات الخارجية (VLC) لا تطبّق هذا القيد أصلاً، وهذا يفسّر "يعمل خارجياً ولا يعمل بالتطبيق".
                     if (location.protocol === 'https:' && url.startsWith('http://')) {
                         const upgradedUrl = 'https://' + url.slice('http://'.length);
                         console.warn('رابط HTTP غير مشفّر داخل صفحة HTTPS (Mixed Content) — محاولة ترقية تلقائية إلى HTTPS:', upgradedUrl);
                         url = upgradedUrl;
-                        // ملاحظة: لو السيرفر لا يدعم HTTPS أصلاً، ستفشل هذه المحاولة بخطأ شبكة واضح أدناه،
-                        // وهو أفضل من فشل صامت تام بدون أي تفسير.
                     }
 
-                    // ===== إعدادات Hls.js محسّنة بدقة لأقصى سلاسة ممكنة وأقل تقطيع (Lag) =====
-                    // هذه القيم مُختارة بعناية فائقة بعد تحليل شامل لكل مصادر التقطيع الممكنة في بث IPTV،
-                    // وتُبنى ديناميكياً حسب وضع "أضعف انترنت" (lowBandwidthMode) إن كان مفعّلاً.
-                    //
-                    // ملاحظة صادقة مهمة: لا توجد طريقة تقنية لجعل البث "بلا أي تقطيع تماماً" إذا كانت سرعة
-                    // الإنترنت الفعلية أقل بثبات من معدل بتات الفيديو نفسه — هذا حد فيزيائي للشبكة لا يتجاوزه
-                    // أي تطبيق (يوتيوب، نتفليكس، أي مشغّل آخر). ما يمكن فعله، وهو ما يلي، هو تقليل احتمال
-                    // وتكرار وحدّة التقطيع إلى أدنى مستوى ممكن عملياً، عبر مخزون مؤقت ضخم وتحكم ذكي بالجودة.
-                    //
-                    // المجموعة 1 - التخزين المؤقت (Buffering) — مخزون احترازي ضخم يمتص انقطاعات طويلة فعلياً:
-                    // المجموعة 2 - التحكم بالجودة التكيّفي (ABR) - الأهم لمنع التقطيع المتكرر، بمعامل تحفّظ
-                    //   شديد وهبوط فوري شبه-آلي للجودة الأدنى عند أول إشارة جدية لضعف الشبكة
-                    // المجموعة 3 - وضع "أضعف انترنت": يُجمّد الجودة على الأدنى ابتداءً وباستمرار
-                    // المجموعة 4 - إعادة المحاولة الذكية: تمتص الانقطاعات اللحظية تلقائياً بدل أن تتحول لتجمّد ملحوظ
                     function buildHlsPerformanceConfig() {
                         return {
-                            enableWorker: true,            // تحليل البيانات في Thread منفصل = واجهة مستخدم سلسة دون تجميد
-                            lowLatencyMode: false,          // هذه قنوات IPTV عادية لا تحتاج وضع البث منخفض التأخير (LL-HLS)
-
-                            // --- التخزين المؤقت: مخزون احترازي ضخم جداً ---
-                            maxBufferLength: 60,              // (ثانية) الهدف الطبيعي للمخزون الأمامي — يمتص انقطاعات حقيقية تمتد لعشرات الثواني
-                            maxMaxBufferLength: 180,          // الحد الأعلى المطلق (سقف فقط) في الشبكات الجيدة، لا يؤثر على الاستخدام العادي
-                            backBufferLength: 30,              // (ثانية) لا حاجة للاحتفاظ بأكثر من هذا من الماضي — يحرر الذاكرة بثبات
-                            maxBufferHole: 0.5,                // يتجاوز الثغرات الصغيرة جداً بين الأجزاء دون توقف مرئي
+                            enableWorker: true,
+                            lowLatencyMode: false,
+                            maxBufferLength: 60,
+                            maxMaxBufferLength: 180,
+                            backBufferLength: 30,
+                            maxBufferHole: 0.5,
                             maxFragLookUpTolerance: 0.25,
-                            maxBufferSize: 90 * 1000 * 1000,   // (بايت) ~90MB حد أعلى أكبر يتيح مخزوناً أطول زمنياً بدون استهلاك ذاكرة مفرط
-
-                            // --- التحكم بالجودة التكيّفي (ABR) — معامل تحفّظ شديد لمنع التقطيع المتكرر ---
-                            abrEwmaDefaultEstimate: lowBandwidthMode ? 200000 : 500000, // تقدير أولي أكثر تحفظاً في وضع أضعف انترنت
+                            maxBufferSize: 90 * 1000 * 1000,
+                            abrEwmaDefaultEstimate: lowBandwidthMode ? 200000 : 500000,
                             abrEwmaFastLive: 3.0,
                             abrEwmaSlowLive: 9.0,
-                            abrBandWidthFactor: lowBandwidthMode ? 0.6 : 0.75,      // هامش أمان أكبر بكثير من السابق (كان 0.85)
-                            abrBandWidthUpFactor: lowBandwidthMode ? 0.4 : 0.5,     // الترقية لجودة أعلى تتطلب هامشاً أكبر بكثير قبل المحاولة
+                            abrBandWidthFactor: lowBandwidthMode ? 0.6 : 0.75,
+                            abrBandWidthUpFactor: lowBandwidthMode ? 0.4 : 0.5,
                             abrMaxWithRealBitrate: true,
-                            maxStarvationDelay: 1,             // (ثانية) هبوط شبه-فوري للجودة الأدنى عند أول إشارة جدية لنفاد المخزون —
-                                                                // كان 4 ثوان، خفضناه لأقل قيمة عملية ممكنة لمنع التجمّد قبل حدوثه أصلاً
+                            maxStarvationDelay: 1,
                             maxLoadingDelay: 2,
-
-                            // --- وضع "أضعف انترنت": تجميد الجودة على الأدنى دائماً ---
-                            startLevel: lowBandwidthMode ? 0 : -1,   // يبدأ بأدنى جودة فوراً بدل المحاولة بجودة قد تتقطع
-                            capLevelToPlayerSize: false,             // لا نسمح بأي قفز جودة إضافي مرتبط بحجم نافذة العرض
-
-                            // --- إعادة المحاولة الذكية ---
+                            startLevel: lowBandwidthMode ? 0 : -1,
+                            capLevelToPlayerSize: false,
                             nudgeMaxRetry: 8,
                             manifestLoadingMaxRetry: 5,
                             manifestLoadingRetryDelay: 800,
@@ -1677,14 +1683,13 @@
                     }
                     const SHARED_HLS_PERFORMANCE_CONFIG = buildHlsPerformanceConfig();
 
-                    // إذا كانت القناة تابعة لقنوات Vercel، اجعلها تبدأ بتأخير 20 ثانية (لزيادة هامش الأمان من تذبذب هذا المصدر بالتحديد)
                     if (url.includes('man1ted.com') || url.includes('vercel.app')) {
                         hls = new Hls({
                             ...SHARED_HLS_PERFORMANCE_CONFIG,
-                            liveSyncDuration: 20 // يبدأ متأخراً بـ 20 ثانية عن البث المباشر الفعلي
+                            liveSyncDuration: 20
                         });
                     } else {
-                        hls = new Hls(SHARED_HLS_PERFORMANCE_CONFIG); // القنوات الأخرى تعمل بدون تأخير كالمعتاد
+                        hls = new Hls(SHARED_HLS_PERFORMANCE_CONFIG);
                     }
                     hls.loadSource(url);
                     hls.attachMedia(video);
@@ -1705,48 +1710,25 @@
                         plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
                         setupPlyr();
 
-                        // وضع "أضعف انترنت": نُثبّت أدنى جودة متاحة فعلياً ونمنع الـ ABR من الترقية
-                        // التلقائية لأعلى منها (حتى لو لاحت لحظة سرعة جيدة) — الثبات على جودة واحدة منخفضة
-                        // مضمونة العمل أفضل بكثير من تذبذب بين جودات يُسبب تقطيعاً متكرراً عند كل تبديل.
                         if (lowBandwidthMode && hls.levels.length > 0) {
                             let lowestIdx = 0;
                             for (let i = 1; i < hls.levels.length; i++) {
                                 if (hls.levels[i].height < hls.levels[lowestIdx].height) lowestIdx = i;
                             }
                             hls.currentLevel = lowestIdx;
-                            hls.autoLevelCapping = lowestIdx; // يمنع ABR من تجاوز هذا المستوى تلقائياً نهائياً
+                            hls.autoLevelCapping = lowestIdx;
                             console.warn('وضع أضعف انترنت مفعّل: تثبيت الجودة على أدنى مستوى متاح (' +
                                 hls.levels[lowestIdx].height + 'p) ومنع أي ترقية تلقائية.');
                         }
 
-                        // إذا كانت هذه قناة "متجددة" (API)، نُفعّل نظام التجديد الصامت في الخلفية الآن
-                        // بعد أن تأكدنا أن البث يعمل فعلياً — المستخدم لن يشعر بهذا مطلقاً
-                        if (originalApiUrl && initialExpiresInSeconds) {
-                            activeApiChannelUrl = originalApiUrl;
-                            currentActiveStreamUrl = resolvedRealStreamUrl || url;
-                            isCurrentSessionProxied = isProxyAttempt;
-                            scheduleStreamRefresh(initialExpiresInSeconds, false);
-                        }
-                        // مراقب الصحة يعمل على كل القنوات بدون استثناء (لا فقط القنوات المتجددة) لأن رصد
-                        // التجمّد الحقيقي وتفعيل وضع "أضعف انترنت" تلقائياً مفيد لكل أنواع القنوات
                         startHealthMonitor();
-                        resetStallCounter(); // نجح التشغيل فعلياً — نُعيد عداد التجمّدات المتتالية للصفر
+                        resetStallCounter();
                     });
 
-                    // معالجة أخطاء HLS بذكاء بدل الاستسلام الفوري عند أي خطأ:
-                    // أخطاء الشبكة وتحميل المانيفست تُعاد محاولتها تلقائياً قبل عرض شاشة الخطأ،
-                    // وأخطاء الميديا (decode/buffer) تتم معالجتها بـ recoverMediaError بدل اعتبارها فاتال فوراً.
                     let networkRetryCount = 0;
                     const MAX_NETWORK_RETRIES = 3;
-
-                    // نُثبّت مرجعاً محلياً للمحرّك الحالي عند لحظة الإرفاق، لضمان أن المعالج أدناه
-                    // يتصرف دائماً على نفس المحرّك الذي استمع إليه، حتى لو تغيّر المتغير العام hls
-                    // لاحقاً بسبب تبديل خفي (hot-swap) لرابط متجدد
                     const boundHlsInstance = hls;
 
-                    // معالجة استباقية لتجمّد التخزين المؤقت (Buffer Stall) قبل أن يتحول لخطأ فاتال ملحوظ للمستخدم:
-                    // هذا هو السبب الأكثر شيوعاً للتقطيع البسيط (micro-freeze) في بث IPTV. بمجرد رصده نُحاول
-                    // "دفع" رأس التشغيل بلطف للأمام لتجاوز نقطة العالقة فوراً، دون انتظار أن يتفاقم الأمر.
                     boundHlsInstance.on(Hls.Events.ERROR, (event, data) => {
                         if (data.fatal || hls !== boundHlsInstance) return;
                         if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
@@ -1754,16 +1736,15 @@
                                 const v = document.getElementById('vPlayer');
                                 if (v && v.buffered.length > 0) {
                                     const bufferedEnd = v.buffered.end(v.buffered.length - 1);
-                                    // دفع بسيط جداً (0.1 ثانية) لتجاوز نقطة دقيقة عالقة دون أي إحساس بالقطع
                                     if (bufferedEnd > v.currentTime) v.currentTime = Math.min(v.currentTime + 0.1, bufferedEnd);
                                 }
-                            } catch (e) { /* تجاهل بأمان — سيتعامل معها معالج الأخطاء الفاتال إن تكررت */ }
+                            } catch (e) { /* تجاهل */ }
                         }
                     });
 
                     boundHlsInstance.on(Hls.Events.ERROR, (event, data) => {
-                        if (!data.fatal) return; // الأخطاء غير الفاتال (تجزيء واحد فشل مثلاً) لا تستدعي أي رد فعل
-                        if (hls !== boundHlsInstance) return; // هذا المحرّك لم يعد النشط (تم تبديله بهدوء) — تجاهل أي خطأ قديم منه
+                        if (!data.fatal) return;
+                        if (hls !== boundHlsInstance) return;
 
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
@@ -1771,19 +1752,16 @@
                                     networkRetryCount++;
                                     console.warn(`خطأ شبكة في HLS، إعادة محاولة ${networkRetryCount}/${MAX_NETWORK_RETRIES}`, data.details);
                                     setTimeout(() => {
-                                        try { boundHlsInstance.startLoad(); } catch (e) { /* تم تدمير hls بالفعل */ }
+                                        try { boundHlsInstance.startLoad(); } catch (e) { /* تجاهل */ }
                                     }, 1000 * networkRetryCount);
                                 } else {
-                                    // توقيع نموذجي لحظر CORS من المتصفح: لا يوجد رمز HTTP حقيقي (status 0)
-                                    // لأن المتصفح يرفض الطلب قبل أن يصل أي رد فعلي من السيرفر
                                     const looksLikeCors = data.response && (data.response.code === 0 || data.response.code === undefined);
                                     if (looksLikeCors) {
-                                        console.error('فشل يبدو أنه بسبب CORS — السيرفر لا يسمح بطلبات من هذا الموقع (Access-Control-Allow-Origin مفقود). الرابط قد يعمل في مشغلات خارجية كـ VLC لأنها لا تطبّق قيود CORS.', data);
+                                        console.error('فشل يبدو أنه بسبب CORS — السيرفر لا يسمح بطلبات من هذا الموقع.', data);
                                     }
-                                    // قبل إظهار أي خطأ، نُجرّب تلقائياً وبصمت أي رابط بديل معروف لنفس القناة
                                     if (tryNextMirror(name, el)) break;
                                     if (looksLikeCors) {
-                                        showLoadError('السيرفر المصدر يرفض الاتصال من المتصفح (قيود CORS من جهة المصدر). هذا غالباً سبب خارج عن تحكمنا ويعتمد على مزود البث، وقد يعمل الرابط في مشغلات خارجية كـ VLC لأنها لا تطبّق هذا القيد.');
+                                        showLoadError('السيرفر المصدر يرفض الاتصال من المتصفح (قيود CORS من جهة المصدر).');
                                     } else {
                                         showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً مؤقتاً.');
                                     }
@@ -1803,13 +1781,8 @@
                         }
                     });
 
-                    // تأمين: لو لم يصدر أي حدث نهائياً (لا نجاح ولا فشل فاتال) بعد فترة طويلة، نُجرّب رابطاً بديلاً
-                    // بصمت قبل إزعاج المستخدم بأي رسالة
-                    // (مُتتبَّع في متغيّر عام ليتم إلغاؤه فوراً عند تبديل القناة — هذا يُصلح تحديداً مشكلة
-                    // "العدّ يستمر من القناة السابقة بدل أن يبدأ من جديد" التي تم رصدها)
                     currentChannelLoadWatchdog = setTimeout(() => {
                         currentChannelLoadWatchdog = null;
-                        // تأمين إضافي: نتجاهل هذا المؤقت إن كان المحرّك الذي استمع إليه لم يعد نشطاً (تغيّرت القناة)
                         if (hls !== boundHlsInstance) return;
                         if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
                             if (tryNextMirror(name, el)) return;
@@ -1824,13 +1797,6 @@
                         showLoadError('تعذر تشغيل هذا الرابط مباشرة على هذا المتصفح.');
                     }, { once: true });
                     setupPlyr();
-
-                    if (originalApiUrl && initialExpiresInSeconds) {
-                        activeApiChannelUrl = originalApiUrl;
-                        currentActiveStreamUrl = resolvedRealStreamUrl || url;
-                        isCurrentSessionProxied = isProxyAttempt;
-                        scheduleStreamRefresh(initialExpiresInSeconds, false);
-                    }
                     startHealthMonitor();
                     resetStallCounter();
                 } else {
