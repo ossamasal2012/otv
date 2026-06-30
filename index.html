@@ -283,6 +283,7 @@
         .plyr {
             height: 100% !important;
             width: 100% !important;
+            position: relative;
         }
 
         .plyr--hide-manual-controls .plyr__controls,
@@ -304,7 +305,7 @@
             gap: 1rem;
         }
 
-        /* ===== شريط السيرفرات ===== */
+        /* ===== شريط السيرفرات (يظهر دائماً، فوق كل شيء) ===== */
         .server-tab-bar {
             position: absolute;
             top: 0;
@@ -318,8 +319,8 @@
             scrollbar-width: none;
             -webkit-overflow-scrolling: touch;
             background: linear-gradient(to bottom, rgba(2, 6, 23, 0.88) 0%, rgba(2, 6, 23, 0.5) 70%, transparent 100%);
-            transition: opacity 0.25s ease, visibility 0.25s ease;
             direction: rtl;
+            transition: opacity 0.25s ease, visibility 0.25s ease;
         }
         .server-tab-bar::-webkit-scrollbar { display: none; }
         .server-tab-bar.hidden-server-bar {
@@ -627,30 +628,16 @@
         let isCurrentSessionProxied = false;
 
         let lowBandwidthMode = localStorage.getItem('yalla_low_bandwidth_mode') === 'true';
-        let consecutiveStallsThisChannel = 0;
-        const AUTO_LOW_BANDWIDTH_STALL_THRESHOLD = 3;
 
         let healthMonitorInterval = null;
         let healthMonitorLastTime = -1;
         let healthMonitorStallTicks = 0;
         let currentChannelLoadWatchdog = null;
         let currentIframeFallbackTimer = null;
-        let channelMirrors = {};
-        let currentMirrorAttempt = { key: null, urls: [], index: 0 };
         let controlsVisible = true;
 
         let currentOpenChannel = null;
         let currentServerIndex = 0;
-
-        // نظام التحميل الخفي للسيرفرات الذكي
-        let shadowPreload = {
-            active: false,
-            hls: null,
-            video: null,
-            serverIndex: -1,
-            ready: false,
-            url: null
-        };
 
         const MAIN_CHANNELS_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/channels.json";
         const QURAN_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
@@ -720,13 +707,8 @@
         }
 
         function buildChannelMirrorsMap() {
+            // لم نعد نستخدم المرايا التلقائية، نحتفظ بها فارغة
             channelMirrors = {};
-            for (const ch of myChannels) {
-                const key = channelMirrorKey(ch[0]);
-                if (!key) continue;
-                if (!channelMirrors[key]) channelMirrors[key] = [];
-                if (!channelMirrors[key].includes(ch[1])) channelMirrors[key].push(ch[1]);
-            }
         }
 
         async function loadChannels(isRetry = false) {
@@ -763,7 +745,6 @@
                     .filter(ch => ch.servers.length > 0);
             } else {
                 myChannels = [];
-                channelMirrors = {};
                 sourceErrors.push('القنوات الرئيسية');
                 console.error("فشل تحميل القنوات الرئيسية:", mainResult.reason);
             }
@@ -988,7 +969,6 @@
             isCurrentSessionProxied = false;
             stopHealthMonitor();
             isRefreshInProgress = false;
-            consecutiveStallsThisChannel = 0;
 
             if (currentChannelLoadWatchdog) {
                 clearTimeout(currentChannelLoadWatchdog);
@@ -998,20 +978,6 @@
                 clearTimeout(currentIframeFallbackTimer);
                 currentIframeFallbackTimer = null;
             }
-
-            // تنظيف التحميل الخفي
-            if (shadowPreload.hls) {
-                try { shadowPreload.hls.destroy(); } catch (e) {}
-                shadowPreload.hls = null;
-            }
-            if (shadowPreload.video) {
-                shadowPreload.video.remove();
-                shadowPreload.video = null;
-            }
-            shadowPreload.active = false;
-            shadowPreload.ready = false;
-            shadowPreload.serverIndex = -1;
-            shadowPreload.url = null;
 
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
@@ -1066,7 +1032,7 @@
         function retryCurrentAction() {
             document.getElementById('errorScreen').classList.add('hidden');
             if (lastPlayedChannel) {
-                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, false, null, lastPlayedChannel.channelCtx);
+                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, null, lastPlayedChannel.channelCtx);
             } else {
                 loadChannels();
             }
@@ -1104,14 +1070,14 @@
         }
 
         function reportRealStall(channelName, channelEl) {
-            consecutiveStallsThisChannel++;
-            console.warn(`تجمّد حقيقي مرصود (${consecutiveStallsThisChannel}/${AUTO_LOW_BANDWIDTH_STALL_THRESHOLD}) للقناة الحالية`);
-            if (!lowBandwidthMode && consecutiveStallsThisChannel >= AUTO_LOW_BANDWIDTH_STALL_THRESHOLD) {
-                console.error('تكرار تجمّد حقيقي — تفعيل وضع "أضعف انترنت" تلقائياً وإعادة تشغيل القناة بأدنى جودة مستقرة.');
-                setLowBandwidthMode(true, true);
-                if (lastPlayedChannel) {
-                    playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, false, null, lastPlayedChannel.channelCtx);
-                }
+            console.warn(`تجمّد حقيقي مرصود للقناة الحالية`);
+            // لا نقوم بتبديل السيرفر تلقائياً
+            // نحاول إعادة التحميل إذا كان هناك API
+            if (activeApiChannelUrl) {
+                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                performSeamlessRefresh(activeApiChannelUrl, 1);
+            } else {
+                showLoadError('توقف البث، حاول إعادة المحاولة أو اختر سيرفراً آخر يدوياً.');
             }
         }
 
@@ -1120,32 +1086,10 @@
             try { localStorage.setItem('yalla_low_bandwidth_mode', enabled ? 'true' : 'false'); } catch (e) {}
             const btn = document.getElementById('lowBandwidthToggle');
             if (btn) btn.classList.toggle('active', enabled);
-            if (enabled && isAutoTriggered) {
-                showAutoLowBandwidthNotice();
-            }
-        }
-
-        function showAutoLowBandwidthNotice() {
-            let notice = document.getElementById('autoLowBandwidthNotice');
-            if (notice) notice.remove();
-            notice = document.createElement('div');
-            notice.id = 'autoLowBandwidthNotice';
-            notice.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-amber-600 text-white text-xs px-4 py-2 rounded-full shadow-lg';
-            notice.style.transition = 'opacity 0.4s ease';
-            notice.textContent = 'تم تفعيل وضع "أضعف انترنت" تلقائياً لتقليل التقطيع';
-            document.body.appendChild(notice);
-            setTimeout(() => {
-                notice.style.opacity = '0';
-                setTimeout(() => notice.remove(), 400);
-            }, 4000);
-        }
-
-        function resetStallCounter() {
-            consecutiveStallsThisChannel = 0;
         }
 
         const HEALTH_CHECK_INTERVAL_MS = 5000;
-        const HEALTH_STALL_TICKS_THRESHOLD = 3;
+        const HEALTH_STALL_TICKS_THRESHOLD = 2;
 
         function startHealthMonitor() {
             stopHealthMonitor();
@@ -1169,18 +1113,6 @@
                         console.error('مراقب الصحة: توقف حقيقي مؤكد في البث.');
                         healthMonitorStallTicks = 0;
                         if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
-                        if (activeApiChannelUrl) {
-                            if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                            performSeamlessRefresh(activeApiChannelUrl, 1);
-                        }
-                        // محاولة التبديل للسيرفر التالي بسبب التجمّد
-                        if (currentOpenChannel && currentOpenChannel.servers.length > 1) {
-                            const nextIdx = currentServerIndex + 1;
-                            if (nextIdx < currentOpenChannel.servers.length) {
-                                console.warn('مراقب الصحة: تجمّد مؤكد، محاولة التبديل للسيرفر التالي تلقائياً.');
-                                switchServer(nextIdx);
-                            }
-                        }
                     }
                 } else {
                     healthMonitorLastTime = video.currentTime;
@@ -1367,263 +1299,20 @@
             return url.includes('/api/channel') || url.includes('vercel.app/api/channel') || url.includes('?ch=');
         }
 
-        // ===== ذكاء التنقل التلقائي بين السيرفرات =====
-        // يقوم بتحميل السيرفر التالي خلف الكواليس، وعندما يصبح جاهزاً، يبدّل إليه بهدوء
-        // إذا كان السيرفر الحالي بطيئاً في التحميل أو متعثراً.
-        function startShadowPreload(serverIndex) {
-            if (!currentOpenChannel) return;
-            const servers = currentOpenChannel.servers;
-            if (serverIndex >= servers.length - 1) return; // لا يوجد سيرفر تالي
-
-            const nextIdx = serverIndex + 1;
-            const nextSrv = servers[nextIdx];
-            if (!nextSrv || nextSrv.type === 'i') return; // لا نحمّل iframes خفياً
-
-            // إذا كان هناك تحميل خفي قيد التنفيذ لنفس السيرفر، لا نكرره
-            if (shadowPreload.active && shadowPreload.serverIndex === nextIdx) return;
-
-            // تنظيف أي تحميل خفي سابق
-            if (shadowPreload.hls) {
-                try { shadowPreload.hls.destroy(); } catch (e) {}
-                shadowPreload.hls = null;
-            }
-            if (shadowPreload.video) {
-                shadowPreload.video.remove();
-                shadowPreload.video = null;
-            }
-
-            shadowPreload.active = true;
-            shadowPreload.serverIndex = nextIdx;
-            shadowPreload.ready = false;
-            shadowPreload.url = nextSrv.url;
-
-            console.log(`بدء التحميل الخفي للسيرفر التالي: ${nextSrv.name}`);
-
-            // ننشئ فيديو خفي
-            const video = document.createElement('video');
-            video.muted = true;
-            video.setAttribute('playsinline', '');
-            video.style.position = 'absolute';
-            video.style.inset = '0';
-            video.style.width = '100%';
-            video.style.height = '100%';
-            video.style.opacity = '0';
-            video.style.pointerEvents = 'none';
-            video.className = 'video-fit-contain';
-            document.getElementById('dynamic-player-root').appendChild(video);
-            shadowPreload.video = video;
-
-            // إذا كان الرابط من نوع API، نحله أولاً
-            let loadUrl = nextSrv.url;
-            const resolveAndLoad = async () => {
-                try {
-                    if (isApiUrl(loadUrl)) {
-                        const resolved = await resolveStreamUrl(loadUrl);
-                        loadUrl = resolved.streamUrl;
-                    }
-                    // نحمّل الفيديو الخفي
-                    if (Hls.isSupported() && loadUrl.includes('.m3u8')) {
-                        const hlsPreload = new Hls({
-                            enableWorker: true,
-                            lowLatencyMode: false,
-                            maxBufferLength: 30,
-                            maxMaxBufferLength: 60,
-                            backBufferLength: 10,
-                            maxBufferHole: 0.5,
-                            maxFragLookUpTolerance: 0.25,
-                            maxBufferSize: 30 * 1000 * 1000,
-                            abrEwmaDefaultEstimate: 300000,
-                            abrEwmaFastLive: 3.0,
-                            abrEwmaSlowLive: 9.0,
-                            abrBandWidthFactor: 0.7,
-                            abrBandWidthUpFactor: 0.5,
-                            abrMaxWithRealBitrate: true,
-                            maxStarvationDelay: 1,
-                            maxLoadingDelay: 2,
-                            startLevel: -1,
-                            capLevelToPlayerSize: false,
-                            nudgeMaxRetry: 5,
-                            manifestLoadingMaxRetry: 3,
-                            manifestLoadingRetryDelay: 500,
-                            manifestLoadingMaxRetryTimeout: 5000,
-                            levelLoadingMaxRetry: 3,
-                            levelLoadingRetryDelay: 500,
-                            fragLoadingMaxRetry: 5,
-                            fragLoadingRetryDelay: 400,
-                            fragLoadingMaxRetryTimeout: 5000
-                        });
-                        hlsPreload.loadSource(loadUrl);
-                        hlsPreload.attachMedia(video);
-                        shadowPreload.hls = hlsPreload;
-
-                        // عندما يصبح المانيفست جاهزاً، نضع علامة الاستعداد
-                        hlsPreload.on(Hls.Events.MANIFEST_PARSED, () => {
-                            console.log(`السيرفر الخفي جاهز: ${nextSrv.name}`);
-                            shadowPreload.ready = true;
-                            // نبدأ التشغيل الخفي ليكون المخزون ممتلئاً
-                            video.play().catch(() => {});
-                        });
-
-                        // في حالة فشل التحميل، نوقف التحميل الخفي
-                        hlsPreload.on(Hls.Events.ERROR, (event, data) => {
-                            if (data.fatal) {
-                                console.warn(`فشل التحميل الخفي للسيرفر ${nextSrv.name}:`, data.type);
-                                shadowPreload.active = false;
-                            }
-                        });
-                    } else if (video.canPlayType('application/vnd.apple.mpegurl') || video.canPlayType('video/mp4')) {
-                        video.src = loadUrl;
-                        video.addEventListener('loadeddata', () => {
-                            console.log(`السيرفر الخفي جاهز (مباشر): ${nextSrv.name}`);
-                            shadowPreload.ready = true;
-                            video.play().catch(() => {});
-                        }, { once: true });
-                        video.addEventListener('error', () => {
-                            console.warn(`فشل التحميل الخفي (مباشر) للسيرفر ${nextSrv.name}`);
-                            shadowPreload.active = false;
-                        }, { once: true });
-                    } else {
-                        shadowPreload.active = false;
-                    }
-                } catch (err) {
-                    console.warn(`فشل تحميل السيرفر الخفي ${nextSrv.name}:`, err);
-                    shadowPreload.active = false;
-                }
-            };
-
-            resolveAndLoad();
-        }
-
-        // محاولة التبديل إلى السيرفر التالي إذا كان السيرفر الحالي بطيئاً
-        let preloadSwitchTimer = null;
-
-        function monitorCurrentServerForSlowLoading() {
-            if (preloadSwitchTimer) {
-                clearTimeout(preloadSwitchTimer);
-                preloadSwitchTimer = null;
-            }
-
-            // إذا كان التحميل الخفي نشطاً وجاهزاً، نبدّل فوراً
-            if (shadowPreload.active && shadowPreload.ready) {
-                console.log('التحميل الخفي جاهز، التبديل إليه فوراً.');
-                const nextIdx = shadowPreload.serverIndex;
-                if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                    switchServer(nextIdx);
-                }
-                return;
-            }
-
-            // نراقب حالة التحميل: إذا كان الفيديو لا يزال يحمّل بعد 8 ثوانٍ ولم يبدأ التشغيل
-            // والسيرفر الخفي لم يصبح جاهزاً بعد، ننتظر قليلاً ثم نعيد المحاولة
-            const video = document.getElementById('vPlayer');
-            if (video) {
-                const startTime = Date.now();
-                const checkInterval = setInterval(() => {
-                    if (video.readyState >= 2 || video.currentTime > 0) {
-                        // الفيديو بدأ يعمل، نوقف المراقبة
-                        clearInterval(checkInterval);
-                        return;
-                    }
-                    if (Date.now() - startTime > 8000) {
-                        clearInterval(checkInterval);
-                        // الفيديو ما زال يحمّل بعد 8 ثوانٍ، نحاول التبديل إذا كان السيرفر الخفي جاهزاً
-                        if (shadowPreload.active && shadowPreload.ready) {
-                            console.log('السيرفر الحالي بطيء، التبديل إلى السيرفر الخفي الجاهز.');
-                            const nextIdx = shadowPreload.serverIndex;
-                            if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                switchServer(nextIdx);
-                            }
-                        } else {
-                            // إذا لم يكن السيرفر الخفي جاهزاً، نبدأ تحميلاً خفياً جديداً للسيرفر التالي
-                            if (currentOpenChannel && currentServerIndex < currentOpenChannel.servers.length - 1) {
-                                startShadowPreload(currentServerIndex);
-                            }
-                        }
-                    }
-                }, 1000);
-            }
-        }
-
-        // ===== نهاية ذكاء التنقل التلقائي =====
-
+        // تم إلغاء التبديل التلقائي للسيرفرات، هذه الدالة لا تفعل شيئاً
         function tryNextMirror(name, el, isProxyAttempt = false) {
-            if (currentOpenChannel && currentOpenChannel.name === name) {
-                const servers = currentOpenChannel.servers;
-                const nextIndex = currentServerIndex + 1;
-
-                if (nextIndex < servers.length) {
-                    console.warn(`فشل سيرفر "${servers[currentServerIndex].name}" للقناة "${name}"، تجربة "${servers[nextIndex].name}" تلقائياً...`);
-                    switchServer(nextIndex);
-                    return true;
-                }
-
-                if (!isProxyAttempt && CORS_PROXY_BASE) {
-                    const lastSrv = servers[currentServerIndex];
-                    if (lastSrv && lastSrv.type !== 'i') {
-                        console.warn(`استُنفدت كل سيرفرات القناة "${name}"، تجربة الاتصال عبر بروكسي CORS كمحاولة أخيرة...`);
-                        playChannelViaProxy(lastSrv.url, lastSrv.type, name, el, { channel: currentOpenChannel, serverIndex: currentServerIndex });
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            const attempt = currentMirrorAttempt;
-            if (!attempt || channelMirrorKey(name) !== attempt.key) return false;
-            const nextIndex = attempt.index + 1;
-
-            if (nextIndex < attempt.urls.length) {
-                attempt.index = nextIndex;
-                const nextUrl = attempt.urls[nextIndex];
-                const matchingChannel = myChannels.find(c => c[1] === nextUrl);
-                const nextType = matchingChannel ? matchingChannel[3] : 'v';
-                console.warn(`فشل الرابط الحالي للقناة "${name}"، تجربة الرابط البديل ${nextIndex + 1}/${attempt.urls.length} تلقائياً...`);
-                playChannel(nextUrl, nextType, name, el, false, true);
-                return true;
-            }
-
-            if (!isProxyAttempt && attempt.urls.length > 0 && CORS_PROXY_BASE) {
-                const originalUrl = attempt.urls[0];
-                const matchingChannel = myChannels.find(c => c[1] === originalUrl);
-                const originalType = matchingChannel ? matchingChannel[3] : 'v';
-
-                if (originalType !== 'i') {
-                    console.warn(`استُنفدت كل المرايا المباشرة للقناة "${name}"، تجربة الاتصال عبر بروكسي CORS كمحاولة أخيرة...`);
-                    playChannelViaProxy(originalUrl, originalType, name, el);
-                    return true;
-                }
-            }
-
             return false;
         }
 
         async function playChannelViaProxy(originalUrl, originalType, name, el, channelCtx = null) {
-            let streamUrlToProxy = originalUrl;
-            const apiSourceUrl = isApiUrl(originalUrl) ? originalUrl : null;
-
-            if (apiSourceUrl) {
-                try {
-                    const resolved = await resolveStreamUrl(apiSourceUrl);
-                    streamUrlToProxy = resolved.streamUrl;
-                } catch (err) {
-                    console.error('فشل حل رابط API الحقيقي قبل تمريره للبروكسي:', err);
-                    showLoadError('تعذر تحديث رابط القناة حتى عبر البروكسي. قد تكون القناة متوقفة من المصدر.');
-                    return;
-                }
-            }
-
-            const proxiedUrl = buildProxiedUrl(streamUrlToProxy);
-            if (!proxiedUrl) {
-                showLoadError('تعذر تشغيل هذه القناة على المتصفح. قد تحتاج تفعيل بروكسي CORS (راجع الإعدادات).');
-                return;
-            }
-            playChannel(proxiedUrl, originalType, name, el, false, true, true, apiSourceUrl, channelCtx);
+            // نعرض خطأ لأننا نمنع التبديل التلقائي حتى للبروكسي
+            showLoadError('لا يمكن تبديل السيرفر تلقائياً. اختر سيرفراً آخر يدوياً من شريط السيرفرات.');
         }
 
         function openChannel(channelIndex, el) {
             const ch = myChannels[channelIndex];
             if (!ch || !Array.isArray(ch.servers) || ch.servers.length === 0) return;
-            playChannel(ch.servers[0].url, ch.servers[0].type, ch.name, el, false, false, false, null,
+            playChannel(ch.servers[0].url, ch.servers[0].type, ch.name, el, false, false, null,
                 { channel: ch, serverIndex: 0 });
         }
 
@@ -1632,23 +1321,11 @@
             const srv = currentOpenChannel.servers[serverIndex];
             if (!srv) return;
             const targetEl = lastPlayedChannel ? lastPlayedChannel.el : null;
-            // نوقف التحميل الخفي قبل التبديل الفعلي
-            if (shadowPreload.hls) {
-                try { shadowPreload.hls.destroy(); } catch (e) {}
-                shadowPreload.hls = null;
-            }
-            if (shadowPreload.video) {
-                shadowPreload.video.remove();
-                shadowPreload.video = null;
-            }
-            shadowPreload.active = false;
-            shadowPreload.ready = false;
-
-            playChannel(srv.url, srv.type, currentOpenChannel.name, targetEl, false, false, false, null,
+            playChannel(srv.url, srv.type, currentOpenChannel.name, targetEl, false, false, null,
                 { channel: currentOpenChannel, serverIndex });
         }
 
-        function renderServerBar() {
+        function renderServerBar(targetElement) {
             const oldBar = document.getElementById('serverTabBar');
             if (oldBar) oldBar.remove();
 
@@ -1674,7 +1351,8 @@
                 bar.appendChild(chip);
             });
 
-            document.getElementById('mainPlayerArea').appendChild(bar);
+            const target = targetElement || document.getElementById('mainPlayerArea');
+            target.appendChild(bar);
             updateControlsVisibility();
         }
 
@@ -1692,7 +1370,7 @@
             } catch (e) { /* تجاهل */ }
         }
 
-        async function playChannel(url, type, name, el, isRetry = false, isMirrorAttempt = false, isProxyAttempt = false, apiSourceUrl = null, channelCtx = null) {
+        async function playChannel(url, type, name, el, isRetry = false, isProxyAttempt = false, apiSourceUrl = null, channelCtx = null) {
             lastPlayedChannel = { url, type, name, el, channelCtx };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             if (el) el.classList.add('active-card');
@@ -1703,16 +1381,9 @@
 
             cleanup();
 
-            renderServerBar();
+            renderServerBar(document.getElementById('mainPlayerArea'));
 
             document.getElementById('placeholderScreen').classList.remove('hidden');
-
-            if (!isMirrorAttempt) {
-                const key = channelMirrorKey(name);
-                const mirrorUrls = channelMirrors[key] || [url];
-                currentMirrorAttempt = { key, urls: mirrorUrls, index: mirrorUrls.indexOf(url) };
-                if (currentMirrorAttempt.index === -1) currentMirrorAttempt.index = 0;
-            }
 
             const originalApiUrl = apiSourceUrl || (isApiUrl(url) ? url : null);
             let initialExpiresInSeconds = null;
@@ -1727,7 +1398,6 @@
                     preconnectToStreamHost(resolved.streamUrl);
                 } catch (err) {
                     console.error("خطأ في جلب الرابط المتجدد:", err);
-                    if (tryNextMirror(name, el)) return;
                     showLoadError('تعذر تحديث رابط البث لهذه القناة. قد تكون القناة متوقفة مؤقتاً من المصدر.');
                     return;
                 }
@@ -1774,8 +1444,7 @@
                     }
                 };
                 iframe.onerror = () => {
-                    if (tryNextMirror(name, el)) return;
-                    showLoadError('تعذر تحميل مصدر هذه القناة (iframe).');
+                    showLoadError('تعذر تحميل مصدر هذه القناة (iframe). حاول اختيار سيرفر آخر يدوياً.');
                 };
 
                 document.getElementById('mainPlayerArea').appendChild(iframe);
@@ -1797,13 +1466,6 @@
                 });
                 root.appendChild(video);
 
-                // بدء التحميل الخفي للسيرفر التالي (إن وجد) بشكل استباقي
-                if (currentOpenChannel && currentServerIndex < currentOpenChannel.servers.length - 1) {
-                    setTimeout(() => {
-                        startShadowPreload(currentServerIndex);
-                    }, 2000);
-                }
-
                 let instantStallTimer = null;
                 video.addEventListener('waiting', () => {
                     console.warn('الفيديو في وضع الانتظار (waiting) — رصد فوري لاحتمال تجمّد');
@@ -1812,21 +1474,15 @@
                         if (video.paused || video.seeking) return;
                         if (!video.readyState || video.readyState < 2) {
                             console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر.');
-                            if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
+                            // لا نبدل السيرفر تلقائياً
                             if (activeApiChannelUrl) {
                                 if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
                                 performSeamlessRefresh(activeApiChannelUrl, 1);
-                            }
-                            // محاولة التبديل للسيرفر التالي إذا كان التحميل الخفي جاهزاً
-                            if (shadowPreload.active && shadowPreload.ready) {
-                                const nextIdx = shadowPreload.serverIndex;
-                                if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                    console.warn('تجمّد مؤكد، التبديل إلى السيرفر الخفي الجاهز.');
-                                    switchServer(nextIdx);
-                                }
+                            } else {
+                                showLoadError('توقف البث، حاول إعادة المحاولة أو اختر سيرفراً آخر يدوياً.');
                             }
                         }
-                    }, 3000);
+                    }, 10000);
                 });
                 video.addEventListener('playing', () => {
                     if (instantStallTimer) { clearTimeout(instantStallTimer); instantStallTimer = null; }
@@ -1861,7 +1517,14 @@
                         if (controlsVisible) plyr.toggleControls(true);
                     });
 
-                    updateControlsVisibility();
+                    const serverBar = document.getElementById('serverTabBar');
+                    if (serverBar) {
+                        const plyrContainer = document.querySelector('.plyr');
+                        if (plyrContainer) {
+                            plyrContainer.appendChild(serverBar);
+                            updateControlsVisibility();
+                        }
+                    }
 
                     const controls = document.querySelector('.plyr__controls');
                     if (controls) {
@@ -1887,7 +1550,7 @@
                             e.stopPropagation();
                             setLowBandwidthMode(!lowBandwidthMode);
                             if (lastPlayedChannel) {
-                                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, false, null, lastPlayedChannel.channelCtx);
+                                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, null, lastPlayedChannel.channelCtx);
                             }
                         };
                         if (fullscreenBtn) controls.insertBefore(lowBwBtn, fullscreenBtn);
@@ -1974,21 +1637,6 @@
                         }
 
                         startHealthMonitor();
-                        resetStallCounter();
-
-                        // مراقبة التحميل البطيء للسيرفر الحالي
-                        setTimeout(() => {
-                            if (!video.readyState || video.readyState < 2) {
-                                // السيرفر الحالي ما زال يحمّل، نحاول التبديل إذا كان السيرفر الخفي جاهزاً
-                                if (shadowPreload.active && shadowPreload.ready) {
-                                    console.log('السيرفر الحالي بطيء، التبديل إلى السيرفر الخفي الجاهز.');
-                                    const nextIdx = shadowPreload.serverIndex;
-                                    if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                        switchServer(nextIdx);
-                                    }
-                                }
-                            }
-                        }, 5000);
                     });
 
                     let networkRetryCount = 0;
@@ -2021,52 +1669,16 @@
                                         try { boundHlsInstance.startLoad(); } catch (e) { /* تجاهل */ }
                                     }, 1000 * networkRetryCount);
                                 } else {
-                                    const looksLikeCors = data.response && (data.response.code === 0 || data.response.code === undefined);
-                                    if (looksLikeCors) {
-                                        console.error('فشل يبدو أنه بسبب CORS — السيرفر لا يسمح بطلبات من هذا الموقع.', data);
-                                    }
-                                    // محاولة التبديل للسيرفر التالي قبل عرض الخطأ
-                                    if (shadowPreload.active && shadowPreload.ready) {
-                                        const nextIdx = shadowPreload.serverIndex;
-                                        if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                            console.warn('خطأ شبكة، التبديل إلى السيرفر الخفي الجاهز.');
-                                            switchServer(nextIdx);
-                                            break;
-                                        }
-                                    }
-                                    if (tryNextMirror(name, el)) break;
-                                    if (looksLikeCors) {
-                                        showLoadError('السيرفر المصدر يرفض الاتصال من المتصفح (قيود CORS من جهة المصدر).');
-                                    } else {
-                                        showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً مؤقتاً.');
-                                    }
+                                    showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً مؤقتاً.');
                                 }
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
                                 console.warn('خطأ ميديا في HLS، محاولة استعادة التشغيل...');
                                 try { boundHlsInstance.recoverMediaError(); } catch (e) {
-                                    if (shadowPreload.active && shadowPreload.ready) {
-                                        const nextIdx = shadowPreload.serverIndex;
-                                        if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                            console.warn('خطأ ميديا، التبديل إلى السيرفر الخفي الجاهز.');
-                                            switchServer(nextIdx);
-                                            break;
-                                        }
-                                    }
-                                    if (tryNextMirror(name, el)) break;
                                     showLoadError('تعذر تشغيل تنسيق هذا البث على هذا المتصفح.');
                                 }
                                 break;
                             default:
-                                if (shadowPreload.active && shadowPreload.ready) {
-                                    const nextIdx = shadowPreload.serverIndex;
-                                    if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                        console.warn('خطأ غير معروف، التبديل إلى السيرفر الخفي الجاهز.');
-                                        switchServer(nextIdx);
-                                        break;
-                                    }
-                                }
-                                if (tryNextMirror(name, el)) break;
                                 showLoadError('المصدر غير متاح حالياً أو تم تغييره من مزود القناة.');
                                 break;
                         }
@@ -2076,37 +1688,23 @@
                         currentChannelLoadWatchdog = null;
                         if (hls !== boundHlsInstance) return;
                         if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
-                            // محاولة التبديل للسيرفر التالي إذا كان التحميل الخفي جاهزاً
-                            if (shadowPreload.active && shadowPreload.ready) {
-                                const nextIdx = shadowPreload.serverIndex;
-                                if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                    console.warn('انتهت مهلة التحميل، التبديل إلى السيرفر الخفي الجاهز.');
-                                    switchServer(nextIdx);
-                                    return;
-                                }
+                            // لا نبدل السيرفر تلقائياً
+                            if (activeApiChannelUrl) {
+                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                                performSeamlessRefresh(activeApiChannelUrl, 1);
+                            } else {
+                                showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر سيرفراً آخر يدوياً.');
                             }
-                            if (tryNextMirror(name, el)) return;
-                            showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر قناة أخرى.');
                         }
-                    }, 15000);
+                    }, 25000);
 
                 } else if (Hls.isSupported() || video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = url;
                     video.addEventListener('error', () => {
-                        if (shadowPreload.active && shadowPreload.ready) {
-                            const nextIdx = shadowPreload.serverIndex;
-                            if (currentOpenChannel && nextIdx < currentOpenChannel.servers.length) {
-                                console.warn('خطأ في التشغيل المباشر، التبديل إلى السيرفر الخفي الجاهز.');
-                                switchServer(nextIdx);
-                                return;
-                            }
-                        }
-                        if (tryNextMirror(name, el)) return;
                         showLoadError('تعذر تشغيل هذا الرابط مباشرة على هذا المتصفح.');
                     }, { once: true });
                     setupPlyr();
                     startHealthMonitor();
-                    resetStallCounter();
                 } else {
                     showLoadError('متصفحك لا يدعم تشغيل بث HLS. يرجى تحديث المتصفح أو استخدام متصفح آخر.');
                 }
