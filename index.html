@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -605,12 +606,26 @@
         const QURAN_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
-        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev/";
+        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; // ضع رابط الـ Worker الجديد هنا (بدون شرطة مائلة في النهاية)
 
         function buildProxiedUrl(originalUrl) {
-            if (!CORS_PROXY_BASE) return null;
-            return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
-        }
+    if (!CORS_PROXY_BASE) return null;
+
+    // الرابط الأساسي لموقعك (حسب تعريف الـ Worker)
+    const DEFAULT_ORIGIN = 'http://ossamasal2012.github.io/otv';
+
+    // إذا كان الرابط من موقعك الأساسي، نستخرج المسار ونضيفه مباشرةً إلى Proxy (بدون ?url=)
+    if (originalUrl.startsWith(DEFAULT_ORIGIN)) {
+        // نأخذ الجزء بعد الموقع الأساسي (مثل /channel.m3u8)
+        const path = originalUrl.substring(DEFAULT_ORIGIN.length);
+        // نتأكد من وجود斜杠
+        const finalPath = path.startsWith('/') ? path : '/' + path;
+        return `${CORS_PROXY_BASE}${finalPath}`;
+    }
+
+    // وإلا (روابط خارجية) نستخدم الطريقة القديمة مع ?url=
+    return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
+}
 
         let myChannels = [];
         let quranChannels = [];
