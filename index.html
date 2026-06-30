@@ -304,11 +304,13 @@
             gap: 1rem;
         }
 
-        /* ===== شريط السيرفرات ===== */
+        /* ===== شريط السيرفرات (منفصل عن المشغل، فوق كل شيء) ===== */
         .server-tab-bar {
             position: absolute;
-            top: 0; left: 0; right: 0;
-            z-index: 110;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 200;
             display: flex;
             gap: 6px;
             padding: 8px 10px;
@@ -317,13 +319,14 @@
             -webkit-overflow-scrolling: touch;
             background: linear-gradient(to bottom, rgba(2, 6, 23, 0.88) 0%, rgba(2, 6, 23, 0.5) 70%, transparent 100%);
             transition: opacity 0.25s ease, visibility 0.25s ease;
+            direction: rtl; /* من اليمين لليسار */
         }
+        .server-tab-bar::-webkit-scrollbar { display: none; }
         .server-tab-bar.hidden-server-bar {
             opacity: 0 !important;
             visibility: hidden !important;
             pointer-events: none !important;
         }
-        .server-tab-bar::-webkit-scrollbar { display: none; }
 
         .server-chip {
             flex-shrink: 0;
@@ -961,9 +964,10 @@
                 oldIframe.remove();
             }
 
-            const oldServerBar = document.getElementById('serverTabBar');
-            if (oldServerBar) {
-                oldServerBar.remove();
+            // إزالة شريط السيرفرات القديم
+            const oldBar = document.getElementById('serverTabBar');
+            if (oldBar) {
+                oldBar.remove();
             }
 
             if (streamRefreshTimer) {
@@ -1013,11 +1017,12 @@
 
         function updateControlsVisibility() {
             const plyrContainer = document.querySelector('.plyr');
-            if (!plyrContainer) return;
-            if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
-            else plyrContainer.classList.add('plyr--hide-manual-controls');
+            if (plyrContainer) {
+                if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
+                else plyrContainer.classList.add('plyr--hide-manual-controls');
+            }
 
-            // التحكم في شريط السيرفرات بنفس الحالة
+            // تحديث شريط السيرفرات (منفصل)
             const serverBar = document.getElementById('serverTabBar');
             if (serverBar) {
                 if (controlsVisible) serverBar.classList.remove('hidden-server-bar');
@@ -1328,6 +1333,11 @@
             });
         }
 
+        // تحديد ما إذا كان الرابط من نوع API (يحتوي على /api/channel أو vercel.app/api/channel أو ?ch=)
+        function isApiUrl(url) {
+            return url.includes('/api/channel') || url.includes('vercel.app/api/channel') || url.includes('?ch=');
+        }
+
         function tryNextMirror(name, el, isProxyAttempt = false) {
             if (currentOpenChannel && currentOpenChannel.name === name) {
                 const servers = currentOpenChannel.servers;
@@ -1381,7 +1391,7 @@
 
         async function playChannelViaProxy(originalUrl, originalType, name, el, channelCtx = null) {
             let streamUrlToProxy = originalUrl;
-            const apiSourceUrl = originalUrl.includes('/api/channel') ? originalUrl : null;
+            const apiSourceUrl = isApiUrl(originalUrl) ? originalUrl : null;
 
             if (apiSourceUrl) {
                 try {
@@ -1419,7 +1429,13 @@
         }
 
         function renderServerBar() {
-            if (!currentOpenChannel || !Array.isArray(currentOpenChannel.servers) || currentOpenChannel.servers.length < 2) return;
+            // إزالة أي شريط قديم
+            const oldBar = document.getElementById('serverTabBar');
+            if (oldBar) oldBar.remove();
+
+            if (!currentOpenChannel || !Array.isArray(currentOpenChannel.servers) || currentOpenChannel.servers.length < 2) {
+                return;
+            }
 
             const bar = document.createElement('div');
             bar.id = 'serverTabBar';
@@ -1439,6 +1455,7 @@
                 bar.appendChild(chip);
             });
 
+            // إضافة الشريط إلى mainPlayerArea (وليس إلى .plyr)
             document.getElementById('mainPlayerArea').appendChild(bar);
             // تطبيق الحالة الحالية لعناصر التحكم على الشريط
             updateControlsVisibility();
@@ -1468,7 +1485,10 @@
             currentServerIndex = channelCtx ? (channelCtx.serverIndex || 0) : 0;
 
             cleanup();
+
+            // إنشاء شريط السيرفرات فوراً (حتى أثناء التحميل)
             renderServerBar();
+
             document.getElementById('placeholderScreen').classList.remove('hidden');
 
             if (!isMirrorAttempt) {
@@ -1478,11 +1498,11 @@
                 if (currentMirrorAttempt.index === -1) currentMirrorAttempt.index = 0;
             }
 
-            const originalApiUrl = apiSourceUrl || (url.includes('/api/channel') ? url : null);
+            const originalApiUrl = apiSourceUrl || (isApiUrl(url) ? url : null);
             let initialExpiresInSeconds = null;
             let resolvedRealStreamUrl = null;
 
-            if (url.includes('/api/channel')) {
+            if (isApiUrl(url)) {
                 try {
                     const resolved = await resolveStreamUrl(url);
                     url = resolved.streamUrl;
@@ -1610,6 +1630,9 @@
                     plyr.on('controlshidden', () => {
                         if (controlsVisible) plyr.toggleControls(true);
                     });
+
+                    // تحديث حالة الشريط بعد إنشاء Plyr
+                    updateControlsVisibility();
 
                     const controls = document.querySelector('.plyr__controls');
                     if (controls) {
