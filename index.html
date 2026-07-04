@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -12,6 +13,7 @@
     <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
     <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
@@ -561,16 +563,27 @@
         </main>
 
     <script>
-     // ============================================================
-//  إعدادات البروكسي (موحدة لجميع الروابط)
-// ============================================================
-const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev";
+        // ============================================================
+        //  🔥 إعدادات البروكسي الجديد (بدون ?url= للروابط الداخلية)
+        // ============================================================
+        const DEFAULT_ORIGIN = 'http://ossamasal2012.github.io/otv';
+        // ⚠️ غيّر هذا إلى رابط الـ Worker الخاص بك (بدون شرطة مائلة في النهاية)
+        const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; 
 
-function buildProxiedUrl(originalUrl) {
-    if (!CORS_PROXY_BASE) return null;
-    return `${CORS_PROXY_BASE}?url=${encodeURIComponent(originalUrl)}`;
-}
-// ============================================================
+        function buildProxiedUrl(originalUrl) {
+            if (!CORS_PROXY_BASE) return null;
+
+            // إذا كان الرابط من موقعنا الأساسي، نمرره مباشرةً عبر المسار (بدون ?url=)
+            if (originalUrl.startsWith(DEFAULT_ORIGIN)) {
+                const path = originalUrl.substring(DEFAULT_ORIGIN.length);
+                const finalPath = path.startsWith('/') ? path : '/' + path;
+                return `${CORS_PROXY_BASE}${finalPath}`;
+            }
+
+            // الروابط الخارجية تستخدم ?url= (للتوافق مع المواقع الأخرى)
+            return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
+        }
+        // ============================================================
 
         function togglePin() {
             const inp = document.getElementById('pinInput');
@@ -622,6 +635,7 @@ function buildProxiedUrl(originalUrl) {
         let poemsChannels = [];
         let currentTab = "main";
         let hls = null;
+        let dashPlayer = null;
         let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
@@ -952,6 +966,7 @@ function buildProxiedUrl(originalUrl) {
 
         function cleanup() {
             if (hls) { hls.destroy(); hls = null; }
+            if (dashPlayer) { try { dashPlayer.reset(); } catch (e) {} dashPlayer = null; }
             if (plyr) { plyr.destroy(); plyr = null; }
             document.getElementById('dynamic-player-root').innerHTML = "";
             
@@ -1207,6 +1222,17 @@ function buildProxiedUrl(originalUrl) {
             return new Promise((resolve, reject) => {
                 const oldVideo = document.getElementById('vPlayer');
                 if (!oldVideo) { reject(new Error('لا يوجد مشغّل نشط للتبديل')); return; }
+
+                // إذا كانت القناة الحالية تعمل عبر DASH (.mpd) نجدد المصدر مباشرة بدون تبديل خفي لمشغّل HLS
+                if (dashPlayer) {
+                    try {
+                        dashPlayer.attachSource(newUrl);
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                    return;
+                }
 
                 if (!hls) {
                     try {
@@ -1583,12 +1609,65 @@ function buildProxiedUrl(originalUrl) {
                 };
 
                 // ================================================================
+                //  📡 تشغيل DASH (.mpd) باستخدام dash.js
+                // ================================================================
+                if (finalUrl.includes('.mpd') && typeof dashjs !== 'undefined') {
+                    if (location.protocol === 'https:' && finalUrl.startsWith('http://')) {
+                        finalUrl = 'https://' + finalUrl.slice('http://'.length);
+                    }
+
+                    dashPlayer = dashjs.MediaPlayer().create();
+                    dashPlayer.updateSettings({
+                        streaming: {
+                            buffer: {
+                                fastSwitchEnabled: true,
+                                bufferTimeAtTopQuality: 30,
+                                bufferToKeep: 20
+                            },
+                            abr: {
+                                autoSwitchBitrate: { video: true, audio: true },
+                                initialBitrate: { video: lowBandwidthMode ? 300 : undefined }
+                            },
+                            retryAttempts: { MPD: 5, MediaSegment: 5 },
+                            retryIntervals: { MPD: 800, MediaSegment: 500 }
+                        }
+                    });
+
+                    dashPlayer.initialize(video, finalUrl, true);
+
+                    dashPlayer.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
+                        setupPlyr();
+                        startHealthMonitor();
+                    });
+
+                    dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e) => {
+                        console.error('خطأ DASH:', e);
+                        if (!plyrSetupDone) {
+                            if (activeApiChannelUrl) {
+                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                                performSeamlessRefresh(activeApiChannelUrl, 1);
+                            } else {
+                                showLoadError('تعذر تشغيل بث DASH (MPD) الخاص بهذه القناة.');
+                            }
+                        }
+                    });
+
+                    currentChannelLoadWatchdog = setTimeout(() => {
+                        currentChannelLoadWatchdog = null;
+                        if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
+                            if (activeApiChannelUrl) {
+                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
+                                performSeamlessRefresh(activeApiChannelUrl, 1);
+                            } else {
+                                showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر سيرفراً آخر يدوياً.');
+                            }
+                        }
+                    }, 25000);
+
+                // ================================================================
                 //  🎬 تشغيل HLS باستخدام الرابط النهائي (المُعدّل عبر البروكسي)
                 // ================================================================
-                if (Hls.isSupported() && (
-    finalUrl.includes('.m3u8') ||
-    (typeof CORS_PROXY_BASE !== 'undefined' && CORS_PROXY_BASE && finalUrl.startsWith(CORS_PROXY_BASE))
-)) {
+                } else if (Hls.isSupported() && finalUrl.includes('.m3u8')) {
                     if (location.protocol === 'https:' && finalUrl.startsWith('http://')) {
                         const upgradedUrl = 'https://' + finalUrl.slice('http://'.length);
                         console.warn('رابط HTTP غير مشفّر داخل صفحة HTTPS (Mixed Content) — محاولة ترقية تلقائية إلى HTTPS:', upgradedUrl);
