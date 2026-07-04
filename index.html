@@ -1593,36 +1593,45 @@ function buildProxiedUrl(originalUrl) {
                     }
 
                     function buildHlsPerformanceConfig() {
-                        return {
-                            enableWorker: true,
-                            lowLatencyMode: false,
-                            maxBufferLength: 60,
-                            maxMaxBufferLength: 180,
-                            backBufferLength: 30,
-                            maxBufferHole: 0.5,
-                            maxFragLookUpTolerance: 0.25,
-                            maxBufferSize: 90 * 1000 * 1000,
-                            abrEwmaDefaultEstimate: lowBandwidthMode ? 200000 : 500000,
-                            abrEwmaFastLive: 3.0,
-                            abrEwmaSlowLive: 9.0,
-                            abrBandWidthFactor: lowBandwidthMode ? 0.6 : 0.75,
-                            abrBandWidthUpFactor: lowBandwidthMode ? 0.4 : 0.5,
-                            abrMaxWithRealBitrate: true,
-                            maxStarvationDelay: 1,
-                            maxLoadingDelay: 2,
-                            startLevel: lowBandwidthMode ? 0 : -1,
-                            capLevelToPlayerSize: false,
-                            nudgeMaxRetry: 8,
-                            manifestLoadingMaxRetry: 5,
-                            manifestLoadingRetryDelay: 800,
-                            manifestLoadingMaxRetryTimeout: 8000,
-                            levelLoadingMaxRetry: 5,
-                            levelLoadingRetryDelay: 800,
-                            fragLoadingMaxRetry: 8,
-                            fragLoadingRetryDelay: 500,
-                            fragLoadingMaxRetryTimeout: 8000
-                        };
-                    }
+    return {
+        // --- إعدادات التسريع ---
+        // يبدأ التحميل فوراً بعد تجهيز المشغل
+        autoStartLoad: true,
+        // يبدأ بأقل جودة متاحة للتحميل بشكل أسرع
+        startLevel: 0,
+        // ---- إعدادات المخزن المؤقت (لتقليل كمية التحميل المسبق) ----
+        // يخفض المخزن المؤقت الأمامي من 30 إلى 8 ثوانٍ فقط
+        maxBufferLength: 8,
+        // يخفض الحد الأقصى للمخزن المؤقت الخلفي (للبث المباشر)
+        backBufferLength: 30,
+        // ---- إعدادات البث المباشر (للتشغيل بأقرب وقت ممكن من البث الحي) ----
+        // يبدأ التشغيل من مقطع أقرب للبث المباشر (افتراضي 3)
+        liveSyncDurationCount: 2,
+        // يحدد أقصى تأخير مسموح به قبل إجبار المزامنة
+        liveMaxLatencyDurationCount: 6,
+        // ---- إعدادات استقرار الشبكة ----
+        enableWorker: true,
+        lowLatencyMode: true,
+        maxBufferHole: 0.5,
+        maxFragLookUpTolerance: 0.25,
+        // ---- إعدادات إعادة المحاولة ----
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 500,
+        manifestLoadingMaxRetry: 4,
+        manifestLoadingRetryDelay: 500,
+        // ---- إعدادات تقدير النطاق الترددي (لبدء أسرع) ----
+        abrEwmaDefaultEstimate: 500000,
+        abrEwmaFastLive: 3.0,
+        abrEwmaSlowLive: 9.0,
+        abrBandWidthFactor: 0.75,
+        abrBandWidthUpFactor: 0.5,
+        // ---- إعدادات إضافية ----
+        nudgeMaxRetry: 8,
+        maxStarvationDelay: 1,
+        maxLoadingDelay: 2,
+        capLevelToPlayerSize: false,
+    };
+}
                     const SHARED_HLS_PERFORMANCE_CONFIG = buildHlsPerformanceConfig();
 
                     if (finalUrl.includes('man1ted.com') || finalUrl.includes('vercel.app')) {
