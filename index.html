@@ -564,11 +564,10 @@
      // ============================================================
 //  إعدادات البروكسي (موحدة لجميع الروابط)
 // ============================================================
-const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; // ⚠️ غيّره إلى رابط الـ Worker الخاص بك
+const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev";
 
 function buildProxiedUrl(originalUrl) {
     if (!CORS_PROXY_BASE) return null;
-    // جميع الروابط تمر عبر ?url= (لا نفرق بين داخلي وخارجي)
     return `${CORS_PROXY_BASE}?url=${encodeURIComponent(originalUrl)}`;
 }
 // ============================================================
