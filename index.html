@@ -1594,41 +1594,41 @@ function buildProxiedUrl(originalUrl) {
 
                     function buildHlsPerformanceConfig() {
     return {
-        // --- إعدادات التسريع ---
-        // يبدأ التحميل فوراً بعد تجهيز المشغل
+        // ===== بدء التشغيل فوراً =====
         autoStartLoad: true,
-        // يبدأ بأقل جودة متاحة للتحميل بشكل أسرع
-        startLevel: 0,
-        // ---- إعدادات المخزن المؤقت (لتقليل كمية التحميل المسبق) ----
-        // يخفض المخزن المؤقت الأمامي من 30 إلى 8 ثوانٍ فقط
-        maxBufferLength: 8,
-        // يخفض الحد الأقصى للمخزن المؤقت الخلفي (للبث المباشر)
-        backBufferLength: 30,
-        // ---- إعدادات البث المباشر (للتشغيل بأقرب وقت ممكن من البث الحي) ----
-        // يبدأ التشغيل من مقطع أقرب للبث المباشر (افتراضي 3)
-        liveSyncDurationCount: 2,
-        // يحدد أقصى تأخير مسموح به قبل إجبار المزامنة
-        liveMaxLatencyDurationCount: 6,
-        // ---- إعدادات استقرار الشبكة ----
+        startLevel: 0,                // أقل جودة (أصغر مقطع، أسرع تحميل)
+
+        // ===== إعدادات البث المباشر (اللحاق بالبث الحي فوراً) =====
+        liveSyncDuration: 1,          // يبدأ التشغيل بعد ثانية واحدة فقط من البث الحي (بدلاً من الانتظار)
+        liveMaxLatencyDuration: 6,    // أقصى تأخير مسموح به 6 ثوانٍ
+        liveDurationInfinity: false,  // يمنع التخزين المؤقت اللانهائي
+
+        // ===== تصغير المخزن المؤقت إلى أقصى حد =====
+        maxBufferLength: 2,           // يخزن ثانيتين فقط مسبقاً (كانت 6 ثوانٍ)
+        maxMaxBufferLength: 4,        // الحد الأقصى المطلق 4 ثوانٍ
+        backBufferLength: 5,          // المخزن الخلفي (الذي تم مشاهدته) 5 ثوانٍ فقط
+
+        // ===== خداع تقدير النطاق الترددي (تحميل مقاطع أصغر) =====
+        abrEwmaDefaultEstimate: 100000, // يُوهم المشغل بأن النت ضعيف (100 كيلوبت)، فيحمّل مقطعاً صغيراً جداً
+        abrBandWidthFactor: 0.4,        // يقلل عامل الصعود للجودة
+        abrBandWidthUpFactor: 0.2,      // يمنع رفع الجودة بسرعة (يبقى على الجودة المنخفضة حتى يبدأ البث)
+
+        // ===== إلغاء مهلات الانتظار الطويلة =====
+        maxStarvationDelay: 0.3,      // ينتظر 0.3 ثانية فقط قبل إعادة المحاولة
+        maxLoadingDelay: 0.5,         // مهلة قصيرة جداً
+        nudgeMaxRetry: 2,             // يحاول مرتين فقط ثم يعتبر المقطع فاشلاً ويتجاوزه
+        maxFragLookUpTolerance: 0.1,  // يبحث عن المقاطع بشكل أسرع
+
+        // ===== إعدادات الشبكة (إعادة محاولة سريعة جداً) =====
+        fragLoadingMaxRetry: 2,
+        fragLoadingRetryDelay: 200,   // 200 مللي ثانية فقط
+        manifestLoadingMaxRetry: 1,
+        manifestLoadingRetryDelay: 200,
+
+        // ===== إعدادات إضافية ثابتة =====
         enableWorker: true,
         lowLatencyMode: true,
         maxBufferHole: 0.5,
-        maxFragLookUpTolerance: 0.25,
-        // ---- إعدادات إعادة المحاولة ----
-        fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 500,
-        manifestLoadingMaxRetry: 4,
-        manifestLoadingRetryDelay: 500,
-        // ---- إعدادات تقدير النطاق الترددي (لبدء أسرع) ----
-        abrEwmaDefaultEstimate: 500000,
-        abrEwmaFastLive: 3.0,
-        abrEwmaSlowLive: 9.0,
-        abrBandWidthFactor: 0.75,
-        abrBandWidthUpFactor: 0.5,
-        // ---- إعدادات إضافية ----
-        nudgeMaxRetry: 8,
-        maxStarvationDelay: 1,
-        maxLoadingDelay: 2,
         capLevelToPlayerSize: false,
     };
 }
