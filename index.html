@@ -561,34 +561,17 @@
         </main>
 
     <script>
-        // ============================================================
-        //  🔥 إعدادات البروكسي الجديد (بدون ?url= للروابط الداخلية)
-        // ============================================================
-        const DEFAULT_ORIGIN = 'http://ossamasal2012.github.io/otv';
-        // ⚠️ غيّر هذا إلى رابط الـ Worker الخاص بك (بدون شرطة مائلة في النهاية)
-        // ============================================================
+     // ============================================================
 //  إعدادات البروكسي (موحدة لجميع الروابط)
 // ============================================================
-const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; // غيّره إلى رابط الـ Worker الخاص بك
+const CORS_PROXY_BASE = "https://yalla-cors-proxy.ossamasal2012.workers.dev"; // ⚠️ غيّره إلى رابط الـ Worker الخاص بك
 
 function buildProxiedUrl(originalUrl) {
     if (!CORS_PROXY_BASE) return null;
-    // دائماً استخدم ?url= لتوحيد المعالجة
+    // جميع الروابط تمر عبر ?url= (لا نفرق بين داخلي وخارجي)
     return `${CORS_PROXY_BASE}?url=${encodeURIComponent(originalUrl)}`;
 }
 // ============================================================
-
-            // إذا كان الرابط من موقعنا الأساسي، نمرره مباشرةً عبر المسار (بدون ?url=)
-            if (originalUrl.startsWith(DEFAULT_ORIGIN)) {
-                const path = originalUrl.substring(DEFAULT_ORIGIN.length);
-                const finalPath = path.startsWith('/') ? path : '/' + path;
-                return `${CORS_PROXY_BASE}${finalPath}`;
-            }
-
-            // الروابط الخارجية تستخدم ?url= (للتوافق مع المواقع الأخرى)
-            return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
-        }
-        // ============================================================
 
         function togglePin() {
             const inp = document.getElementById('pinInput');
