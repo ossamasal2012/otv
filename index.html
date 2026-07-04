@@ -1593,45 +1593,36 @@ function buildProxiedUrl(originalUrl) {
                     }
 
                     function buildHlsPerformanceConfig() {
-    return {
-        // ===== بدء التشغيل فوراً =====
-        autoStartLoad: true,
-        startLevel: 0,                // أقل جودة (أصغر مقطع، أسرع تحميل)
-
-        // ===== إعدادات البث المباشر (اللحاق بالبث الحي فوراً) =====
-        liveSyncDuration: 1,          // يبدأ التشغيل بعد ثانية واحدة فقط من البث الحي (بدلاً من الانتظار)
-        liveMaxLatencyDuration: 6,    // أقصى تأخير مسموح به 6 ثوانٍ
-        liveDurationInfinity: false,  // يمنع التخزين المؤقت اللانهائي
-
-        // ===== تصغير المخزن المؤقت إلى أقصى حد =====
-        maxBufferLength: 2,           // يخزن ثانيتين فقط مسبقاً (كانت 6 ثوانٍ)
-        maxMaxBufferLength: 4,        // الحد الأقصى المطلق 4 ثوانٍ
-        backBufferLength: 5,          // المخزن الخلفي (الذي تم مشاهدته) 5 ثوانٍ فقط
-
-        // ===== خداع تقدير النطاق الترددي (تحميل مقاطع أصغر) =====
-        abrEwmaDefaultEstimate: 100000, // يُوهم المشغل بأن النت ضعيف (100 كيلوبت)، فيحمّل مقطعاً صغيراً جداً
-        abrBandWidthFactor: 0.4,        // يقلل عامل الصعود للجودة
-        abrBandWidthUpFactor: 0.2,      // يمنع رفع الجودة بسرعة (يبقى على الجودة المنخفضة حتى يبدأ البث)
-
-        // ===== إلغاء مهلات الانتظار الطويلة =====
-        maxStarvationDelay: 0.3,      // ينتظر 0.3 ثانية فقط قبل إعادة المحاولة
-        maxLoadingDelay: 0.5,         // مهلة قصيرة جداً
-        nudgeMaxRetry: 2,             // يحاول مرتين فقط ثم يعتبر المقطع فاشلاً ويتجاوزه
-        maxFragLookUpTolerance: 0.1,  // يبحث عن المقاطع بشكل أسرع
-
-        // ===== إعدادات الشبكة (إعادة محاولة سريعة جداً) =====
-        fragLoadingMaxRetry: 2,
-        fragLoadingRetryDelay: 200,   // 200 مللي ثانية فقط
-        manifestLoadingMaxRetry: 1,
-        manifestLoadingRetryDelay: 200,
-
-        // ===== إعدادات إضافية ثابتة =====
-        enableWorker: true,
-        lowLatencyMode: true,
-        maxBufferHole: 0.5,
-        capLevelToPlayerSize: false,
-    };
-}
+                        return {
+                            enableWorker: true,
+                            lowLatencyMode: false,
+                            maxBufferLength: 60,
+                            maxMaxBufferLength: 180,
+                            backBufferLength: 30,
+                            maxBufferHole: 0.5,
+                            maxFragLookUpTolerance: 0.25,
+                            maxBufferSize: 90 * 1000 * 1000,
+                            abrEwmaDefaultEstimate: lowBandwidthMode ? 200000 : 500000,
+                            abrEwmaFastLive: 3.0,
+                            abrEwmaSlowLive: 9.0,
+                            abrBandWidthFactor: lowBandwidthMode ? 0.6 : 0.75,
+                            abrBandWidthUpFactor: lowBandwidthMode ? 0.4 : 0.5,
+                            abrMaxWithRealBitrate: true,
+                            maxStarvationDelay: 1,
+                            maxLoadingDelay: 2,
+                            startLevel: lowBandwidthMode ? 0 : -1,
+                            capLevelToPlayerSize: false,
+                            nudgeMaxRetry: 8,
+                            manifestLoadingMaxRetry: 5,
+                            manifestLoadingRetryDelay: 800,
+                            manifestLoadingMaxRetryTimeout: 8000,
+                            levelLoadingMaxRetry: 5,
+                            levelLoadingRetryDelay: 800,
+                            fragLoadingMaxRetry: 8,
+                            fragLoadingRetryDelay: 500,
+                            fragLoadingMaxRetryTimeout: 8000
+                        };
+                    }
                     const SHARED_HLS_PERFORMANCE_CONFIG = buildHlsPerformanceConfig();
 
                     if (finalUrl.includes('man1ted.com') || finalUrl.includes('vercel.app')) {
