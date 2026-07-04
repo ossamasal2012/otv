@@ -1585,7 +1585,10 @@ function buildProxiedUrl(originalUrl) {
                 // ================================================================
                 //  🎬 تشغيل HLS باستخدام الرابط النهائي (المُعدّل عبر البروكسي)
                 // ================================================================
-                if (Hls.isSupported() && finalUrl.includes('.m3u8')) {
+                if (Hls.isSupported() && (
+    finalUrl.includes('.m3u8') ||
+    (typeof CORS_PROXY_BASE !== 'undefined' && CORS_PROXY_BASE && finalUrl.startsWith(CORS_PROXY_BASE))
+)) {
                     if (location.protocol === 'https:' && finalUrl.startsWith('http://')) {
                         const upgradedUrl = 'https://' + finalUrl.slice('http://'.length);
                         console.warn('رابط HTTP غير مشفّر داخل صفحة HTTPS (Mixed Content) — محاولة ترقية تلقائية إلى HTTPS:', upgradedUrl);
