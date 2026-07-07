@@ -3,7 +3,7 @@ name: بناء تطبيق Android (APK)
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # تسمح بتشغيل البناء يدوياً من تبويب Actions
+  workflow_dispatch:
 
 jobs:
   build-apk:
@@ -29,32 +29,39 @@ jobs:
           npm install @capacitor/core @capacitor/cli @capacitor/android
           npm install -g @capacitor/assets
 
-      - name: تهيئة مشروع Capacitor
+      - name: تهيئة مشروع Capacitor (مع مجلد www)
         run: |
-          # إنشاء مشروع كاباستور باسم "Yalla Goal"
+          # إنشاء مجلد www لنقل ملفات الويب إليه
+          mkdir -p www
+          # نقل ملفات المشروع إلى مجلد www
+          cp index.html www/
+          # إذا كان لديك ملفات أخرى مثل style.css أو script.js، قم بنسخها هنا أيضاً
+          # cp style.css www/  (مثال)
+          
+          # إنشاء مشروع كاباستور (سيتعرف تلقائياً على webDir: "www")
           npx cap init "يلا گول" "com.yallagoal.app"
-          # تعديل إعدادات المجلد الرئيسي ليكون الجذر الحالي
-          sed -i 's/"webDir": "www"/"webDir": "."/' capacitor.config.json
+          
           # إضافة منصة Android
           npx cap add android
 
       - name: توليد أيقونات Android من icon.png
         run: |
-          if [ -f "icon.png" ]; then
+          if [ -f "www/icon.png" ]; then
             # إنشاء المجلدات المطلوبة للأيقونات بأحجام مختلفة
             mkdir -p android/app/src/main/res/drawable-hdpi
             mkdir -p android/app/src/main/res/drawable-mdpi
             mkdir -p android/app/src/main/res/drawable-xhdpi
             mkdir -p android/app/src/main/res/drawable-xxhdpi
             mkdir -p android/app/src/main/res/drawable-xxxhdpi
+            
             # نسخ الأيقونة لجميع المقاسات
-            cp icon.png android/app/src/main/res/drawable-hdpi/icon.png
-            cp icon.png android/app/src/main/res/drawable-mdpi/icon.png
-            cp icon.png android/app/src/main/res/drawable-xhdpi/icon.png
-            cp icon.png android/app/src/main/res/drawable-xxhdpi/icon.png
-            cp icon.png android/app/src/main/res/drawable-xxxhdpi/icon.png
+            cp www/icon.png android/app/src/main/res/drawable-hdpi/icon.png
+            cp www/icon.png android/app/src/main/res/drawable-mdpi/icon.png
+            cp www/icon.png android/app/src/main/res/drawable-xhdpi/icon.png
+            cp www/icon.png android/app/src/main/res/drawable-xxhdpi/icon.png
+            cp www/icon.png android/app/src/main/res/drawable-xxxhdpi/icon.png
           else
-            echo "خطأ: لم يتم العثور على ملف icon.png في جذر المستودع!"
+            echo "خطأ: لم يتم العثور على ملف www/icon.png!"
             exit 1
           fi
 
@@ -72,5 +79,4 @@ jobs:
         with:
           name: yalla-goal-app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          # السطر التالي يضمن أن يظهر الخطأ بوضوح إذا فشل بناء الـ APK
           if-no-files-found: error
