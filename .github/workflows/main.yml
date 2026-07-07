@@ -31,17 +31,18 @@ jobs:
 
       - name: تهيئة مشروع Capacitor (مع مجلد www)
         run: |
-          # إنشاء مجلد www لنقل ملفات الويب إليه
+          # 1. إنشاء مجلد www لنقل ملفات الويب والأيقونة إليه
           mkdir -p www
-          # نقل ملفات المشروع إلى مجلد www
-          cp index.html www/
-          # إذا كان لديك ملفات أخرى مثل style.css أو script.js، قم بنسخها هنا أيضاً
-          # cp style.css www/  (مثال)
           
-          # إنشاء مشروع كاباستور (سيتعرف تلقائياً على webDir: "www")
+          # 2. نقل ملفات المشروع من الجذر إلى مجلد www
+          # ملاحظة: إذا كان لديك ملفات أخرى (مثل style.css أو script.js) انسخها هنا أيضاً
+          cp index.html www/
+          cp icon.png www/
+          
+          # 3. إنشاء مشروع كاباستور (سيقرأ webDir: "www" بشكل تلقائي)
           npx cap init "يلا گول" "com.yallagoal.app"
           
-          # إضافة منصة Android
+          # 4. إضافة منصة Android
           npx cap add android
 
       - name: توليد أيقونات Android من icon.png
