@@ -1,640 +1,74 @@
-name: Build Yalla Goal APK
+name: بناء تطبيق Android (APK)
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ main ]
+  workflow_dispatch:   # تسمح بالتشغيل يدوياً من تبويب Actions
 
 jobs:
-  build:
+  build-apk:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 18
-
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'zulu'
-        java-version: '21'
-
-    - name: Install Android SDK
-      uses: android-actions/setup-android@v3
-
-    - name: Initialize App Project & Capacitor (Ultra Fast Configuration)
-      run: |
-        mkdir -p www
-        cp index.html www/
-        npm init -y
-        npm install @capacitor/core @capacitor/cli @capacitor/android
-        
-        # إنشاء ملف إعدادات كاباسيتور مخصص ومحسن للإقلاع الفوري وإلغاء شاشة الانتظار تماماً
-        cat <<'EOF' > capacitor.config.json
-        {
-          "appId": "com.yallagoal.app",
-          "appName": "يلا گول",
-          "webDir": "www",
-          "bundledWebRuntime": false,
-          "plugins": {
-            "SplashScreen": {
-              "launchShowDuration": 0,
-              "launchAutoHide": true,
-              "splashFullScreen": true,
-              "splashImmersive": true
-            }
-          }
-        }
-        EOF
-
-        npx cap add android
-
-        # 1. تحديث Gradle إلى 8.7
-        PROPERTIES_FILE="android/gradle/wrapper/gradle-wrapper.properties"
-        if [ -f "$PROPERTIES_FILE" ]; then
-          sed -i 's/gradle-8.2.1-all.zip/gradle-8.7-all.zip/g' $PROPERTIES_FILE
-          echo "==== تم تحديث Gradle إلى 8.7 ===="
-        fi
-
-        # 2. رفع SDK إلى 35
-        VARIABLES_FILE="android/variables.gradle"
-        if [ -f "$VARIABLES_FILE" ]; then
-          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 35/g' $VARIABLES_FILE
-          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 35/g' $VARIABLES_FILE
-          echo "==== تم تحديث SDK إلى 35 ===="
-        fi
-
-        # 3. توحيد إصدار Kotlin
-        BUILD_FILE="android/build.gradle"
-        if [ -f "$BUILD_FILE" ]; then
-          sed -i 's/ext {/ext {\n        kotlinVersion = "1.9.22"/g' $BUILD_FILE
-          printf "\nsubprojects {\n    project.configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == 'org.jetbrains.kotlin') {\n                details.useVersion '1.9.22'\n            }\n        }\n    }\n}\n" >> $BUILD_FILE
-          echo "==== تم توحيد Kotlin ===="
-        fi
-
-    - name: Inject HLS.js Player into index.html
-      run: |
-        # ===== حقن مشغل HLS.js المتكامل في index.html =====
-        # هذا يضيف مشغل HLS نظيف يعمل مع روابط m3u8 مباشرة بدون iframe
-        # مع دعم كامل للبث المباشر وتغيير القنوات ديناميكياً
-
-        cat <<'HLSEOF' > www/hls-player.js
-        // ===== HLS.js Ultra Player - يلا گول =====
-        // مشغل HLS مدمج يعمل مباشرة بدون iframe
-        
-        (function() {
-          'use strict';
-
-          // تحميل مكتبة HLS.js من CDN
-          function loadHlsLibrary(callback) {
-            if (window.Hls) {
-              callback();
-              return;
-            }
-            var script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js';
-            script.onload = callback;
-            script.onerror = function() {
-              // بديل في حالة فشل CDN الأول
-              var fallback = document.createElement('script');
-              fallback.src = 'https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js';
-              fallback.onload = callback;
-              document.head.appendChild(fallback);
-            };
-            document.head.appendChild(script);
-          }
-
-          // الكلاس الرئيسي للمشغل
-          window.YallaPlayer = {
-            hlsInstance: null,
-            videoElement: null,
-            retryCount: 0,
-            maxRetries: 5,
-            retryDelay: 3000,
-            currentUrl: null,
-
-            // تهيئة المشغل مع عنصر video
-            init: function(videoEl) {
-              this.videoElement = videoEl;
-              this._setupVideoElement(videoEl);
-              console.log('==== يلا گول HLS Player جاهز ====');
-            },
-
-            // إعداد خصائص عنصر الفيديو
-            _setupVideoElement: function(videoEl) {
-              videoEl.setAttribute('playsinline', '');
-              videoEl.setAttribute('webkit-playsinline', '');
-              videoEl.setAttribute('x-webkit-airplay', 'allow');
-              videoEl.controls = true;
-              videoEl.style.width = '100%';
-              videoEl.style.height = '100%';
-              videoEl.style.backgroundColor = '#000';
-            },
-
-            // تشغيل رابط m3u8
-            play: function(m3u8Url, options) {
-              var self = this;
-              options = options || {};
-              this.currentUrl = m3u8Url;
-              this.retryCount = 0;
-
-              loadHlsLibrary(function() {
-                self._startPlayback(m3u8Url, options);
-              });
-            },
-
-            _startPlayback: function(m3u8Url, options) {
-              var self = this;
-              var videoEl = this.videoElement;
-
-              // تنظيف المشغل القديم
-              this._destroy();
-
-              if (Hls.isSupported()) {
-                var hlsConfig = {
-                  // إعدادات الأداء العالي
-                  enableWorker: true,
-                  lowLatencyMode: true,
-                  backBufferLength: 90,
-
-                  // إعدادات الشبكة
-                  xhrSetup: function(xhr, url) {
-                    // إضافة headers مخصصة لتجاوز قيود CORS
-                    xhr.withCredentials = false;
-                    if (options.referer) {
-                      try { xhr.setRequestHeader('Referer', options.referer); } catch(e) {}
-                    }
-                    if (options.origin) {
-                      try { xhr.setRequestHeader('Origin', options.origin); } catch(e) {}
-                    }
-                    if (options.userAgent) {
-                      try { xhr.setRequestHeader('User-Agent', options.userAgent); } catch(e) {}
-                    }
-                  },
-
-                  // إعدادات إعادة المحاولة
-                  manifestLoadingMaxRetry: 6,
-                  manifestLoadingRetryDelay: 1000,
-                  levelLoadingMaxRetry: 6,
-                  levelLoadingRetryDelay: 1000,
-                  fragLoadingMaxRetry: 6,
-                  fragLoadingRetryDelay: 1000,
-
-                  // إعدادات التخزين المؤقت
-                  maxBufferLength: 30,
-                  maxMaxBufferLength: 600,
-                  maxBufferSize: 60 * 1000 * 1000,
-                  maxBufferHole: 0.5,
-
-                  // إعدادات جودة التشغيل التكيفي
-                  startLevel: -1,
-                  abrEwmaDefaultEstimate: 500000,
-                  abrBandWidthFactor: 0.95,
-                  abrBandWidthUpFactor: 0.7,
-                };
-
-                var hls = new Hls(hlsConfig);
-                this.hlsInstance = hls;
-
-                hls.loadSource(m3u8Url);
-                hls.attachMedia(videoEl);
-
-                hls.on(Hls.Events.MANIFEST_PARSED, function(event, data) {
-                  console.log('==== HLS: البث جاهز، عدد الجودات: ' + data.levels.length + ' ====');
-                  self.retryCount = 0;
-                  videoEl.play().catch(function(e) {
-                    console.log('تشغيل تلقائي محجوب، انتظار تفاعل المستخدم');
-                  });
-                  if (typeof self.onReady === 'function') self.onReady(data);
-                });
-
-                hls.on(Hls.Events.LEVEL_SWITCHED, function(event, data) {
-                  if (typeof self.onQualityChange === 'function') self.onQualityChange(data);
-                });
-
-                hls.on(Hls.Events.ERROR, function(event, data) {
-                  console.warn('HLS Error:', data.type, data.details, data.fatal);
-                  if (data.fatal) {
-                    self._handleFatalError(data, m3u8Url, options);
-                  } else {
-                    // أخطاء غير مميتة - HLS.js يعالجها تلقائياً
-                    if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
-                      hls.recoverMediaError();
-                    }
-                  }
-                });
-
-              } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-                // دعم HLS الأصلي (Safari/iOS)
-                videoEl.src = m3u8Url;
-                videoEl.addEventListener('loadedmetadata', function() {
-                  videoEl.play().catch(function(e) {
-                    console.log('تشغيل تلقائي محجوب');
-                  });
-                });
-              } else {
-                console.error('HLS غير مدعوم في هذا المتصفح');
-                if (typeof self.onError === 'function') self.onError('HLS not supported');
-              }
-            },
-
-            _handleFatalError: function(data, url, options) {
-              var self = this;
-              if (this.retryCount < this.maxRetries) {
-                this.retryCount++;
-                console.log('إعادة المحاولة ' + this.retryCount + '/' + this.maxRetries + '...');
-                setTimeout(function() {
-                  if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    self.hlsInstance.startLoad();
-                  } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                    self.hlsInstance.recoverMediaError();
-                  } else {
-                    self._startPlayback(url, options);
-                  }
-                }, this.retryDelay);
-              } else {
-                console.error('فشل البث نهائياً بعد ' + this.maxRetries + ' محاولات');
-                if (typeof this.onError === 'function') this.onError(data);
-              }
-            },
-
-            // تغيير القناة مباشرة
-            switchChannel: function(newM3u8Url, options) {
-              console.log('==== تغيير القناة: ' + newM3u8Url + ' ====');
-              this.play(newM3u8Url, options);
-            },
-
-            // إيقاف المشغل
-            _destroy: function() {
-              if (this.hlsInstance) {
-                this.hlsInstance.destroy();
-                this.hlsInstance = null;
-              }
-            },
-
-            // إيقاف كامل
-            stop: function() {
-              this._destroy();
-              if (this.videoElement) {
-                this.videoElement.src = '';
-                this.videoElement.load();
-              }
-            }
-          };
-
-          // ===== API عامة لاستدعاء المشغل من أي مكان في التطبيق =====
-          // مثال الاستخدام في index.html:
-          // YallaPlayer.init(document.getElementById('myVideo'));
-          // YallaPlayer.play('https://example.com/stream.m3u8', { referer: 'https://example.com' });
-
-        })();
-        HLSEOF
-
-        echo "==== تم إنشاء مشغل HLS.js المتكامل ===="
-
-        # دمج المشغل مع index.html إذا لم يكن موجوداً بالفعل
-        if ! grep -q "hls-player.js" www/index.html 2>/dev/null; then
-          sed -i 's|</head>|<script src="hls-player.js"></script>\n</head>|' www/index.html
-          echo "==== تم دمج المشغل مع index.html ===="
-        fi
-
-    - name: Configure Fullscreen & Native CORS Proxy Client (Lightning Speed Boost)
-      run: |
-        mkdir -p android/app/src/main/java/com/yallagoal/app
-        MAIN_ACTIVITY="android/app/src/main/java/com/yallagoal/app/MainActivity.java"
-
-        cat <<'JAVA' > $MAIN_ACTIVITY
-        package com.yallagoal.app;
-
-        import android.graphics.Color;
-        import android.os.Build;
-        import android.os.Bundle;
-        import android.view.View;
-        import android.view.Window;
-        import android.view.WindowInsets;
-        import android.view.WindowInsetsController;
-        import android.view.WindowManager;
-        import android.webkit.MimeTypeMap;
-        import android.webkit.WebChromeClient;
-        import android.webkit.WebSettings;
-        import android.webkit.WebView;
-        import android.webkit.WebResourceRequest;
-        import android.webkit.WebResourceResponse;
-        import com.getcapacitor.BridgeActivity;
-        import com.getcapacitor.BridgeWebViewClient;
-        import java.io.InputStream;
-        import java.io.ByteArrayInputStream;
-        import java.net.HttpURLConnection;
-        import java.net.URL;
-        import java.util.HashMap;
-        import java.util.Map;
-
-        public class MainActivity extends BridgeActivity {
-            @Override
-            protected void onCreate(Bundle savedInstanceState) {
-                requestWindowFeature(Window.FEATURE_NO_TITLE);
-                getWindow().setFlags(
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN,
-                    WindowManager.LayoutParams.FLAG_FULLSCREEN
-                );
-                super.onCreate(savedInstanceState);
-                applyFullscreen();
-                setupWebView();
-            }
-
-            @Override
-            public void onWindowFocusChanged(boolean hasFocus) {
-                super.onWindowFocusChanged(hasFocus);
-                if (hasFocus) applyFullscreen();
-            }
-
-            @Override
-            public void onResume() {
-                super.onResume();
-                applyFullscreen();
-            }
-
-            private void applyFullscreen() {
-                Window w = getWindow();
-                w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    w.setDecorFitsSystemWindows(false);
-                    WindowInsetsController c = w.getInsetsController();
-                    if (c != null) {
-                        c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                        c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                    }
-                    w.setStatusBarColor(Color.TRANSPARENT);
-                    w.setNavigationBarColor(Color.TRANSPARENT);
-                } else {
-                    w.getDecorView().setSystemUiVisibility(
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY |
-                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                        View.SYSTEM_UI_FLAG_FULLSCREEN
-                    );
-                }
-                if (Build.VERSION.SDK_INT >= 28) {
-                    WindowManager.LayoutParams lp = w.getAttributes();
-                    lp.layoutInDisplayCutoutMode =
-                        WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-                    w.setAttributes(lp);
-                }
-            }
-
-            private void setupWebView() {
-                try {
-                    WebView wv = getBridge().getWebView();
-                    
-                    // [تعديل فائق للسرعة]: تم حذف حظر الكاش وتصفيره نهائياً ليفتح التطبيق في رمشة عين
-                    WebSettings s = wv.getSettings();
-                    s.setJavaScriptEnabled(true);
-                    s.setDomStorageEnabled(true);
-                    s.setDatabaseEnabled(true);
-                    s.setAllowFileAccess(true);
-                    s.setAllowContentAccess(true);
-                    s.setAllowFileAccessFromFileURLs(true);
-                    s.setAllowUniversalAccessFromFileURLs(true);
-                    s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                    s.setMediaPlaybackRequiresUserGesture(false);
-
-                    s.setUseWideViewPort(true);
-                    s.setLoadWithOverviewMode(true);
-                    
-                    // [تعديل فائق للسرعة]: تفعيل الكاش الافتراضي السريع بدلاً من منع الكاش القديم
-                    s.setCacheMode(WebSettings.LOAD_DEFAULT);
-
-                    s.setUserAgentString(
-                        "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
-                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                        "Chrome/125.0.0.0 Mobile Safari/537.36"
-                    );
-
-                    wv.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-
-                    wv.setWebChromeClient(new WebChromeClient() {
-                        @Override
-                        public void onShowCustomView(View view, CustomViewCallback callback) {
-                            super.onShowCustomView(view, callback);
-                        }
-                        @Override
-                        public void onHideCustomView() {
-                            super.onHideCustomView();
-                        }
-                    });
-
-                    if (Build.VERSION.SDK_INT >= 21) {
-                        android.webkit.CookieManager cm = android.webkit.CookieManager.getInstance();
-                        cm.setAcceptCookie(true);
-                        cm.setAcceptThirdPartyCookies(wv, true);
-                    }
-
-                    getBridge().setWebViewClient(new CORSClient(getBridge()));
-                    System.out.println("==== تم تفعيل المحرك فائق السرعة لـ يلا گول ====");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            class CORSClient extends BridgeWebViewClient {
-                CORSClient(com.getcapacitor.Bridge b) { super(b); }
-
-                @Override
-                public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
-                    String url = r.getUrl().toString();
-                    String method = r.getMethod();
-
-                    if ("OPTIONS".equalsIgnoreCase(method)) {
-                        return buildCorsResponse(null, "text/plain", 204, null);
-                    }
-
-                    if (!url.startsWith("http") || url.contains("localhost") || url.contains("capacitor://")) {
-                        return super.shouldInterceptRequest(v, r);
-                    }
-
-                    if (isStrictRadioStream(url)) {
-                        return null; 
-                    }
-
-                    // ===== معالجة خاصة لملفات HLS =====
-                    boolean isHlsRequest = url.contains(".m3u8") || url.contains(".ts");
-                    
-                    try {
-                        URL targetUrl = new URL(url);
-                        HttpURLConnection conn = (HttpURLConnection) targetUrl.openConnection();
-                        conn.setRequestMethod(method);
-                        conn.setConnectTimeout(25000);
-                        conn.setReadTimeout(25000);
-                        conn.setInstanceFollowRedirects(true);
-
-                        boolean hasRange = false;
-                        for (Map.Entry<String, String> h : r.getRequestHeaders().entrySet()) {
-                            String key = h.getKey();
-                            if (!key.equalsIgnoreCase("Origin") && !key.equalsIgnoreCase("Host")) {
-                                conn.setRequestProperty(key, h.getValue());
-                                if (key.equalsIgnoreCase("Range")) {
-                                    hasRange = true;
-                                }
-                            }
-                        }
-
-                        // ===== حقن headers ذكية لملفات HLS =====
-                        if (isHlsRequest) {
-                            String baseUrl = extractBaseUrl(url);
-                            if (baseUrl != null) {
-                                // إرسال Origin و Referer من نفس النطاق للسيرفر
-                                conn.setRequestProperty("Origin", baseUrl);
-                                conn.setRequestProperty("Referer", baseUrl + "/");
-                            }
-                            conn.setRequestProperty("Accept", "application/vnd.apple.mpegurl, application/x-mpegURL, */*");
-                        } else {
-                            String referer = extractBaseUrl(url);
-                            if (referer != null) {
-                                conn.setRequestProperty("Referer", referer);
-                            }
-                        }
-
-                        conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/125.0.0.0");
-                        
-                        if (!hasRange && !isHlsRequest) {
-                            conn.setRequestProperty("Range", "bytes=0-");
-                        }
-
-                        conn.connect();
-
-                        int statusCode = conn.getResponseCode();
-                        if (statusCode < 0) statusCode = 200;
-
-                        InputStream inputStream;
-                        try {
-                            inputStream = conn.getInputStream();
-                        } catch (Exception e) {
-                            inputStream = conn.getErrorStream();
-                            if (inputStream == null) {
-                                inputStream = new ByteArrayInputStream(new byte[0]);
-                            }
-                        }
-
-                        String contentType = conn.getContentType();
-                        if (contentType == null || contentType.isEmpty()) {
-                            contentType = detectMimeType(url);
-                        }
-                        if (contentType.contains(";")) {
-                            contentType = contentType.split(";")[0].trim();
-                        }
-
-                        if ("application/octet-stream".equals(contentType) || "binary/octet-stream".equals(contentType)) {
-                            contentType = detectMimeType(url);
-                        }
-
-                        Map<String, String> customHeaders = new HashMap<>();
-                        String contentLength = conn.getHeaderField("Content-Length");
-                        if (contentLength != null) customHeaders.put("Content-Length", contentLength);
-
-                        String contentRange = conn.getHeaderField("Content-Range");
-                        if (contentRange != null) customHeaders.put("Content-Range", contentRange);
-
-                        return buildCorsResponse(inputStream, contentType, statusCode, customHeaders);
-
-                    } catch (Exception e) {
-                        return super.shouldInterceptRequest(v, r);
-                    }
-                }
-
-                private boolean isStrictRadioStream(String url) {
-                    String lower = url.toLowerCase();
-                    if (lower.contains(".m3u8") || lower.contains(".ts") || lower.contains(".mp4") || lower.contains(".webm")) {
-                        return false; 
-                    }
-                    return lower.contains("radio") || 
-                           lower.contains("icecast") || 
-                           lower.contains("shoutcast") || 
-                           lower.contains("streamlive") ||
-                           lower.contains(":8000") || 
-                           lower.contains(":8002");
-                }
-
-                private String detectMimeType(String url) {
-                    String lower = url.toLowerCase();
-                    if (lower.contains(".m3u8"))   return "application/vnd.apple.mpegurl";
-                    if (lower.contains(".ts"))     return "video/mp2t";
-                    if (lower.contains(".mp4"))    return "video/mp4";
-                    if (lower.contains(".webm"))   return "audio/webm";
-                    if (lower.contains(".mp3"))    return "audio/mpeg";
-                    if (lower.contains(".ogg"))    return "audio/ogg";
-                    if (lower.contains(".wav"))    return "audio/wav";
-                    if (lower.contains(".aac"))    return "audio/aac";
-                    return "audio/mpeg"; 
-                }
-
-                private WebResourceResponse buildCorsResponse(InputStream is, String mimeType, int status, Map<String, String> extraHeaders) {
-                    Map<String, String> headers = new HashMap<>();
-                    headers.put("Access-Control-Allow-Origin", "*");
-                    headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS");
-                    headers.put("Access-Control-Allow-Headers", "*");
-                    headers.put("Access-Control-Expose-Headers", "*");
-                    headers.put("Accept-Ranges", "bytes");
-                    headers.put("Cache-Control", "no-cache, no-store, must-revalidate");
-
-                    if (extraHeaders != null) {
-                        headers.putAll(extraHeaders);
-                    }
-
-                    if (is == null) is = new ByteArrayInputStream(new byte[0]);
-                    String reason = status == 206 ? "Partial Content" : "OK";
-
-                    return new WebResourceResponse(mimeType, "utf-8", status, reason, headers, is);
-                }
-
-                private String extractBaseUrl(String url) {
-                    try {
-                        URL u = new URL(url);
-                        return u.getProtocol() + "://" + u.getHost();
-                    } catch (Exception e) {
-                        return null;
-                    }
-                }
-            }
-        }
-        JAVA
-
-        # صلاحيات الإنترنت وتشغيل الوسائط في AndroidManifest.xml
-        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.INTERNET" />' \
-            android/app/src/main/AndroidManifest.xml
-        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />' \
-            android/app/src/main/AndroidManifest.xml
-
-        # تفعيل cleartext + hardware acceleration لدعم الفيديو والصوت
-        sed -i 's/<application/<application android:usesCleartextTraffic="true" android:hardwareAccelerated="true"/' \
-            android/app/src/main/AndroidManifest.xml
-
-    - name: Download & Apply App Custom Icon
-      run: |
-        curl -L -o app_icon.png "https://raw.githubusercontent.com/ossamasal2012/otv/main/icon.png"
-        npm install -g @capacitor/assets
-        mkdir -p assets
-        cp app_icon.png assets/icon.png
-        npx capacitor-assets generate --android
-
-    - name: Sync Capacitor Project
-      run: |
-        npx cap sync android
-
-    - name: Build Android APK (Release)
-      run: |
-        cd android
-        chmod +x ./gradlew
-        ./gradlew assembleDebug --no-daemon --no-build-cache
-
-    - name: Upload Finished APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Yalla-Goal-Premium-APK
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: تحميل الكود من المستودع
+        uses: actions/checkout@v3
+
+      - name: تثبيت Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: تثبيت بيئة Java (مطلوبة لبناء Android)
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: تثبيت مكتبات Capacitor
+        run: |
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install -g @capacitor/assets
+
+      - name: تهيئة مشروع Capacitor
+        run: |
+          # إنشاء مشروع كاباستور باسم "Yalla Goal"
+          npx cap init "يلا گول" "com.yallagoal.app"
+          # تعديل إعدادات المجلد الرئيسي ليكون الجذر الحالي (بدلاً من www)
+          sed -i 's/"webDir": "www"/"webDir": "."/' capacitor.config.json
+          # إضافة منصة Android
+          npx cap add android
+
+      - name: توليد أيقونات Android من icon.png
+        run: |
+          if [ -f "icon.png" ]; then
+            # إنشاء المجلدات المطلوبة للأيقونات بأحجام مختلفة
+            mkdir -p android/app/src/main/res/drawable-hdpi
+            mkdir -p android/app/src/main/res/drawable-mdpi
+            mkdir -p android/app/src/main/res/drawable-xhdpi
+            mkdir -p android/app/src/main/res/drawable-xxhdpi
+            mkdir -p android/app/src/main/res/drawable-xxxhdpi
+            # نسخ الأيقونة لجميع المقاسات (سيقوم Android بضبطها تلقائياً)
+            cp icon.png android/app/src/main/res/drawable-hdpi/icon.png
+            cp icon.png android/app/src/main/res/drawable-mdpi/icon.png
+            cp icon.png android/app/src/main/res/drawable-xhdpi/icon.png
+            cp icon.png android/app/src/main/res/drawable-xxhdpi/icon.png
+            cp icon.png android/app/src/main/res/drawable-xxxhdpi/icon.png
+          else
+            echo "خطأ: لم يتم العثور على ملف icon.png في جذر المستودع!"
+            exit 1
+          fi
+
+      - name: مزامنة الملفات مع مشروع Android
+        run: npx cap sync android
+
+      - name: بناء ملف APK (نسخة اختبارية Debug)
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: رفع ملف APK الناتج للتحميل
+        uses: actions/upload-artifact@v3
+        with:
+          name: yalla-goal-app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
