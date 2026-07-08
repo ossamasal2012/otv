@@ -1,0 +1,61 @@
+name: Send Notification to All Users
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: 'عنوان الإشعار'
+        required: true
+        default: 'يلا گول'
+      body:
+        description: 'نص الإشعار'
+        required: true
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send FCM notification to topic "all_users"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NOTIF_TITLE: ${{ github.event.inputs.title }}
+          NOTIF_BODY: ${{ github.event.inputs.body }}
+        run: |
+          pip install google-auth --break-system-packages --quiet
+          python3 <<'PYEOF'
+          import json, os, urllib.request
+
+          from google.oauth2 import service_account
+          import google.auth.transport.requests
+
+          sa_info = json.loads(os.environ["FIREBASE_SERVICE_ACCOUNT"])
+          creds = service_account.Credentials.from_service_account_info(
+              sa_info, scopes=["https://www.googleapis.com/auth/firebase.messaging"]
+          )
+          creds.refresh(google.auth.transport.requests.Request())
+          token = creds.token
+          project_id = sa_info["project_id"]
+
+          payload = {
+              "message": {
+                  "topic": "all_users",
+                  "notification": {
+                      "title": os.environ["NOTIF_TITLE"],
+                      "body": os.environ["NOTIF_BODY"],
+                  },
+              }
+          }
+
+          url = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+          req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json; charset=UTF-8",
+              },
+              method="POST",
+          )
+          with urllib.request.urlopen(req) as resp:
+              print(resp.read().decode())
+          PYEOF
