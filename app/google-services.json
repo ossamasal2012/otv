@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "302979781353",
+    "project_id": "yallagoal-40ec3",
+    "storage_bucket": "yallagoal-40ec3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:302979781353:android:9047d16620e9063a44d678",
+        "android_client_info": {
+          "package_name": "com.yallagoal.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCK9DknV3KUzbEIv-i-VsP8fYmkgrsL4Ck"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
