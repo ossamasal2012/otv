@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>إرسال إشعار - يلا گول</title>
+<style>
+  :root {
+    --bg: #020617;
+    --card: #0f172a;
+    --border: #1e293b;
+    --accent: #10b981;
+    --accent-dim: #0f9d76;
+    --text: #f1f5f9;
+    --text-dim: #94a3b8;
+    --error: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    background-image: radial-gradient(circle at 50% 0%, rgba(16,185,129,0.12), transparent 60%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Tahoma", sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 28px 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+
+  .logo {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin: 0 auto 16px;
+  }
+
+  h1 {
+    font-size: 19px;
+    text-align: center;
+    margin: 0 0 4px;
+    font-weight: 700;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 0 0 24px;
+  }
+
+  label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 16px 0 6px;
+  }
+
+  input, textarea {
+    width: 100%;
+    background: #131e33;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input:focus, textarea:focus {
+    border-color: var(--accent);
+  }
+
+  textarea {
+    min-height: 90px;
+    resize: vertical;
+  }
+
+  .char-count {
+    text-align: left;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    background: var(--accent);
+    color: #04120c;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+  }
+
+  button:active { transform: scale(0.98); }
+  button:disabled {
+    background: #1e293b;
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+
+  .status {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    text-align: center;
+    display: none;
+  }
+
+  .status.show { display: block; }
+  .status.success {
+    background: rgba(16,185,129,0.12);
+    border: 1px solid rgba(16,185,129,0.4);
+    color: var(--accent);
+  }
+  .status.error {
+    background: rgba(239,68,68,0.12);
+    border: 1px solid rgba(239,68,68,0.4);
+    color: var(--error);
+  }
+
+  .remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .remember input { width: auto; }
+
+  .footer-note {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 18px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="logo">⚽</div>
+    <h1>إرسال إشعار لجميع المستخدمين</h1>
+    <p class="subtitle">يصل فوراً لكل من نصّب تطبيق يلا گول</p>
+
+    <label for="password">كلمة السر</label>
+    <input type="password" id="password" placeholder="••••••••" autocomplete="off">
+    <div class="remember">
+      <input type="checkbox" id="rememberPass">
+      <label for="rememberPass" style="margin:0;">تذكرني بهذا الجهاز</label>
+    </div>
+
+    <label for="title">عنوان الإشعار</label>
+    <input type="text" id="title" placeholder="يلا گول" maxlength="60">
+
+    <label for="message">نص الإشعار</label>
+    <textarea id="message" placeholder="مثال: مباراة مباشرة الآن! افتح التطبيق" maxlength="180"></textarea>
+    <div class="char-count"><span id="charCount">0</span> / 180</div>
+
+    <button id="sendBtn" onclick="sendNotification()">إرسال الآن</button>
+
+    <div class="status" id="status"></div>
+
+    <p class="footer-note">الإشعار يصل حتى لو كان التطبيق مغلقاً تماماً</p>
+  </div>
+
+<script>
+  // ⚠️ عدّل هذا الرابط لرابط الـ Worker الخاص بك بعد نشره على Cloudflare
+  const WORKER_URL = "https://yallagoal-notify.ossamasal2012.workers.dev";
+
+  const passwordInput = document.getElementById('password');
+  const rememberCheckbox = document.getElementById('rememberPass');
+  const messageInput = document.getElementById('message');
+  const charCount = document.getElementById('charCount');
+  const sendBtn = document.getElementById('sendBtn');
+  const statusBox = document.getElementById('status');
+
+  // استرجاع كلمة السر المحفوظة (إن وجدت)
+  const savedPass = localStorage.getItem('yg_admin_pass');
+  if (savedPass) {
+    passwordInput.value = savedPass;
+    rememberCheckbox.checked = true;
+  }
+
+  messageInput.addEventListener('input', () => {
+    charCount.textContent = messageInput.value.length;
+  });
+
+  function showStatus(text, type) {
+    statusBox.textContent = text;
+    statusBox.className = 'status show ' + type;
+  }
+
+  async function sendNotification() {
+    const password = passwordInput.value.trim();
+    const title = document.getElementById('title').value.trim();
+    const message = messageInput.value.trim();
+
+    if (!password) return showStatus('اكتب كلمة السر أولاً', 'error');
+    if (!title || !message) return showStatus('العنوان والنص مطلوبان', 'error');
+
+    if (rememberCheckbox.checked) {
+      localStorage.setItem('yg_admin_pass', password);
+    } else {
+      localStorage.removeItem('yg_admin_pass');
+    }
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'جاري الإرسال...';
+    statusBox.className = 'status';
+
+    try {
+      const resp = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, title, message }),
+      });
+
+      const data = await resp.json();
+
+      if (resp.ok && data.success) {
+        showStatus('✅ تم إرسال الإشعار بنجاح', 'success');
+        document.getElementById('title').value = '';
+        messageInput.value = '';
+        charCount.textContent = '0';
+      } else {
+        showStatus('❌ ' + (data.error || 'فشل الإرسال'), 'error');
+      }
+    } catch (err) {
+      showStatus('❌ تعذر الاتصال بالخادم: ' + err.message, 'error');
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'إرسال الآن';
+    }
+  }
+</script>
+
+</body>
+</html>
