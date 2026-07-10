@@ -122,6 +122,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        webView.addJavascriptInterface(new WebAppInterface(this), "AndroidPlayer");
+
         webView.loadUrl(LOCAL_URL);
 
         requestNotificationPermissionIfNeeded();
