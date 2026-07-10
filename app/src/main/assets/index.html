@@ -222,6 +222,183 @@
 
         .login-btn:active { transform: translateY(0); }
 
+        /* ===== شريط علوي + زر الإعدادات ===== */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .top-bar-title {
+            font-size: 0.95rem;
+            font-weight: 900;
+            color: #10b981;
+            letter-spacing: -0.3px;
+        }
+
+        .settings-gear-btn {
+            width: 34px;
+            height: 34px;
+            border-radius: 0.6rem;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .settings-gear-btn:hover {
+            color: #10b981;
+            border-color: #10b981;
+        }
+
+        /* ===== شاشة الإعدادات ===== */
+        #settingsScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 9997;
+            background: #020617;
+            overflow-y: auto;
+        }
+
+        #settingsScreen.hidden { display: none !important; }
+
+        .settings-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid #1e293b;
+            position: sticky;
+            top: 0;
+            background: #020617;
+            z-index: 1;
+        }
+
+        .settings-back-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 0.6rem;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            color: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .settings-back-btn:hover {
+            color: #10b981;
+            border-color: #10b981;
+        }
+
+        .settings-header h2 {
+            font-size: 1.05rem;
+            font-weight: 800;
+            margin: 0;
+        }
+
+        .settings-body {
+            padding: 1.25rem;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+
+        .settings-section-title {
+            font-size: 0.75rem;
+            font-weight: 800;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 0 0 0.75rem;
+        }
+
+        .settings-option {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #1e293b;
+            border-radius: 0.75rem;
+            padding: 0.9rem 1rem;
+            margin-bottom: 0.6rem;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .settings-option:has(input:checked) {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .settings-option input[type="radio"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #10b981;
+            flex-shrink: 0;
+        }
+
+        .settings-option span {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .settings-option small {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: #64748b;
+            margin-top: 2px;
+        }
+
+        .vlc-notice {
+            background: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 0.75rem;
+            padding: 1rem;
+            margin-top: 0.75rem;
+            text-align: center;
+        }
+
+        .vlc-notice.hidden { display: none !important; }
+
+        .vlc-notice p {
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            font-weight: 600;
+            margin: 0 0 0.75rem;
+            line-height: 1.6;
+        }
+
+        .install-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: 0.6rem;
+            padding: 0.6rem 1.25rem;
+            font-size: 0.8rem;
+            font-weight: 800;
+            font-family: 'Tajawal', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .install-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+        }
+
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -524,11 +701,56 @@
         <p style="color:#10b981;font-size:0.75rem;font-weight:900;letter-spacing:2px;filter:drop-shadow(0 0 8px rgba(16,185,129,0.6));">تطوير أُسامه · v2.7</p>
     </div>
 
+    <div id="settingsScreen" class="hidden">
+        <div class="settings-header">
+            <button type="button" class="settings-back-btn" onclick="closeSettings()" title="رجوع">
+                <i class="fa-solid fa-arrow-right"></i>
+            </button>
+            <h2>الإعدادات</h2>
+        </div>
+
+        <div class="settings-body">
+            <p class="settings-section-title">نوع المشغل</p>
+
+            <label class="settings-option">
+                <input type="radio" name="playerType" value="default" onchange="setPlayerType('default')">
+                <span>
+                    المشغل الافتراضي للتطبيق
+                    <small>تشغيل القنوات داخل التطبيق مباشرة</small>
+                </span>
+            </label>
+
+            <label class="settings-option">
+                <input type="radio" name="playerType" value="vlc" onchange="setPlayerType('vlc')">
+                <span>
+                    مشغل خارجي (VLC)
+                    <small>فتح القنوات بتطبيق VLC خارج التطبيق</small>
+                </span>
+            </label>
+
+            <div id="vlcInstallNotice" class="vlc-notice hidden">
+                <p>يجب تثبيت تطبيق VLC على جهازك لاستخدام هذا الخيار</p>
+                <button type="button" class="install-btn" onclick="installVLC()">
+                    <i class="fa-solid fa-download"></i> تثبيت
+                </button>
+            </div>
+        </div>
+    </div>
+
     <aside class="aside-container w-full lg:w-80 xl:w-96 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
         <div class="p-4 border-b border-slate-900 hidden lg:block text-center">
     <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
     <p class="text-[10px] text-emerald-400 font-black uppercase tracking-widest mt-1" style="filter:drop-shadow(0 0 5px rgba(16,185,129,0.4));">تطوير أُسامه - v2.7</p>
 </div>
+
+        <div class="p-3 pb-0 shrink-0">
+            <div class="top-bar">
+                <span class="top-bar-title">يلا گـــول</span>
+                <button type="button" class="settings-gear-btn" onclick="openSettings()" title="الإعدادات">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
 
         <div class="p-3 shrink-0">
             <div class="relative">
@@ -594,6 +816,48 @@
                 btn.innerText = '👁';
             }
         }
+
+        // ============================================================
+        //  ⚙️ الإعدادات: نوع المشغل (افتراضي داخل التطبيق / خارجي VLC)
+        // ============================================================
+        const PLAYER_TYPE_KEY = 'yalla_player_type';
+
+        function getPlayerType() {
+            return localStorage.getItem(PLAYER_TYPE_KEY) || 'default';
+        }
+
+        function setPlayerType(type) {
+            localStorage.setItem(PLAYER_TYPE_KEY, type);
+            updateVlcNotice();
+        }
+
+        function updateVlcNotice() {
+            const notice = document.getElementById('vlcInstallNotice');
+            if (!notice) return;
+            notice.classList.toggle('hidden', getPlayerType() !== 'vlc');
+        }
+
+        function openSettings() {
+            const type = getPlayerType();
+            document.querySelectorAll('input[name="playerType"]').forEach(r => {
+                r.checked = (r.value === type);
+            });
+            updateVlcNotice();
+            document.getElementById('settingsScreen').classList.remove('hidden');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsScreen').classList.add('hidden');
+        }
+
+        function installVLC() {
+            if (window.AndroidPlayer && typeof window.AndroidPlayer.openPlayStore === 'function') {
+                window.AndroidPlayer.openPlayStore('org.videolan.vlc');
+            } else {
+                window.open('https://play.google.com/store/apps/details?id=org.videolan.vlc', '_blank');
+            }
+        }
+        // ============================================================
 
         const SECRET_CODE = "ossamatt22";
         const STORAGE_KEY = "yalla_authenticated";
@@ -1503,6 +1767,14 @@
                 }, 2000);
 
             } else {
+                // 🎬 تشغيل خارجي: فقط لو المستخدم اختار "مشغل خارجي (VLC)" من الإعدادات.
+                // قنوات الـ iframe (النوع 'i' بالأعلى) لا تتأثر بهذا إطلاقاً وتبقى تعمل كما هي.
+                if (getPlayerType() === 'vlc' && window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                    window.AndroidPlayer.playExternal(finalUrl, name || 'يلا گول');
+                    return;
+                }
+
                 const root = document.getElementById('dynamic-player-root');
                 const video = document.createElement('video');
                 video.id = "vPlayer";
