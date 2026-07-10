@@ -399,6 +399,84 @@
             box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
         }
 
+        /* ===== نافذة اختر السيرفر ===== */
+        .server-chooser-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9996;
+            background: rgba(2, 6, 23, 0.75);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+
+        .server-chooser-overlay.hidden { display: none !important; }
+
+        .server-chooser-card {
+            background: rgba(15, 23, 42, 0.97);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 1.1rem;
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 340px;
+            box-shadow: 0 0 60px rgba(16, 185, 129, 0.1);
+            animation: fadeInCard 0.25s ease;
+        }
+
+        .server-chooser-card h3 {
+            font-size: 1rem;
+            font-weight: 800;
+            text-align: center;
+            margin: 0 0 1rem;
+            color: #f1f5f9;
+        }
+
+        .server-chooser-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 45vh;
+            overflow-y: auto;
+        }
+
+        .server-chooser-item {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            border-radius: 0.65rem;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            font-family: 'Tajawal', sans-serif;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.2s;
+        }
+
+        .server-chooser-item:hover,
+        .server-chooser-item:active {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+        }
+
+        .server-chooser-cancel {
+            width: 100%;
+            margin-top: 1rem;
+            background: transparent;
+            border: none;
+            color: #64748b;
+            font-size: 0.78rem;
+            font-weight: 700;
+            font-family: 'Tajawal', sans-serif;
+            padding: 0.5rem;
+            cursor: pointer;
+        }
+
+        .server-chooser-cancel:hover { color: #94a3b8; }
+
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -734,6 +812,14 @@
                     <i class="fa-solid fa-download"></i> تثبيت
                 </button>
             </div>
+        </div>
+    </div>
+
+    <div id="serverChooserModal" class="server-chooser-overlay hidden" onclick="if(event.target===this) closeServerChooser()">
+        <div class="server-chooser-card">
+            <h3>اختر السيرفر</h3>
+            <div id="serverChooserList" class="server-chooser-list"></div>
+            <button type="button" class="server-chooser-cancel" onclick="closeServerChooser()">إلغاء</button>
         </div>
     </div>
 
@@ -1605,8 +1691,46 @@
         function openChannel(channelIndex, el) {
             const ch = myChannels[channelIndex];
             if (!ch || !Array.isArray(ch.servers) || ch.servers.length === 0) return;
+
+            if (ch.servers.length > 1) {
+                showServerChooser(ch, el);
+                return;
+            }
+
             playChannel(ch.servers[0].url, ch.servers[0].type, ch.name, el, false, false, null,
                 { channel: ch, serverIndex: 0 });
+        }
+
+        let pendingServerChoice = null;
+
+        function showServerChooser(ch, el) {
+            pendingServerChoice = { channel: ch, el };
+            const list = document.getElementById('serverChooserList');
+            list.innerHTML = '';
+            ch.servers.forEach((srv, idx) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'server-chooser-item';
+                btn.textContent = srv.name;
+                btn.onclick = () => chooseServer(idx);
+                list.appendChild(btn);
+            });
+            document.getElementById('serverChooserModal').classList.remove('hidden');
+        }
+
+        function chooseServer(serverIndex) {
+            if (!pendingServerChoice) return;
+            const { channel, el } = pendingServerChoice;
+            const srv = channel.servers[serverIndex];
+            closeServerChooser();
+            if (!srv) return;
+            playChannel(srv.url, srv.type, channel.name, el, false, false, null,
+                { channel, serverIndex });
+        }
+
+        function closeServerChooser() {
+            document.getElementById('serverChooserModal').classList.add('hidden');
+            pendingServerChoice = null;
         }
 
         function switchServer(serverIndex) {
