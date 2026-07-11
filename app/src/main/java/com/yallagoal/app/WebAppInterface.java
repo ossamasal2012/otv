@@ -37,7 +37,7 @@ public class WebAppInterface {
             if (packageName != null && !packageName.isEmpty()) {
                 Intent targetedIntent = new Intent(Intent.ACTION_VIEW);
                 targetedIntent.setPackage(packageName);
-                targetedIntent.setDataAndType(uri, "video/*");
+                targetedIntent.setData(uri);
                 if (title != null && !title.isEmpty()) {
                     targetedIntent.putExtra("title", title);
                 }
@@ -45,12 +45,12 @@ public class WebAppInterface {
                     context.startActivity(targetedIntent);
                     return;
                 } catch (ActivityNotFoundException ignored) {
-                    // التطبيق المختار غير مثبت، ننتقل لقائمة اختيار عامة
+                    // التطبيق المختار غير مثبت أو لا يدعم هذا الرابط، ننتقل لقائمة اختيار عامة
                 }
             }
 
             Intent genericIntent = new Intent(Intent.ACTION_VIEW);
-            genericIntent.setDataAndType(uri, "video/*");
+            genericIntent.setData(uri);
             if (title != null && !title.isEmpty()) {
                 genericIntent.putExtra("title", title);
             }
