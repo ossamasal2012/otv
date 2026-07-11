@@ -403,13 +403,13 @@
         .server-chooser-overlay {
             position: fixed;
             inset: 0;
-            z-index: 9996;
+            z-index: 9999;
             background: rgba(2, 6, 23, 0.75);
             backdrop-filter: blur(4px);
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 1.5rem;
+            padding: 1.25rem;
         }
 
         .server-chooser-overlay.hidden { display: none !important; }
@@ -417,36 +417,36 @@
         .server-chooser-card {
             background: rgba(15, 23, 42, 0.97);
             border: 1px solid rgba(16, 185, 129, 0.3);
-            border-radius: 1.1rem;
-            padding: 1.5rem;
+            border-radius: 0.9rem;
+            padding: 1rem;
             width: 100%;
-            max-width: 340px;
-            box-shadow: 0 0 60px rgba(16, 185, 129, 0.1);
+            max-width: 260px;
+            box-shadow: 0 0 40px rgba(16, 185, 129, 0.1);
             animation: fadeInCard 0.25s ease;
         }
 
         .server-chooser-card h3 {
-            font-size: 1rem;
+            font-size: 0.85rem;
             font-weight: 800;
             text-align: center;
-            margin: 0 0 1rem;
+            margin: 0 0 0.75rem;
             color: #f1f5f9;
         }
 
         .server-chooser-list {
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
-            max-height: 45vh;
+            gap: 0.4rem;
+            max-height: 40vh;
             overflow-y: auto;
         }
 
         .server-chooser-item {
             background: rgba(30, 41, 59, 0.8);
             border: 1px solid #1e293b;
-            border-radius: 0.65rem;
-            padding: 0.75rem 1rem;
-            font-size: 0.85rem;
+            border-radius: 0.55rem;
+            padding: 0.55rem 0.75rem;
+            font-size: 0.76rem;
             font-weight: 700;
             color: #f1f5f9;
             font-family: 'Tajawal', sans-serif;
@@ -464,14 +464,14 @@
 
         .server-chooser-cancel {
             width: 100%;
-            margin-top: 1rem;
+            margin-top: 0.6rem;
             background: transparent;
             border: none;
             color: #64748b;
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             font-weight: 700;
             font-family: 'Tajawal', sans-serif;
-            padding: 0.5rem;
+            padding: 0.4rem;
             cursor: pointer;
         }
 
