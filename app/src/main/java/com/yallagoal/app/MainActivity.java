@@ -122,7 +122,16 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        webView.addJavascriptInterface(new WebAppInterface(this), "AndroidPlayer");
+        CastManager castManager;
+        try {
+            castManager = new CastManager(this);
+        } catch (Exception e) {
+            // البث للتلفاز غير متاح على هذا الجهاز (مثلاً بدون خدمات جوجل بلاي)؛
+            // نكمل تشغيل التطبيق عادي بدون هذه الميزة فقط.
+            castManager = null;
+        }
+
+        webView.addJavascriptInterface(new WebAppInterface(this, castManager), "AndroidPlayer");
 
         webView.loadUrl(LOCAL_URL);
 
