@@ -477,6 +477,35 @@
 
         .server-chooser-cancel:hover { color: #94a3b8; }
 
+        .server-chooser-row {
+            display: flex;
+            align-items: stretch;
+            gap: 0.4rem;
+        }
+
+        .server-chooser-row .server-chooser-item {
+            flex: 1;
+        }
+
+        .cast-btn {
+            flex-shrink: 0;
+            width: 38px;
+            border-radius: 0.55rem;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cast-btn:hover,
+        .cast-btn:active {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+            color: #10b981;
+        }
+
         /* ===== قائمة تطبيقات المشغل الخارجي بالإعدادات ===== */
         .player-app-row {
             display: flex;
@@ -1006,7 +1035,7 @@
 
         // ============================================================
         //  ⚙️ الإعدادات: نوع المشغل (افتراضي داخل التطبيق / خارجي)
-        //  + اختيار تطبيق المشغل الخارجي (VLC / Url Player+)
+        //  + اختيار تطبيق المشغل الخارجي (VLC)
         //  + إعداد مستقل لكل مجلد (القرآن الكريم / قصائد حسينية)
         // ============================================================
         const PLAYER_TYPE_KEY = 'yalla_player_type';
@@ -1014,7 +1043,6 @@
 
         const EXTERNAL_PLAYERS = [
             { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
-            { id: 'urlplayer', name: 'Url Player +', pkg: 'com.next.vp' },
         ];
 
         const FOLDERS = [
@@ -1942,14 +1970,53 @@
             const list = document.getElementById('serverChooserList');
             list.innerHTML = '';
             ch.servers.forEach((srv, idx) => {
+                const row = document.createElement('div');
+                row.className = 'server-chooser-row';
+
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'server-chooser-item';
                 btn.textContent = srv.name;
                 btn.onclick = () => chooseServer(idx);
-                list.appendChild(btn);
+
+                const castBtn = document.createElement('button');
+                castBtn.type = 'button';
+                castBtn.className = 'cast-btn';
+                castBtn.title = 'بث إلى التلفاز';
+                castBtn.innerHTML = '<i class="fa-solid fa-tv"></i>';
+                castBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    castServerToTv(srv, ch.name);
+                };
+
+                row.appendChild(btn);
+                row.appendChild(castBtn);
+                list.appendChild(row);
             });
             document.getElementById('serverChooserModal').classList.remove('hidden');
+        }
+
+        // يحسب الرابط القابل للتشغيل الفعلي (عبر البروكسي لو لزم) لنفس الرابط المستخدم
+        // بالتشغيل الداخلي/الخارجي، حتى يبث نفس الرابط الصحيح تماماً للتلفاز.
+        function resolveExternalPlayableUrl(url, type) {
+            if (typeof CORS_PROXY_BASE !== 'undefined' && CORS_PROXY_BASE && type === 'v') {
+                const proxied = buildProxiedUrl(url);
+                if (proxied) return proxied;
+            }
+            return url;
+        }
+
+        function castServerToTv(srv, channelName) {
+            if (!srv || srv.type === 'i') {
+                alert('البث للتلفاز غير مدعوم لهذا النوع من القنوات');
+                return;
+            }
+            const castUrl = resolveExternalPlayableUrl(srv.url, srv.type);
+            if (window.AndroidPlayer && typeof window.AndroidPlayer.castToTv === 'function') {
+                window.AndroidPlayer.castToTv(castUrl, channelName || 'يلا گول');
+            } else {
+                alert('البث إلى التلفاز متاح فقط داخل تطبيق يلا گول على الجوال');
+            }
         }
 
         function chooseServer(serverIndex) {
