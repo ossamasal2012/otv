@@ -11,6 +11,7 @@ import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.provider.Settings;
 import android.view.KeyEvent;
 import android.widget.Toast;
 
@@ -30,7 +31,7 @@ public class UpdateManager {
     // ⚠️ مهم جداً: غيّر السطر التالي إلى "اسم_المستخدم/اسم_المستودع" الخاص بك بالضبط
     // مثال: إذا رابط مستودعك هو github.com/ossamasal2012/yalla-goal-app
     // فالقيمة الصحيحة هي "ossamasal2012/yalla-goal-app"
-    private static final String GITHUB_REPO = "ossamasal2012/otv";
+    private static final String GITHUB_REPO = "ossamasal2012/YOUR_REPO_NAME";
 
     private static final String VERSION_URL =
             "https://github.com/" + GITHUB_REPO + "/releases/latest/download/version.json";
@@ -152,6 +153,26 @@ public class UpdateManager {
     private void installApk() {
         File file = new File(activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk");
         if (!file.exists()) return;
+
+        // بعض الأجهزة تمنع التثبيت بصمت لو صلاحية "تثبيت تطبيقات غير معروفة" غير مفعّلة
+        // لتطبيقنا تحديداً. بدل ما يفشل التحديث بدون أي رسالة، نتحقق أولاً ونوجّه المستخدم
+        // مباشرة لشاشة الإعدادات الصحيحة لتفعيلها.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && !activity.getPackageManager().canRequestPackageInstalls()) {
+            Toast.makeText(activity,
+                    "يرجى تفعيل \"السماح من هذا المصدر\" لإكمال التحديث، ثم اضغط تحديث الآن مرة أخرى",
+                    Toast.LENGTH_LONG).show();
+            Intent settingsIntent = new Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + activity.getPackageName()));
+            settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                activity.startActivity(settingsIntent);
+            } catch (Exception ignored) {
+                // بعض الأجهزة القديمة جداً لا تدعم هذه الشاشة تحديداً
+            }
+            return;
+        }
 
         Uri apkUri = FileProvider.getUriForFile(
                 activity, activity.getPackageName() + ".fileprovider", file);
