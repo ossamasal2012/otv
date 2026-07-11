@@ -12,14 +12,16 @@ import android.widget.Toast;
 public class WebAppInterface {
 
     private final Context context;
+    private final CastManager castManager;
 
-    public WebAppInterface(Context context) {
+    public WebAppInterface(Context context, CastManager castManager) {
         this.context = context;
+        this.castManager = castManager;
     }
 
     /**
      * تستدعى من JavaScript داخل الصفحة (window.AndroidPlayer.playExternal(url, title, packageName))
-     * لتشغيل رابط بث مباشر بمشغل فيديو خارجي محدد (VLC أو Url Player+ ...) بدل تشغيله داخل الصفحة.
+     * لتشغيل رابط بث مباشر بمشغل فيديو خارجي محدد (VLC) بدل تشغيله داخل الصفحة.
      * packageName هو حزمة التطبيق المختار من الإعدادات؛ لو فارغ أو غير مثبت، يعرض قائمة اختيار عامة.
      *
      * مهم: لا نضيف Intent.FLAG_ACTIVITY_NEW_TASK هنا عمداً، حتى يبقى المشغل الخارجي
@@ -59,14 +61,14 @@ public class WebAppInterface {
                 context.startActivity(Intent.createChooser(genericIntent, "افتح باستخدام"));
             } catch (ActivityNotFoundException e) {
                 Toast.makeText(context,
-                        "لا يوجد مشغل فيديو مثبت على جهازك. ثبّت VLC أو Url Player+ من الإعدادات.",
+                        "لا يوجد مشغل فيديو مثبت على جهازك. ثبّت VLC من الإعدادات.",
                         Toast.LENGTH_LONG).show();
             }
         });
     }
 
     /**
-     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (VLC أو Url Player+...) مثبت على الجهاز،
+     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (VLC) مثبت على الجهاز،
      * لإظهار زر "تثبيت" فقط عند الحاجة.
      */
     @JavascriptInterface
@@ -100,6 +102,24 @@ public class WebAppInterface {
                     Toast.makeText(context, "تعذر فتح متجر التطبيقات.", Toast.LENGTH_LONG).show();
                 }
             }
+        });
+    }
+
+    /**
+     * تستدعى من زر "بث إلى التلفاز" بجانب كل سيرفر — تفتح قائمة أجهزة العرض المتوفرة
+     * على نفس الشبكة (Android TV، Chromecast، تلفزيونات LG المعتمدة من گوگل...) وتبدأ
+     * تشغيل الرابط عليها مباشرة بعد الاتصال.
+     */
+    @JavascriptInterface
+    public void castToTv(String url, String title) {
+        if (!(context instanceof Activity)) return;
+        Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            if (castManager == null) {
+                Toast.makeText(context, "البث للتلفاز غير مدعوم على هذا الجهاز", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            castManager.castToTv(url, title);
         });
     }
 }
