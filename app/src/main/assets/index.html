@@ -1043,6 +1043,7 @@
 
         const EXTERNAL_PLAYERS = [
             { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
+            { id: 'any', name: 'أي مشغل خارجي آخر', pkg: '' },
         ];
 
         const FOLDERS = [
@@ -1088,9 +1089,12 @@
             container.innerHTML = '';
 
             EXTERNAL_PLAYERS.forEach(p => {
-                const installed = (window.AndroidPlayer && typeof window.AndroidPlayer.isPackageInstalled === 'function')
-                    ? window.AndroidPlayer.isPackageInstalled(p.pkg)
-                    : true;
+                const hasSpecificPackage = !!p.pkg;
+                const installed = hasSpecificPackage
+                    ? ((window.AndroidPlayer && typeof window.AndroidPlayer.isPackageInstalled === 'function')
+                        ? window.AndroidPlayer.isPackageInstalled(p.pkg)
+                        : true)
+                    : true; // خيار "أي مشغل آخر" ليس له حزمة محددة يتحقق منها
 
                 const row = document.createElement('div');
                 row.className = 'player-app-row' + (current === p.id ? ' active' : '');
@@ -1109,7 +1113,12 @@
                 label.appendChild(span);
                 row.appendChild(label);
 
-                if (installed) {
+                if (!hasSpecificPackage) {
+                    const badge = document.createElement('span');
+                    badge.className = 'installed-badge';
+                    badge.innerHTML = '<i class="fa-solid fa-list"></i> يعرض قائمة اختيار';
+                    row.appendChild(badge);
+                } else if (installed) {
                     const badge = document.createElement('span');
                     badge.className = 'installed-badge';
                     badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> مثبت';
