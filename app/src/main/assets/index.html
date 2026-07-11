@@ -477,6 +477,95 @@
 
         .server-chooser-cancel:hover { color: #94a3b8; }
 
+        /* ===== قائمة تطبيقات المشغل الخارجي بالإعدادات ===== */
+        .player-app-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #1e293b;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .player-app-row.active {
+            border-color: #10b981;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+        }
+
+        .player-app-label {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .player-app-label input[type="radio"] {
+            width: 17px;
+            height: 17px;
+            accent-color: #10b981;
+        }
+
+        .player-app-label span {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .install-btn-sm {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.7rem;
+            gap: 0.35rem;
+        }
+
+        .installed-badge {
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: #10b981;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            white-space: nowrap;
+        }
+
+        /* ===== قائمة المجلدات بالإعدادات ===== */
+        .folder-settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #1e293b;
+            border-radius: 0.75rem;
+            padding: 0.85rem 1rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .folder-settings-row:hover { border-color: #334155; }
+
+        .folder-settings-name {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+
+        .folder-settings-name i { color: #10b981; }
+
+        .folder-settings-value {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #64748b;
+        }
+
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -799,19 +888,31 @@
             </label>
 
             <label class="settings-option">
-                <input type="radio" name="playerType" value="vlc" onchange="setPlayerType('vlc')">
+                <input type="radio" name="playerType" value="external" onchange="setPlayerType('external')">
                 <span>
-                    مشغل خارجي (VLC)
-                    <small>فتح القنوات بتطبيق VLC خارج التطبيق</small>
+                    مشغل خارجي
+                    <small>فتح القنوات بتطبيق مشغل فيديو خارج التطبيق</small>
                 </span>
             </label>
 
-            <div id="vlcInstallNotice" class="vlc-notice hidden">
-                <p>يجب تثبيت تطبيق VLC على جهازك لاستخدام هذا الخيار</p>
-                <button type="button" class="install-btn" onclick="installVLC()">
-                    <i class="fa-solid fa-download"></i> تثبيت
-                </button>
+            <div id="externalPlayerChoice" class="hidden">
+                <p class="settings-section-title" style="margin-top:1.25rem;">اختر المشغل الخارجي</p>
+                <div id="externalPlayerList"></div>
             </div>
+
+            <p class="settings-section-title" style="margin-top:1.75rem;">المجلدات</p>
+            <div id="folderSettingsList"></div>
+        </div>
+    </div>
+
+    <div id="folderPlayerModal" class="server-chooser-overlay hidden" onclick="if(event.target===this) closeFolderPlayerModal()">
+        <div class="server-chooser-card">
+            <h3 id="folderPlayerModalTitle">نوع المشغل</h3>
+            <div class="server-chooser-list">
+                <button type="button" class="server-chooser-item" onclick="setFolderPlayerType('default')">مشغل داخلي</button>
+                <button type="button" class="server-chooser-item" onclick="setFolderPlayerType('external')">مشغل خارجي</button>
+            </div>
+            <button type="button" class="server-chooser-cancel" onclick="closeFolderPlayerModal()">إلغاء</button>
         </div>
     </div>
 
@@ -904,23 +1005,162 @@
         }
 
         // ============================================================
-        //  ⚙️ الإعدادات: نوع المشغل (افتراضي داخل التطبيق / خارجي VLC)
+        //  ⚙️ الإعدادات: نوع المشغل (افتراضي داخل التطبيق / خارجي)
+        //  + اختيار تطبيق المشغل الخارجي (VLC / Url Player+)
+        //  + إعداد مستقل لكل مجلد (القرآن الكريم / قصائد حسينية)
         // ============================================================
         const PLAYER_TYPE_KEY = 'yalla_player_type';
+        const EXTERNAL_PLAYER_APP_KEY = 'yalla_external_player_app';
+
+        const EXTERNAL_PLAYERS = [
+            { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
+            { id: 'urlplayer', name: 'Url Player +', pkg: 'com.next.vp' },
+        ];
+
+        const FOLDERS = [
+            { id: 'quran', name: 'القرآن الكريم' },
+            { id: 'poems', name: 'قصائد حسينية' },
+        ];
 
         function getPlayerType() {
-            return localStorage.getItem(PLAYER_TYPE_KEY) || 'default';
+            const v = localStorage.getItem(PLAYER_TYPE_KEY);
+            if (v === 'vlc') return 'external'; // توافق مع إصدار سابق كان يخزن 'vlc' مباشرة
+            return v || 'default';
         }
 
         function setPlayerType(type) {
             localStorage.setItem(PLAYER_TYPE_KEY, type);
-            updateVlcNotice();
+            updateExternalPlayerSectionVisibility();
         }
 
-        function updateVlcNotice() {
-            const notice = document.getElementById('vlcInstallNotice');
-            if (!notice) return;
-            notice.classList.toggle('hidden', getPlayerType() !== 'vlc');
+        function getExternalPlayerApp() {
+            return localStorage.getItem(EXTERNAL_PLAYER_APP_KEY) || 'vlc';
+        }
+
+        function setExternalPlayerApp(id) {
+            localStorage.setItem(EXTERNAL_PLAYER_APP_KEY, id);
+            renderExternalPlayerList();
+        }
+
+        function getExternalPlayerPackage() {
+            const app = EXTERNAL_PLAYERS.find(p => p.id === getExternalPlayerApp());
+            return app ? app.pkg : '';
+        }
+
+        function updateExternalPlayerSectionVisibility() {
+            const section = document.getElementById('externalPlayerChoice');
+            if (!section) return;
+            section.classList.toggle('hidden', getPlayerType() !== 'external');
+        }
+
+        function renderExternalPlayerList() {
+            const container = document.getElementById('externalPlayerList');
+            if (!container) return;
+            const current = getExternalPlayerApp();
+            container.innerHTML = '';
+
+            EXTERNAL_PLAYERS.forEach(p => {
+                const installed = (window.AndroidPlayer && typeof window.AndroidPlayer.isPackageInstalled === 'function')
+                    ? window.AndroidPlayer.isPackageInstalled(p.pkg)
+                    : true;
+
+                const row = document.createElement('div');
+                row.className = 'player-app-row' + (current === p.id ? ' active' : '');
+
+                const label = document.createElement('label');
+                label.className = 'player-app-label';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'externalPlayerApp';
+                radio.value = p.id;
+                radio.checked = current === p.id;
+                radio.onchange = () => setExternalPlayerApp(p.id);
+                const span = document.createElement('span');
+                span.textContent = p.name;
+                label.appendChild(radio);
+                label.appendChild(span);
+                row.appendChild(label);
+
+                if (installed) {
+                    const badge = document.createElement('span');
+                    badge.className = 'installed-badge';
+                    badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> مثبت';
+                    row.appendChild(badge);
+                } else {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'install-btn install-btn-sm';
+                    btn.innerHTML = '<i class="fa-solid fa-download"></i> تثبيت';
+                    btn.onclick = (e) => { e.stopPropagation(); installPlayerApp(p.pkg); };
+                    row.appendChild(btn);
+                }
+
+                container.appendChild(row);
+            });
+        }
+
+        function installPlayerApp(packageName) {
+            if (window.AndroidPlayer && typeof window.AndroidPlayer.openPlayStore === 'function') {
+                window.AndroidPlayer.openPlayStore(packageName);
+            } else {
+                window.open('https://play.google.com/store/apps/details?id=' + packageName, '_blank');
+            }
+        }
+
+        // ---- إعداد المجلدات (كل مجلد له إعداد مستقل خاص فيه) ----
+        function getFolderPlayerType(folderId) {
+            return localStorage.getItem('yalla_folder_player_' + folderId) || 'default';
+        }
+
+        function renderFolderSettingsList() {
+            const container = document.getElementById('folderSettingsList');
+            if (!container) return;
+            container.innerHTML = '';
+
+            FOLDERS.forEach(f => {
+                const type = getFolderPlayerType(f.id);
+                const row = document.createElement('div');
+                row.className = 'folder-settings-row';
+                row.onclick = () => openFolderPlayerModal(f.id, f.name);
+                row.innerHTML = `
+                    <div class="folder-settings-name">
+                        <i class="fa-solid fa-folder"></i>
+                        <span>${f.name}</span>
+                    </div>
+                    <div class="folder-settings-value">
+                        <span>${type === 'external' ? 'مشغل خارجي' : 'مشغل داخلي'}</span>
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </div>`;
+                container.appendChild(row);
+            });
+        }
+
+        let pendingFolderId = null;
+
+        function openFolderPlayerModal(folderId, folderName) {
+            pendingFolderId = folderId;
+            document.getElementById('folderPlayerModalTitle').textContent = folderName;
+            document.getElementById('folderPlayerModal').classList.remove('hidden');
+        }
+
+        function setFolderPlayerType(type) {
+            if (!pendingFolderId) return;
+            localStorage.setItem('yalla_folder_player_' + pendingFolderId, type);
+            closeFolderPlayerModal();
+            renderFolderSettingsList();
+        }
+
+        function closeFolderPlayerModal() {
+            document.getElementById('folderPlayerModal').classList.add('hidden');
+            pendingFolderId = null;
+        }
+
+        // تحدد هل نشغّل بمشغل خارجي أم لا للقناة الحالية، مع مراعاة إعداد المجلد الخاص لو موجود
+        function shouldUseExternalPlayer() {
+            if (currentTab === 'quran' || currentTab === 'poems') {
+                return getFolderPlayerType(currentTab) === 'external';
+            }
+            return getPlayerType() === 'external';
         }
 
         function openSettings() {
@@ -928,20 +1168,14 @@
             document.querySelectorAll('input[name="playerType"]').forEach(r => {
                 r.checked = (r.value === type);
             });
-            updateVlcNotice();
+            updateExternalPlayerSectionVisibility();
+            renderExternalPlayerList();
+            renderFolderSettingsList();
             document.getElementById('settingsScreen').classList.remove('hidden');
         }
 
         function closeSettings() {
             document.getElementById('settingsScreen').classList.add('hidden');
-        }
-
-        function installVLC() {
-            if (window.AndroidPlayer && typeof window.AndroidPlayer.openPlayStore === 'function') {
-                window.AndroidPlayer.openPlayStore('org.videolan.vlc');
-            } else {
-                window.open('https://play.google.com/store/apps/details?id=org.videolan.vlc', '_blank');
-            }
         }
         // ============================================================
 
@@ -1891,11 +2125,11 @@
                 }, 2000);
 
             } else {
-                // 🎬 تشغيل خارجي: فقط لو المستخدم اختار "مشغل خارجي (VLC)" من الإعدادات.
+                // 🎬 تشغيل خارجي: حسب إعداد المجلد الحالي إن وجد، وإلا الإعداد العام من الإعدادات.
                 // قنوات الـ iframe (النوع 'i' بالأعلى) لا تتأثر بهذا إطلاقاً وتبقى تعمل كما هي.
-                if (getPlayerType() === 'vlc' && window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
+                if (shouldUseExternalPlayer() && window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
                     document.getElementById('placeholderScreen').classList.add('hidden');
-                    window.AndroidPlayer.playExternal(finalUrl, name || 'يلا گول');
+                    window.AndroidPlayer.playExternal(finalUrl, name || 'يلا گول', getExternalPlayerPackage());
                     return;
                 }
 
