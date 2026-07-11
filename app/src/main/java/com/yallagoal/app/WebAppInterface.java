@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.webkit.JavascriptInterface;
 import android.widget.Toast;
@@ -17,38 +18,37 @@ public class WebAppInterface {
     }
 
     /**
-     * تستدعى من JavaScript داخل الصفحة (window.AndroidPlayer.playExternal(url, title))
-     * لتشغيل رابط بث مباشر بمشغل فيديو خارجي بدل تشغيله داخل الصفحة.
+     * تستدعى من JavaScript داخل الصفحة (window.AndroidPlayer.playExternal(url, title, packageName))
+     * لتشغيل رابط بث مباشر بمشغل فيديو خارجي محدد (VLC أو Url Player+ ...) بدل تشغيله داخل الصفحة.
+     * packageName هو حزمة التطبيق المختار من الإعدادات؛ لو فارغ أو غير مثبت، يعرض قائمة اختيار عامة.
      *
      * مهم: لا نضيف Intent.FLAG_ACTIVITY_NEW_TASK هنا عمداً، حتى يبقى المشغل الخارجي
      * على نفس مكدس المهام (task) الخاص بتطبيقنا — هذا يخلي زر الرجوع بالمشغل
      * الخارجي يرجع مباشرة لتطبيق يلا گول تلقائياً، بدون أي كود إضافي.
      */
     @JavascriptInterface
-    public void playExternal(String url, String title) {
+    public void playExternal(String url, String title, String packageName) {
         if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
 
         Activity activity = (Activity) context;
         activity.runOnUiThread(() -> {
             Uri uri = Uri.parse(url);
 
-            // نفضّل VLC لأنه من أقوى المشغلات بالتعامل مع بث HLS/الشبكة، ويتجاوز مشاكل
-            // الترميز والهيدرز والبث المباشر غير المستقر بسهولة أكبر من أغلب المشغلات الأخرى.
-            Intent vlcIntent = new Intent(Intent.ACTION_VIEW);
-            vlcIntent.setPackage("org.videolan.vlc");
-            vlcIntent.setDataAndType(uri, "video/*");
-            if (title != null && !title.isEmpty()) {
-                vlcIntent.putExtra("title", title);
+            if (packageName != null && !packageName.isEmpty()) {
+                Intent targetedIntent = new Intent(Intent.ACTION_VIEW);
+                targetedIntent.setPackage(packageName);
+                targetedIntent.setDataAndType(uri, "video/*");
+                if (title != null && !title.isEmpty()) {
+                    targetedIntent.putExtra("title", title);
+                }
+                try {
+                    context.startActivity(targetedIntent);
+                    return;
+                } catch (ActivityNotFoundException ignored) {
+                    // التطبيق المختار غير مثبت، ننتقل لقائمة اختيار عامة
+                }
             }
 
-            try {
-                context.startActivity(vlcIntent);
-                return;
-            } catch (ActivityNotFoundException ignored) {
-                // VLC غير مثبت، نكمل للخيار التالي
-            }
-
-            // إذا VLC غير موجود، نعرض على المستخدم أي مشغل فيديو آخر مثبت بجهازه
             Intent genericIntent = new Intent(Intent.ACTION_VIEW);
             genericIntent.setDataAndType(uri, "video/*");
             if (title != null && !title.isEmpty()) {
@@ -59,10 +59,25 @@ public class WebAppInterface {
                 context.startActivity(Intent.createChooser(genericIntent, "افتح باستخدام"));
             } catch (ActivityNotFoundException e) {
                 Toast.makeText(context,
-                        "لا يوجد مشغل فيديو مثبت على جهازك. ثبّت تطبيق VLC للحصول على أفضل تجربة تشغيل.",
+                        "لا يوجد مشغل فيديو مثبت على جهازك. ثبّت VLC أو Url Player+ من الإعدادات.",
                         Toast.LENGTH_LONG).show();
             }
         });
+    }
+
+    /**
+     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (VLC أو Url Player+...) مثبت على الجهاز،
+     * لإظهار زر "تثبيت" فقط عند الحاجة.
+     */
+    @JavascriptInterface
+    public boolean isPackageInstalled(String packageName) {
+        if (packageName == null || packageName.isEmpty()) return false;
+        try {
+            context.getPackageManager().getPackageInfo(packageName, 0);
+            return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
     }
 
     /**
