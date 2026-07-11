@@ -31,7 +31,7 @@ public class UpdateManager {
     // ⚠️ مهم جداً: غيّر السطر التالي إلى "اسم_المستخدم/اسم_المستودع" الخاص بك بالضبط
     // مثال: إذا رابط مستودعك هو github.com/ossamasal2012/yalla-goal-app
     // فالقيمة الصحيحة هي "ossamasal2012/yalla-goal-app"
-    private static final String GITHUB_REPO = "ossamasal2012/YOUR_REPO_NAME";
+    private static final String GITHUB_REPO = "ossamasal2012/otv";
 
     private static final String VERSION_URL =
             "https://github.com/" + GITHUB_REPO + "/releases/latest/download/version.json";
