@@ -13,14 +13,26 @@ public class WebAppInterface {
 
     private final Context context;
     private final CastManager castManager;
+    private final String bridgeToken;
 
-    public WebAppInterface(Context context, CastManager castManager) {
+    public WebAppInterface(Context context, CastManager castManager, String bridgeToken) {
         this.context = context;
         this.castManager = castManager;
+        this.bridgeToken = bridgeToken;
     }
 
     /**
-     * تستدعى من JavaScript داخل الصفحة (window.AndroidPlayer.playExternal(url, title, packageName))
+     * كل استدعاء من الصفحة لازم يمرر نفس الرمز اللي زرعناه بصفحتنا الموثوقة فقط بعد تحميلها
+     * (window.__YG_TOKEN__). أي محتوى iframe خارجي (قنوات من مواقع أخرى) لا يقدر يقرأ هذا
+     * المتغير من نافذة الصفحة الرئيسية بسبب قيود المتصفح بين النطاقات المختلفة، فحتى لو حاول
+     * ينادي دوال Android مباشرة، الاستدعاء يُرفض هنا بصمت.
+     */
+    private boolean isTokenValid(String token) {
+        return bridgeToken != null && bridgeToken.equals(token);
+    }
+
+    /**
+     * تستدعى من JavaScript داخل الصفحة (window.AndroidPlayer.playExternal(token, url, title, packageName))
      * لتشغيل رابط بث مباشر بمشغل فيديو خارجي محدد (VLC) بدل تشغيله داخل الصفحة.
      * packageName هو حزمة التطبيق المختار من الإعدادات؛ لو فارغ أو غير مثبت، يعرض قائمة اختيار عامة.
      *
@@ -29,7 +41,8 @@ public class WebAppInterface {
      * الخارجي يرجع مباشرة لتطبيق يلا گول تلقائياً، بدون أي كود إضافي.
      */
     @JavascriptInterface
-    public void playExternal(String url, String title, String packageName) {
+    public void playExternal(String token, String url, String title, String packageName) {
+        if (!isTokenValid(token)) return;
         if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
 
         Activity activity = (Activity) context;
@@ -72,7 +85,8 @@ public class WebAppInterface {
      * لإظهار زر "تثبيت" فقط عند الحاجة.
      */
     @JavascriptInterface
-    public boolean isPackageInstalled(String packageName) {
+    public boolean isPackageInstalled(String token, String packageName) {
+        if (!isTokenValid(token)) return false;
         if (packageName == null || packageName.isEmpty()) return false;
         try {
             context.getPackageManager().getPackageInfo(packageName, 0);
@@ -86,7 +100,8 @@ public class WebAppInterface {
      * تستدعى من زر "تثبيت" بشاشة الإعدادات لفتح صفحة تطبيق على متجر Google Play.
      */
     @JavascriptInterface
-    public void openPlayStore(String packageName) {
+    public void openPlayStore(String token, String packageName) {
+        if (!isTokenValid(token)) return;
         if (packageName == null || packageName.isEmpty() || !(context instanceof Activity)) return;
 
         Activity activity = (Activity) context;
@@ -111,7 +126,8 @@ public class WebAppInterface {
      * تشغيل الرابط عليها مباشرة بعد الاتصال.
      */
     @JavascriptInterface
-    public void castToTv(String url, String title) {
+    public void castToTv(String token, String url, String title) {
+        if (!isTokenValid(token)) return;
         if (!(context instanceof Activity)) return;
         Activity activity = (Activity) context;
         activity.runOnUiThread(() -> {
