@@ -1103,7 +1103,7 @@
                 const hasSpecificPackage = !!p.pkg;
                 const installed = hasSpecificPackage
                     ? ((window.AndroidPlayer && typeof window.AndroidPlayer.isPackageInstalled === 'function')
-                        ? window.AndroidPlayer.isPackageInstalled(p.pkg)
+                        ? window.AndroidPlayer.isPackageInstalled(window.__YG_TOKEN__, p.pkg)
                         : true)
                     : true; // خيار "أي مشغل آخر" ليس له حزمة محددة يتحقق منها
 
@@ -1149,7 +1149,7 @@
 
         function installPlayerApp(packageName) {
             if (window.AndroidPlayer && typeof window.AndroidPlayer.openPlayStore === 'function') {
-                window.AndroidPlayer.openPlayStore(packageName);
+                window.AndroidPlayer.openPlayStore(window.__YG_TOKEN__, packageName);
             } else {
                 window.open('https://play.google.com/store/apps/details?id=' + packageName, '_blank');
             }
@@ -2058,7 +2058,7 @@
             }
             const castUrl = resolveExternalPlayableUrl(srv.url, srv.type);
             if (window.AndroidPlayer && typeof window.AndroidPlayer.castToTv === 'function') {
-                window.AndroidPlayer.castToTv(castUrl, channelName || 'يلا گول');
+                window.AndroidPlayer.castToTv(window.__YG_TOKEN__, castUrl, channelName || 'يلا گول');
             } else {
                 alert('البث إلى التلفاز متاح فقط داخل تطبيق يلا گول على الجوال');
             }
@@ -2074,7 +2074,7 @@
             }
             const castUrl = resolveExternalPlayableUrl(srv.url, srv.type);
             if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
-                window.AndroidPlayer.playExternal(castUrl, channelName || 'يلا گول', 'com.instantbits.cast.webvideo');
+                window.AndroidPlayer.playExternal(window.__YG_TOKEN__, castUrl, channelName || 'يلا گول', 'com.instantbits.cast.webvideo');
             } else {
                 alert('هذه الميزة متاحة فقط داخل تطبيق يلا گول على الجوال');
             }
@@ -2257,7 +2257,7 @@
                 // قنوات الـ iframe (النوع 'i' بالأعلى) لا تتأثر بهذا إطلاقاً وتبقى تعمل كما هي.
                 if (shouldUseExternalPlayer() && window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
                     document.getElementById('placeholderScreen').classList.add('hidden');
-                    window.AndroidPlayer.playExternal(finalUrl, name || 'يلا گول', getExternalPlayerPackage());
+                    window.AndroidPlayer.playExternal(window.__YG_TOKEN__, finalUrl, name || 'يلا گول', getExternalPlayerPackage());
                     return;
                 }
 
