@@ -506,6 +506,17 @@
             color: #10b981;
         }
 
+        .cast-btn.cast-btn-web {
+            color: #f97316;
+        }
+
+        .cast-btn.cast-btn-web:hover,
+        .cast-btn.cast-btn-web:active {
+            border-color: #f97316;
+            background: rgba(249, 115, 22, 0.1);
+            color: #f97316;
+        }
+
         /* ===== قائمة تطبيقات المشغل الخارجي بالإعدادات ===== */
         .player-app-row {
             display: flex;
@@ -1460,6 +1471,11 @@
                         class="focus:outline-none p-1 shrink-0 text-slate-600 hover:text-emerald-400 transition-colors" title="بث إلى التلفاز">
                         <i class="fa-solid fa-tv text-[13px]"></i>
                       </button>` : '';
+                const singleServerWebCastBtn = ch.servers.length === 1
+                    ? `<button onclick="event.stopPropagation(); castViaWebCaster(myChannels[${idx}].servers[0], '${escAttr(ch.name)}')"
+                        class="focus:outline-none p-1 shrink-0 text-slate-600 hover:text-orange-500 transition-colors" title="بث عبر Web Caster">
+                        <i class="fa-solid fa-satellite-dish text-[13px]"></i>
+                      </button>` : '';
                 return `
                 <div onclick="openChannel(${idx}, this)"
                     class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
@@ -1470,6 +1486,7 @@
                     </div>
                     <div class="flex items-center gap-0.5 shrink-0">
                         ${singleServerCastBtn}
+                        ${singleServerWebCastBtn}
                         <button onclick="toggleFavorite(event, '${escAttr(ch.name)}')" class="focus:outline-none p-1">
                             <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
                         </button>
@@ -2006,8 +2023,19 @@
                     castServerToTv(srv, ch.name);
                 };
 
+                const webCastBtn = document.createElement('button');
+                webCastBtn.type = 'button';
+                webCastBtn.className = 'cast-btn cast-btn-web';
+                webCastBtn.title = 'بث عبر Web Caster';
+                webCastBtn.innerHTML = '<i class="fa-solid fa-satellite-dish"></i>';
+                webCastBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    castViaWebCaster(srv, ch.name);
+                };
+
                 row.appendChild(btn);
                 row.appendChild(castBtn);
+                row.appendChild(webCastBtn);
                 list.appendChild(row);
             });
             document.getElementById('serverChooserModal').classList.remove('hidden');
@@ -2033,6 +2061,22 @@
                 window.AndroidPlayer.castToTv(castUrl, channelName || 'يلا گول');
             } else {
                 alert('البث إلى التلفاز متاح فقط داخل تطبيق يلا گول على الجوال');
+            }
+        }
+
+        // مسار بث ثانٍ ومستقل تماماً عن castServerToTv/castToTv أعلاه — يستخدم تطبيق
+        // "Web Video Caster" الخارجي (يدعم Google Cast + DLNA، تغطية أوسع لشاشات LG/سامسونج/إلخ)
+        // عبر نفس آلية playExternal الموجودة أصلاً لـ VLC، دون أي علاقة ببروتوكول Google Cast الخاص بنا.
+        function castViaWebCaster(srv, channelName) {
+            if (!srv || srv.type === 'i') {
+                alert('البث غير مدعوم لهذا النوع من القنوات');
+                return;
+            }
+            const castUrl = resolveExternalPlayableUrl(srv.url, srv.type);
+            if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
+                window.AndroidPlayer.playExternal(castUrl, channelName || 'يلا گول', 'com.instantbits.cast.webvideo');
+            } else {
+                alert('هذه الميزة متاحة فقط داخل تطبيق يلا گول على الجوال');
             }
         }
 
