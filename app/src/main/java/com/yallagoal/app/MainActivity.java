@@ -125,7 +125,7 @@ public class MainActivity extends AppCompatActivity {
         CastManager castManager;
         try {
             castManager = new CastManager(this);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             // البث للتلفاز غير متاح على هذا الجهاز (مثلاً بدون خدمات جوجل بلاي)؛
             // نكمل تشغيل التطبيق عادي بدون هذه الميزة فقط.
             castManager = null;
