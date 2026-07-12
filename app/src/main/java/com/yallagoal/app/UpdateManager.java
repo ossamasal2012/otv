@@ -123,8 +123,20 @@ public class UpdateManager {
     private void startDownload(String downloadUrl) {
         Toast.makeText(activity, "جاري تحميل التحديث...", Toast.LENGTH_SHORT).show();
 
+        // نحذف أي نسخة سابقة متروكة من محاولة تحديث قديمة، حتى لا يُثبَّت بالخطأ
+        // ملف قديم بدل الملف الجديد المُحمَّل فعلاً
+        File existingFile = new File(activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "update.apk");
+        if (existingFile.exists()) {
+            existingFile.delete();
+        }
+
+        // كسر أي تخزين مؤقت (cache) محتمل عبر أي خادم وسيط بالشبكة بإضافة رمز فريد للرابط
+        String cacheBustedUrl = downloadUrl
+                + (downloadUrl.contains("?") ? "&" : "?")
+                + "cb=" + System.currentTimeMillis();
+
         DownloadManager dm = (DownloadManager) activity.getSystemService(Context.DOWNLOAD_SERVICE);
-        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(downloadUrl));
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(cacheBustedUrl));
         request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
         request.setTitle("تحديث يلا گول");
         request.setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, "update.apk");
