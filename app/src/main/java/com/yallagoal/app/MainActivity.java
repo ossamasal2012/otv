@@ -20,6 +20,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import java.util.UUID;
+
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -63,8 +65,8 @@ public class MainActivity extends AppCompatActivity {
         settings.setDatabaseEnabled(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
-        settings.setAllowFileAccess(true);
-        settings.setAllowContentAccess(true);
+        settings.setAllowFileAccess(false);
+        settings.setAllowContentAccess(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -77,6 +79,11 @@ public class MainActivity extends AppCompatActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
+        // رمز أمان عشوائي لكل جلسة تشغيل - يمنع أي محتوى iframe خارجي غير موثوق (قنوات
+        // مضمّنة من مواقع أخرى) من استدعاء وظائف Android الحساسة عبر الجسر البرمجي،
+        // لأنه لا يقدر يقرأ متغيرات نافذة الصفحة الرئيسية (قيود المتصفح القياسية بين النطاقات)
+        final String bridgeToken = UUID.randomUUID().toString();
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
@@ -87,8 +94,16 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                // streaming sources sometimes use self-signed / mismatched certs
-                handler.proceed();
+                // رفض أي شهادة SSL غير صالحة افتراضياً (السلوك الآمن القياسي) - قبولها
+                // بشكل مطلق سابقاً كان يفتح الباب لهجمات man-in-the-middle على كل الاتصالات
+                handler.cancel();
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                view.evaluateJavascript(
+                        "window.__YG_TOKEN__ = '" + bridgeToken + "';", null);
             }
         });
 
@@ -118,7 +133,10 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPermissionRequest(final android.webkit.PermissionRequest request) {
-                runOnUiThread(() -> request.grant(request.getResources()));
+                // نرفض كل طلبات الكاميرا/المايكروفون افتراضياً - التطبيق لا يحتاجها إطلاقاً،
+                // ومنحها تلقائياً لأي محتوى (بما فيه قنوات iframe خارجية غير موثوقة) كان يفتح
+                // ثغرة تجسس حقيقية
+                runOnUiThread(request::deny);
             }
         });
 
@@ -131,7 +149,7 @@ public class MainActivity extends AppCompatActivity {
             castManager = null;
         }
 
-        webView.addJavascriptInterface(new WebAppInterface(this, castManager), "AndroidPlayer");
+        webView.addJavascriptInterface(new WebAppInterface(this, castManager, bridgeToken), "AndroidPlayer");
 
         webView.loadUrl(LOCAL_URL);
 
