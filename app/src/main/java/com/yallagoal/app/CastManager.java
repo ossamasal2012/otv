@@ -58,12 +58,9 @@ public class CastManager {
                 }
                 MediaRouteChooserDialog dialog = new MediaRouteChooserDialog(activity);
                 dialog.setRouteSelector(selector);
-                dialog.setTitle("اختر جهاز العرض");
                 dialog.show();
             } catch (Throwable e) {
-                // رسالة تشخيصية مؤقتة تبيّن السبب الحقيقي بالضبط، لحين تثبيت الحل النهائي
-                String detail = e.getClass().getSimpleName() + ": " + e.getMessage();
-                Toast.makeText(activity, "تعذر فتح قائمة أجهزة البث\n" + detail, Toast.LENGTH_LONG).show();
+                Toast.makeText(activity, "تعذر فتح قائمة أجهزة البث", Toast.LENGTH_SHORT).show();
             }
         });
     }
