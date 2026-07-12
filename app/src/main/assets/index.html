@@ -1455,6 +1455,11 @@
                 const idx = myChannels.indexOf(ch);
                 const serverBadge = ch.servers.length > 1
                     ? `<span class="server-count-badge">${ch.servers.length}</span>` : '';
+                const singleServerCastBtn = ch.servers.length === 1
+                    ? `<button onclick="event.stopPropagation(); castServerToTv(myChannels[${idx}].servers[0], '${escAttr(ch.name)}')"
+                        class="focus:outline-none p-1 shrink-0 text-slate-600 hover:text-emerald-400 transition-colors" title="بث إلى التلفاز">
+                        <i class="fa-solid fa-tv text-[13px]"></i>
+                      </button>` : '';
                 return `
                 <div onclick="openChannel(${idx}, this)"
                     class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
@@ -1463,9 +1468,12 @@
                         <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors truncate">${ch.name}</span>
                         ${serverBadge}
                     </div>
-                    <button onclick="toggleFavorite(event, '${escAttr(ch.name)}')" class="focus:outline-none p-1 shrink-0">
-                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
-                    </button>
+                    <div class="flex items-center gap-0.5 shrink-0">
+                        ${singleServerCastBtn}
+                        <button onclick="toggleFavorite(event, '${escAttr(ch.name)}')" class="focus:outline-none p-1">
+                            <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
+                        </button>
+                    </div>
                 </div>`;
             };
 
