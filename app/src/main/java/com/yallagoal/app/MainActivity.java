@@ -65,8 +65,18 @@ public class MainActivity extends AppCompatActivity {
         settings.setDatabaseEnabled(true);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
-        settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
+
+        // Allow local asset loading (file:///android_asset/...) — لازم لأنك تستخدم LOCAL_URL
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+
+        // Allow (or restrict) file URL access from file URLs — امنح الحد الأدنى اللازم
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            settings.setAllowFileAccessFromFileURLs(true);
+            // نترك universal access معطّل لأمان أفضل (لا تسمح لملفات محلية بطلبات شبكية عابرة للمصدر)
+            settings.setAllowUniversalAccessFromFileURLs(false);
+        }
+
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -77,25 +87,23 @@ public class MainActivity extends AppCompatActivity {
         settings.setUserAgentString(settings.getUserAgentString() + " YallaGoalApp/1.0");
 
         CookieManager.getInstance().setAcceptCookie(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        // setAcceptThirdPartyCookies requires API 21+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        }
 
-        // رمز أمان عشوائي لكل جلسة تشغيل - يمنع أي محتوى iframe خارجي غير موثوق (قنوات
-        // مضمّنة من مواقع أخرى) من استدعاء وظائف Android الحساسة عبر الجسر البرمجي،
-        // لأنه لا يقدر يقرأ متغيرات نافذة الصفحة الرئيسية (قيود المتصفح القياسية بين النطاقات)
         final String bridgeToken = UUID.randomUUID().toString();
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                // keep every navigation inside the app - it's a real app, not a browser tab
                 view.loadUrl(url);
                 return true;
             }
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                // رفض أي شهادة SSL غير صالحة افتراضياً (السلوك الآمن القياسي) - قبولها
-                // بشكل مطلق سابقاً كان يفتح الباب لهجمات man-in-the-middle على كل الاتصالات
                 handler.cancel();
             }
 
@@ -133,9 +141,6 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPermissionRequest(final android.webkit.PermissionRequest request) {
-                // نرفض كل طلبات الكاميرا/المايكروفون افتراضياً - التطبيق لا يحتاجها إطلاقاً،
-                // ومنحها تلقائياً لأي محتوى (بما فيه قنوات iframe خارجية غير موثوقة) كان يفتح
-                // ثغرة تجسس حقيقية
                 runOnUiThread(request::deny);
             }
         });
@@ -144,8 +149,6 @@ public class MainActivity extends AppCompatActivity {
         try {
             castManager = new CastManager(this);
         } catch (Throwable e) {
-            // البث للتلفاز غير متاح على هذا الجهاز (مثلاً بدون خدمات جوجل بلاي)؛
-            // نكمل تشغيل التطبيق عادي بدون هذه الميزة فقط.
             castManager = null;
         }
 
@@ -155,14 +158,14 @@ public class MainActivity extends AppCompatActivity {
 
         requestNotificationPermissionIfNeeded();
 
-        // كل نسخة مثبتة من التطبيق تشترك بهذا الموضوع، فأي إشعار يُرسل له يوصل لجميع المستخدمين
         FirebaseMessaging.getInstance().subscribeToTopic("all_users");
 
-        // يتحقق من وجود تحديث جديد في كل مرة يُفتح فيها التطبيق
         new UpdateManager().checkForUpdate(this);
     }
 
     private void requestNotificationPermissionIfNeeded() {
+        // ملاحظة مهمة: استخدام Build.VERSION_CODES.TIRAMISU يتطلب compileSdkVersion >= 33.
+        // إذا كان مشروعك يستخدم compileSdk < 33 فبدّل الشرط إلى (Build.VERSION.SDK_INT >= 33)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
