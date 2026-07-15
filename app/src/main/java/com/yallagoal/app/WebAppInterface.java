@@ -9,7 +9,6 @@ import android.net.Uri;
 import android.webkit.JavascriptInterface;
 import android.widget.Toast;
 
-
 public class WebAppInterface {
 
     private final Context context;
