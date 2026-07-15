@@ -8,8 +8,8 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 17
-        versionName "2.8"
+        versionCode 18
+        versionName "2.9"
     }
 
     signingConfigs {
