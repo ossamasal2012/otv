@@ -5,20 +5,37 @@ import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.webkit.JavascriptInterface;
 import android.widget.Toast;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public class WebAppInterface {
 
     private final Context context;
     private final CastManager castManager;
+    private static final String PREFS_NAME = "yg_secure_auth";
+    private static final String PREF_AUTHENTICATED = "authenticated";
+    private static final String PREF_FAILED_ATTEMPTS = "failed_attempts";
+    private static final String PREF_LOCK_UNTIL = "lock_until";
+    private static final String PREF_LOCKOUT_LEVEL = "lockout_level";
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final long MINUTE_MS = 60 * 1000L;
+    private static final long HOUR_MS = 60 * MINUTE_MS;
+    private static final String PIN_SHA256 = "5c66dbe863f48e55859f06cbb8becb9dd433af344ed1b5f04608dc50359f56ae";
+
     private final String bridgeToken;
+    private final SharedPreferences authPrefs;
 
     public WebAppInterface(Context context, CastManager castManager, String bridgeToken) {
         this.context = context;
         this.castManager = castManager;
         this.bridgeToken = bridgeToken;
+        this.authPrefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     /**
@@ -28,7 +45,80 @@ public class WebAppInterface {
      * ينادي دوال Android مباشرة، الاستدعاء يُرفض هنا بصمت.
      */
     private boolean isTokenValid(String token) {
-        return bridgeToken != null && bridgeToken.equals(token);
+        return bridgeToken != null && MessageDigest.isEqual(
+                bridgeToken.getBytes(StandardCharsets.UTF_8),
+                (token == null ? "" : token).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private boolean isUnlocked() {
+        return authPrefs.getBoolean(PREF_AUTHENTICATED, false);
+    }
+
+    private static String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return "";
+        }
+    }
+
+    @JavascriptInterface
+    public boolean isAuthenticated(String token) {
+        return isTokenValid(token) && isUnlocked();
+    }
+
+    private static long lockoutDurationMs(int lockoutLevel) {
+        if (lockoutLevel <= 1) return 5 * MINUTE_MS;
+        if (lockoutLevel == 2) return 30 * MINUTE_MS;
+        if (lockoutLevel == 3) return 2 * HOUR_MS;
+        if (lockoutLevel == 4) return 12 * HOUR_MS;
+        return 24 * HOUR_MS;
+    }
+
+    @JavascriptInterface
+    public long getAuthLockRemainingMs(String token) {
+        if (!isTokenValid(token)) return 0L;
+        long remainingMs = authPrefs.getLong(PREF_LOCK_UNTIL, 0L) - System.currentTimeMillis();
+        return Math.max(remainingMs, 0L);
+    }
+
+    @JavascriptInterface
+    public boolean unlockApp(String token, String pin) {
+        if (!isTokenValid(token) || pin == null) return false;
+
+        long now = System.currentTimeMillis();
+        long lockUntil = authPrefs.getLong(PREF_LOCK_UNTIL, 0L);
+        if (lockUntil > now) return false;
+
+        boolean ok = MessageDigest.isEqual(
+                PIN_SHA256.getBytes(StandardCharsets.UTF_8),
+                sha256(pin.trim()).getBytes(StandardCharsets.UTF_8));
+
+        if (ok) {
+            authPrefs.edit()
+                    .putBoolean(PREF_AUTHENTICATED, true)
+                    .remove(PREF_FAILED_ATTEMPTS)
+                    .remove(PREF_LOCK_UNTIL)
+                    .apply();
+            return true;
+        }
+
+        int attempts = authPrefs.getInt(PREF_FAILED_ATTEMPTS, 0) + 1;
+        SharedPreferences.Editor editor = authPrefs.edit().putInt(PREF_FAILED_ATTEMPTS, attempts);
+        if (attempts >= MAX_FAILED_ATTEMPTS) {
+            int lockoutLevel = authPrefs.getInt(PREF_LOCKOUT_LEVEL, 0) + 1;
+            editor.putLong(PREF_LOCK_UNTIL, now + lockoutDurationMs(lockoutLevel))
+                    .putInt(PREF_LOCKOUT_LEVEL, lockoutLevel)
+                    .putInt(PREF_FAILED_ATTEMPTS, 0);
+        }
+        editor.apply();
+        return false;
     }
 
     /**
@@ -42,7 +132,7 @@ public class WebAppInterface {
      */
     @JavascriptInterface
     public void playExternal(String token, String url, String title, String packageName) {
-        if (!isTokenValid(token)) return;
+        if (!isTokenValid(token) || !isUnlocked()) return;
         if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
 
         Activity activity = (Activity) context;
@@ -86,7 +176,7 @@ public class WebAppInterface {
      */
     @JavascriptInterface
     public boolean isPackageInstalled(String token, String packageName) {
-        if (!isTokenValid(token)) return false;
+        if (!isTokenValid(token) || !isUnlocked()) return false;
         if (packageName == null || packageName.isEmpty()) return false;
         try {
             context.getPackageManager().getPackageInfo(packageName, 0);
@@ -101,7 +191,7 @@ public class WebAppInterface {
      */
     @JavascriptInterface
     public void openPlayStore(String token, String packageName) {
-        if (!isTokenValid(token)) return;
+        if (!isTokenValid(token) || !isUnlocked()) return;
         if (packageName == null || packageName.isEmpty() || !(context instanceof Activity)) return;
 
         Activity activity = (Activity) context;
@@ -127,7 +217,7 @@ public class WebAppInterface {
      */
     @JavascriptInterface
     public void castToTv(String token, String url, String title) {
-        if (!isTokenValid(token)) return;
+        if (!isTokenValid(token) || !isUnlocked()) return;
         if (!(context instanceof Activity)) return;
         Activity activity = (Activity) context;
         activity.runOnUiThread(() -> {

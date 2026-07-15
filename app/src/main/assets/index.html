@@ -201,6 +201,15 @@
 
         #loginError.show { display: block; }
 
+        .lockout-note {
+            margin-top: 0.45rem;
+            font-size: 0.68rem;
+            color: #fbbf24;
+            text-align: center;
+            font-weight: 900;
+            line-height: 1.7;
+        }
+
         .login-btn {
             width: 100%;
             background: linear-gradient(135deg, #10b981, #059669);
@@ -886,6 +895,9 @@
                 <a href="https://yallagoal-key.netlify.app/" target="_blank" rel="noopener">
                     https://yallagoal-key.netlify.app/
                 </a>
+                <div class="lockout-note">
+                    ⚠️ ملاحظة مهمة جداً: بعد 5 محاولات خاطئة سيتم تطبيق قفل متدرج: أول مرة 5 دقائق، الثانية 30 دقيقة، الثالثة ساعتان، الرابعة 12 ساعة، والخامسة وما بعدها 24 ساعة.
+                </div>
             </div>
 
             <div class="login-field">
@@ -902,7 +914,7 @@
 
             <p id="loginError">❌ الرمز السري غير صحيح، حاول مجدداً</p>
 
-            <button class="login-btn" onclick="doLogin()">
+            <button class="login-btn" id="loginBtn" onclick="doLogin()">
                 <i class="fa-solid fa-right-to-bracket ml-2"></i>دخول
             </button>
         </div>
@@ -1228,33 +1240,77 @@
         }
         // ============================================================
 
-        const SECRET_CODE = "ossamatt22";
-        const STORAGE_KEY = "yalla_authenticated";
+        function unlockAuthenticatedApp() {
+            document.getElementById('loginScreen').classList.add('hidden');
+            loadChannels();
+        }
 
         function checkAuth() {
-            const isAuth = localStorage.getItem(STORAGE_KEY);
-            if (isAuth === "true") {
-                document.getElementById('loginScreen').classList.add('hidden');
-                loadChannels();
+            if (window.AndroidPlayer && window.__YG_TOKEN__) {
+                try {
+                    if (window.AndroidPlayer.isAuthenticated(window.__YG_TOKEN__)) {
+                        unlockAuthenticatedApp();
+                    }
+                } catch (e) {
+                    console.warn('تعذر التحقق من حالة القفل الآمن');
+                }
             }
+        }
+
+        function getLockRemainingMs() {
+            try {
+                if (window.AndroidPlayer && window.__YG_TOKEN__) {
+                    return Number(window.AndroidPlayer.getAuthLockRemainingMs(window.__YG_TOKEN__)) || 0;
+                }
+            } catch (e) {}
+            return 0;
+        }
+
+        function formatLockRemaining(ms) {
+            const totalMinutes = Math.ceil(ms / 60000);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            if (hours <= 0) return `${minutes} دقيقة`;
+            if (minutes === 0) return `${hours} ساعة`;
+            return `${hours} ساعة و ${minutes} دقيقة`;
+        }
+
+        function showLoginFailure() {
+            const inp = document.getElementById('pinInput');
+            const grp = document.getElementById('inputGroup');
+            const err = document.getElementById('loginError');
+            const remainingMs = getLockRemainingMs();
+
+            if (remainingMs > 0) {
+                err.textContent = `⛔ تم قفل الدخول بسبب تجاوز 5 محاولات. حاول مجدداً بعد ${formatLockRemaining(remainingMs)}.`;
+                inp.disabled = true;
+                document.getElementById('loginBtn').disabled = true;
+            } else {
+                err.textContent = '❌ الرمز السري غير صحيح، حاول مجدداً';
+                inp.value = "";
+                inp.focus();
+            }
+
+            grp.classList.add('error');
+            err.classList.add('show');
+            setTimeout(() => { grp.classList.remove('error'); }, 600);
         }
 
         function doLogin() {
             const val = document.getElementById('pinInput').value.trim();
-            const inp = document.getElementById('pinInput');
-            const grp = document.getElementById('inputGroup');
-            const err = document.getElementById('loginError');
 
-            if (val === SECRET_CODE) {
-                localStorage.setItem(STORAGE_KEY, "true");
-                document.getElementById('loginScreen').classList.add('hidden');
-                loadChannels();
+            let ok = false;
+            try {
+                ok = !!(window.AndroidPlayer && window.__YG_TOKEN__ &&
+                    window.AndroidPlayer.unlockApp(window.__YG_TOKEN__, val));
+            } catch (e) {
+                ok = false;
+            }
+
+            if (ok) {
+                unlockAuthenticatedApp();
             } else {
-                grp.classList.add('error');
-                err.classList.add('show');
-                setTimeout(() => { grp.classList.remove('error'); }, 600);
-                inp.value = "";
-                inp.focus();
+                showLoginFailure();
             }
         }
         
