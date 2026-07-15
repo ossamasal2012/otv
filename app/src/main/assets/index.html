@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -1288,19 +1289,11 @@
         let currentOpenChannel = null;
         let currentServerIndex = 0;
 
-        // Cloudflare Worker الآمن: يجلب channels.json من GitHub Private عبر PAT مخفي في Secret.
-        // لا يوجد أي GitHub token داخل HTML. غيّر النطاق بعد نشر worker/wrangler.toml.
-        const CHANNELS_WORKER_BASE = "https://yallagoal-channels-proxy.ossamasal2012.workers.dev";
-        const MAIN_CHANNELS_URL = `${CHANNELS_WORKER_BASE}/channels`;
+        const MAIN_CHANNELS_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/channels.json";
         const QURAN_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
 
-        function isChannelsWorkerUrl(rawUrl) {
-            return typeof rawUrl === 'string' && rawUrl.startsWith(CHANNELS_WORKER_BASE + '/channels');
-        }
-
         function buildFallbackUrls(rawUrl) {
-            if (isChannelsWorkerUrl(rawUrl)) return [];
             try {
                 const u = new URL(rawUrl);
                 const parts = u.pathname.split('/').filter(Boolean);
@@ -1328,12 +1321,8 @@
                     const controller = new AbortController();
                     const timer = setTimeout(() => controller.abort(), timeoutMs);
                     try {
-                        const workerRequest = isChannelsWorkerUrl(candidateUrl);
-                        const bustedUrl = workerRequest ? candidateUrl : candidateUrl + (candidateUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
-                        const res = await fetch(bustedUrl, {
-                            cache: workerRequest ? 'default' : 'no-store',
-                            signal: controller.signal
-                        });
+                        const bustedUrl = candidateUrl + (candidateUrl.includes('?') ? '&' : '?') + '_=' + Date.now();
+                        const res = await fetch(bustedUrl, { cache: 'no-store', signal: controller.signal });
                         clearTimeout(timer);
                         if (!res.ok) throw new Error(`HTTP ${res.status} من ${candidateUrl}`);
                         const text = await res.text();
