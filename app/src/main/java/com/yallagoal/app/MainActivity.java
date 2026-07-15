@@ -18,6 +18,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import androidx.webkit.WebViewCompat;
 import android.widget.FrameLayout;
 
 import java.util.UUID;
@@ -59,6 +60,8 @@ public class MainActivity extends AppCompatActivity {
         fullscreenContainer = findViewById(R.id.fullscreen_container);
         webView = findViewById(R.id.webview);
 
+        WebView.setWebContentsDebuggingEnabled(false);
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -77,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
             settings.setAllowUniversalAccessFromFileURLs(false);
         }
 
+        settings.setSaveFormData(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -85,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setDisplayZoomControls(false);
         settings.setTextZoom(100);
         settings.setUserAgentString(settings.getUserAgentString() + " YallaGoalApp/1.0");
+        WebViewCompat.startSafeBrowsing(this, null);
 
         CookieManager.getInstance().setAcceptCookie(true);
         // setAcceptThirdPartyCookies requires API 21+
@@ -110,8 +115,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                view.evaluateJavascript(
-                        "window.__YG_TOKEN__ = '" + bridgeToken + "';", null);
+                if (LOCAL_URL.equals(url)) {
+                    view.evaluateJavascript(
+                            "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false }); checkAuth();", null);
+                }
             }
         });
 
