@@ -104,3 +104,37 @@ defaultConfig {
 5. انتظر Actions يخلص (علامة خضراء)
 6. خلص — كل المستخدمين رح تطلعلهم رسالة التحديث تلقائياً
 ```
+
+---
+
+## نظام القنوات الآمن الجديد: Hybrid Moderate-Minimal
+
+يعتمد التطبيق الآن على Cloudflare Worker كوسيط آمن لجلب `channels.json` من مستودع GitHub خاص بدون وضع GitHub PAT داخل `index.html`. التصميم متعمد أن يكون بسيطاً وصريحاً: لا نستخدم HMAC أو `APP_SIGNATURE_SECRET` داخل APK لأن أي سر داخل التطبيق قابل للاستخراج بالهندسة العكسية، لذلك لا نعطي طبقة وهمية إحساساً زائداً بالأمان.
+
+### الطبقات المطبقة
+
+1. **GitHub PAT مخفي بالكامل**: خزّنه كـ Cloudflare Secret باسم `GITHUB_TOKEN`، ويجب أن يكون Fine-grained PAT بصلاحية واحدة فقط: `Repository contents: Read-only` على مستودع بيانات القنوات.
+2. **Cloudflare Cache API مجاني**: الكاش مضبوط على 10 دقائق (`600` ثانية) مع `stale-while-revalidate` لتقليل استهلاك GitHub API مع إبقاء تحديث القنوات سريعاً.
+3. **ETag / If-None-Match**: يحتفظ Worker بقيمة `ETag` من GitHub ويرسلها في طلبات التحديث اللاحقة لتلقي `304 Not Modified` عند عدم تغيّر الملف بدل تنزيله مرة أخرى.
+4. **لا يوجد Device Token ولا HMAC داخل التطبيق**: لا نضيف أسراراً داخل HTML أو APK لأنها قابلة للنسخ أو الاستخراج ولا توقف مهاجماً حقيقياً.
+5. **حماية Worker الأساسية**: يقبل `GET /channels` فقط، يرفض أي body، ويتحقق من المسار الصحيح قبل جلب البيانات.
+6. **Rate limit مجاني داخل Worker**: يستخدم Cache API لعدادات خفيفة لكل IP بدون KV أو Durable Objects.
+7. **Security Headers بدون CORS افتراضيًا**: يضيف `nosniff` و`DENY` و`no-referrer` و`Permissions-Policy` فقط، ولا يرسل `Access-Control-Allow-Origin` لأن التطبيق لا يملك نسخة ويب عامة تحتاج قراءة Worker من المتصفح.
+8. **Timeout لطلب GitHub**: كل محاولة اتصال بـ GitHub لها مهلة 5 ثوانٍ عبر `AbortController` حتى لا يعلق Worker منتظراً اتصالاً بطيئاً.
+9. **Retry ذكي وبسيط لـ GitHub**: عند فشل الشبكة أو انتهاء المهلة أو رجوع خطأ مؤقت فقط (`500` أو `502` أو `503` أو `504`) ينتظر Worker مدة قصيرة ثم يعيد المحاولة مرة واحدة قبل استخدام `stale-if-error` أو JSON الخطأ.
+10. **Logs تشغيلية بسيطة**: يسجل Worker أحداثاً مهمة مثل cache hit وrevalidation وGitHub `200`/`304` وretry و`stale-if-error` لتسهيل التشخيص عبر Cloudflare Logs.
+11. **أخطاء JSON ثابتة**: إذا تعذر الوصول إلى GitHub ولا يوجد كاش صالح، يرجع Worker JSON ثابتاً يحتوي `success: false` و`message: Service temporarily unavailable`.
+
+### ملفات النظام
+
+- `worker/yallagoal-channels-worker.js`: كود Cloudflare Worker.
+- `worker/wrangler.toml`: إعدادات النشر وقيم GitHub غير السرية.
+- `app/src/main/assets/index.html`: يطلب القنوات من `/channels` عبر Worker بدون أي GitHub token أو HMAC.
+
+### أوامر الإعداد قبل النشر
+
+```bash
+cd worker
+wrangler secret put GITHUB_TOKEN
+wrangler deploy
+```
