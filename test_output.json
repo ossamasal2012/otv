@@ -1,0 +1,18 @@
+[
+  {
+    "n": "الوان سبورت 1",
+    "c": "رياضة إضافي",
+    "s": [
+      {
+        "n": "سيرفر 1 - ALWAN SPORT 01 HD (HD)",
+        "u": "http://pro.netmos.ovh:7355/live/MMTVO89S7DY7CNV7SD/P7HIDSPCN580WXH90/181661.ts",
+        "t": "v"
+      },
+      {
+        "n": "سيرفر 2 - ALWAN SPORT 01 SD (SD)",
+        "u": "http://pro.netmos.ovh:7355/live/MMTVO89S7DY7CNV7SD/P7HIDSPCN580WXH90/181662.ts",
+        "t": "v"
+      }
+    ]
+  }
+]
