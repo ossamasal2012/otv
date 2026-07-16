@@ -1,0 +1,29 @@
+[
+  {
+    "n": "سويسرا vs الارجنتين",
+    "c": "كرة قدم",
+    "s": [
+      {
+        "n": "1 سيرفر عالي الجودة",
+        "u": "https://table.houseinventer.com/pdf/AzMjD2IyADQPb2dLfQ/index.m3u8?token==",
+        "t": "v"
+      }
+    ]
+  },
+  {
+    "n": "الوان سبورت 1",
+    "c": "رياضة إضافي",
+    "s": [
+      {
+        "n": "سيرفر 1 - HD",
+        "u": "http://pro.netmos.ovh:7355/live/MMTVO89S7DY7CNV7SD/P7HIDSPCN580WXH90/181661.ts",
+        "t": "v"
+      },
+      {
+        "n": "سيرفر 2 - SD",
+        "u": "http://pro.netmos.ovh:7355/live/MMTVO89S7DY7CNV7SD/P7HIDSPCN580WXH90/181662.ts",
+        "t": "v"
+      }
+    ]
+  }
+]
