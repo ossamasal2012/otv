@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -9,10 +10,6 @@
     <link rel="dns-prefetch" href="https://raw.githubusercontent.com">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
-    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
@@ -330,45 +327,6 @@
             margin: 0 0 0.75rem;
         }
 
-        .settings-option {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            background: rgba(15, 23, 42, 0.9);
-            border: 1px solid #1e293b;
-            border-radius: 0.75rem;
-            padding: 0.9rem 1rem;
-            margin-bottom: 0.6rem;
-            cursor: pointer;
-            transition: border-color 0.2s;
-        }
-
-        .settings-option:has(input:checked) {
-            border-color: #10b981;
-            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
-        }
-
-        .settings-option input[type="radio"] {
-            width: 18px;
-            height: 18px;
-            accent-color: #10b981;
-            flex-shrink: 0;
-        }
-
-        .settings-option span {
-            font-size: 0.85rem;
-            font-weight: 700;
-            color: #f1f5f9;
-        }
-
-        .settings-option small {
-            display: block;
-            font-size: 0.7rem;
-            font-weight: 500;
-            color: #64748b;
-            margin-top: 2px;
-        }
-
         .vlc-notice {
             background: rgba(16, 185, 129, 0.08);
             border: 1px solid rgba(16, 185, 129, 0.3);
@@ -580,42 +538,6 @@
             white-space: nowrap;
         }
 
-        /* ===== قائمة المجلدات بالإعدادات ===== */
-        .folder-settings-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: rgba(15, 23, 42, 0.9);
-            border: 1px solid #1e293b;
-            border-radius: 0.75rem;
-            padding: 0.85rem 1rem;
-            margin-bottom: 0.5rem;
-            cursor: pointer;
-            transition: border-color 0.2s;
-        }
-
-        .folder-settings-row:hover { border-color: #334155; }
-
-        .folder-settings-name {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            font-size: 0.82rem;
-            font-weight: 700;
-            color: #f1f5f9;
-        }
-
-        .folder-settings-name i { color: #10b981; }
-
-        .folder-settings-value {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: #64748b;
-        }
-
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -663,30 +585,6 @@
         }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
-
-        #dynamic-player-root {
-            width: 100%;
-            height: 100%;
-            position: relative;
-            background: #000;
-        }
-
-        .video-fit-contain { object-fit: contain !important; }
-        .video-fit-cover { object-fit: cover !important; }
-        .video-fit-fill { object-fit: fill !important; }
-
-        .plyr {
-            height: 100% !important;
-            width: 100% !important;
-            position: relative;
-        }
-
-        .plyr--hide-manual-controls .plyr__controls,
-        .plyr--hide-manual-controls .plyr__caption {
-            opacity: 0 !important;
-            pointer-events: none !important;
-            visibility: hidden !important;
-        }
 
         .overlay-screen {
             position: absolute;
@@ -930,42 +828,8 @@
         </div>
 
         <div class="settings-body">
-            <p class="settings-section-title">نوع المشغل</p>
-
-            <label class="settings-option">
-                <input type="radio" name="playerType" value="default" onchange="setPlayerType('default')">
-                <span>
-                    المشغل الافتراضي للتطبيق
-                    <small>تشغيل القنوات داخل التطبيق مباشرة</small>
-                </span>
-            </label>
-
-            <label class="settings-option">
-                <input type="radio" name="playerType" value="external" onchange="setPlayerType('external')">
-                <span>
-                    مشغل خارجي
-                    <small>فتح القنوات بتطبيق مشغل فيديو خارج التطبيق</small>
-                </span>
-            </label>
-
-            <div id="externalPlayerChoice" class="hidden">
-                <p class="settings-section-title" style="margin-top:1.25rem;">اختر المشغل الخارجي</p>
-                <div id="externalPlayerList"></div>
-            </div>
-
-            <p class="settings-section-title" style="margin-top:1.75rem;">المجلدات</p>
-            <div id="folderSettingsList"></div>
-        </div>
-    </div>
-
-    <div id="folderPlayerModal" class="server-chooser-overlay hidden" onclick="if(event.target===this) closeFolderPlayerModal()">
-        <div class="server-chooser-card">
-            <h3 id="folderPlayerModalTitle">نوع المشغل</h3>
-            <div class="server-chooser-list">
-                <button type="button" class="server-chooser-item" onclick="setFolderPlayerType('default')">مشغل داخلي</button>
-                <button type="button" class="server-chooser-item" onclick="setFolderPlayerType('external')">مشغل خارجي</button>
-            </div>
-            <button type="button" class="server-chooser-cancel" onclick="closeFolderPlayerModal()">إلغاء</button>
+            <p class="settings-section-title">اختر المشغل الخارجي</p>
+            <div id="externalPlayerList"></div>
         </div>
     </div>
 
@@ -1019,7 +883,6 @@
             </button>
         </div>
 
-        <div id="dynamic-player-root"></div>
         </main>
 
     <script>
@@ -1062,29 +925,12 @@
         //  + اختيار تطبيق المشغل الخارجي (VLC)
         //  + إعداد مستقل لكل مجلد (القرآن الكريم / قصائد حسينية)
         // ============================================================
-        const PLAYER_TYPE_KEY = 'yalla_player_type';
         const EXTERNAL_PLAYER_APP_KEY = 'yalla_external_player_app';
 
         const EXTERNAL_PLAYERS = [
             { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
             { id: 'any', name: 'أي مشغل خارجي آخر', pkg: '' },
         ];
-
-        const FOLDERS = [
-            { id: 'quran', name: 'القرآن الكريم' },
-            { id: 'poems', name: 'قصائد حسينية' },
-        ];
-
-        function getPlayerType() {
-            const v = localStorage.getItem(PLAYER_TYPE_KEY);
-            if (v === 'vlc') return 'external'; // توافق مع إصدار سابق كان يخزن 'vlc' مباشرة
-            return v || 'default';
-        }
-
-        function setPlayerType(type) {
-            localStorage.setItem(PLAYER_TYPE_KEY, type);
-            updateExternalPlayerSectionVisibility();
-        }
 
         function getExternalPlayerApp() {
             return localStorage.getItem(EXTERNAL_PLAYER_APP_KEY) || 'vlc';
@@ -1098,12 +944,6 @@
         function getExternalPlayerPackage() {
             const app = EXTERNAL_PLAYERS.find(p => p.id === getExternalPlayerApp());
             return app ? app.pkg : '';
-        }
-
-        function updateExternalPlayerSectionVisibility() {
-            const section = document.getElementById('externalPlayerChoice');
-            if (!section) return;
-            section.classList.toggle('hidden', getPlayerType() !== 'external');
         }
 
         function renderExternalPlayerList() {
@@ -1168,70 +1008,8 @@
             }
         }
 
-        // ---- إعداد المجلدات (كل مجلد له إعداد مستقل خاص فيه) ----
-        function getFolderPlayerType(folderId) {
-            return localStorage.getItem('yalla_folder_player_' + folderId) || 'default';
-        }
-
-        function renderFolderSettingsList() {
-            const container = document.getElementById('folderSettingsList');
-            if (!container) return;
-            container.innerHTML = '';
-
-            FOLDERS.forEach(f => {
-                const type = getFolderPlayerType(f.id);
-                const row = document.createElement('div');
-                row.className = 'folder-settings-row';
-                row.onclick = () => openFolderPlayerModal(f.id, f.name);
-                row.innerHTML = `
-                    <div class="folder-settings-name">
-                        <i class="fa-solid fa-folder"></i>
-                        <span>${f.name}</span>
-                    </div>
-                    <div class="folder-settings-value">
-                        <span>${type === 'external' ? 'مشغل خارجي' : 'مشغل داخلي'}</span>
-                        <i class="fa-solid fa-chevron-left"></i>
-                    </div>`;
-                container.appendChild(row);
-            });
-        }
-
-        let pendingFolderId = null;
-
-        function openFolderPlayerModal(folderId, folderName) {
-            pendingFolderId = folderId;
-            document.getElementById('folderPlayerModalTitle').textContent = folderName;
-            document.getElementById('folderPlayerModal').classList.remove('hidden');
-        }
-
-        function setFolderPlayerType(type) {
-            if (!pendingFolderId) return;
-            localStorage.setItem('yalla_folder_player_' + pendingFolderId, type);
-            closeFolderPlayerModal();
-            renderFolderSettingsList();
-        }
-
-        function closeFolderPlayerModal() {
-            document.getElementById('folderPlayerModal').classList.add('hidden');
-            pendingFolderId = null;
-        }
-
-        // تحدد هل نشغّل بمشغل خارجي أم لا للقناة الحالية، مع مراعاة إعداد المجلد الخاص لو موجود
-        function shouldUseExternalPlayer() {
-            if (currentTab === 'quran' || currentTab === 'poems') {
-                return getFolderPlayerType(currentTab) === 'external';
-            }
-            return getPlayerType() === 'external';
-        }
-
         function openSettings() {
-            const type = getPlayerType();
-            document.querySelectorAll('input[name="playerType"]').forEach(r => {
-                r.checked = (r.value === type);
-            });
-            updateExternalPlayerSectionVisibility();
             renderExternalPlayerList();
-            renderFolderSettingsList();
             document.getElementById('settingsScreen').classList.remove('hidden');
         }
 
@@ -1321,26 +1099,10 @@
         let quranChannels = [];
         let poemsChannels = [];
         let currentTab = "main";
-        let hls = null;
-        let dashPlayer = null;
-        let plyr = null;
         let currentCat = "الكل";
         let searchQuery = "";
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
-        let currentAspectRatio = 0;
-        let streamRefreshTimer = null;
-        let activeApiChannelUrl = null;
-        let currentActiveStreamUrl = null;
-        let isCurrentSessionProxied = false;
-
-        let lowBandwidthMode = localStorage.getItem('yalla_low_bandwidth_mode') === 'true';
-
-        let healthMonitorInterval = null;
-        let healthMonitorLastTime = -1;
-        let healthMonitorStallTicks = 0;
-        let currentChannelLoadWatchdog = null;
         let currentIframeFallbackTimer = null;
-        let controlsVisible = true;
 
         let currentOpenChannel = null;
         let currentServerIndex = 0;
@@ -1666,11 +1428,6 @@
          }
 
         function cleanup() {
-            if (hls) { hls.destroy(); hls = null; }
-            if (dashPlayer) { try { dashPlayer.reset(); } catch (e) {} dashPlayer = null; }
-            if (plyr) { plyr.destroy(); plyr = null; }
-            document.getElementById('dynamic-player-root').innerHTML = "";
-            
             const oldIframe = document.getElementById('iPlayer');
             if (oldIframe) {
                 oldIframe.remove();
@@ -1681,20 +1438,6 @@
                 oldBar.remove();
             }
 
-            if (streamRefreshTimer) {
-                clearTimeout(streamRefreshTimer);
-                streamRefreshTimer = null;
-            }
-            activeApiChannelUrl = null;
-            currentActiveStreamUrl = null;
-            isCurrentSessionProxied = false;
-            stopHealthMonitor();
-            isRefreshInProgress = false;
-
-            if (currentChannelLoadWatchdog) {
-                clearTimeout(currentChannelLoadWatchdog);
-                currentChannelLoadWatchdog = null;
-            }
             if (currentIframeFallbackTimer) {
                 clearTimeout(currentIframeFallbackTimer);
                 currentIframeFallbackTimer = null;
@@ -1702,41 +1445,6 @@
 
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
-            currentAspectRatio = 0;
-            controlsVisible = true;
-        }
-
-        function toggleAspectRatio(video) {
-            if (!video) return;
-            currentAspectRatio = (currentAspectRatio + 1) % 3;
-            video.classList.remove('video-fit-contain', 'video-fit-cover', 'video-fit-fill');
-            const labels = ['Fit', 'Zoom', 'Fill'];
-            if (currentAspectRatio === 0) video.classList.add('video-fit-contain');
-            if (currentAspectRatio === 1) video.classList.add('video-fit-cover');
-            if (currentAspectRatio === 2) video.classList.add('video-fit-fill');
-            document.querySelectorAll('.aspect-ratio-toggle').forEach(btn => {
-                btn.innerText = labels[currentAspectRatio];
-            });
-        }
-
-        function manualToggleControls() {
-            if (!plyr) return;
-            controlsVisible = !controlsVisible;
-            updateControlsVisibility();
-        }
-
-        function updateControlsVisibility() {
-            const plyrContainer = document.querySelector('.plyr');
-            if (plyrContainer) {
-                if (controlsVisible) plyrContainer.classList.remove('plyr--hide-manual-controls');
-                else plyrContainer.classList.add('plyr--hide-manual-controls');
-            }
-
-            const serverBar = document.getElementById('serverTabBar');
-            if (serverBar) {
-                if (controlsVisible) serverBar.classList.remove('hidden-server-bar');
-                else serverBar.classList.add('hidden-server-bar');
-            }
         }
 
         function toggleFavorite(event, name) {
@@ -1790,242 +1498,6 @@
             throw lastErr || new Error('تعذر جلب رابط البث المتجدد');
         }
 
-        function reportRealStall(channelName, channelEl) {
-            console.warn(`تجمّد حقيقي مرصود للقناة الحالية`);
-            // لا نقوم بتبديل السيرفر تلقائياً
-            // نحاول إعادة التحميل إذا كان هناك API
-            if (activeApiChannelUrl) {
-                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                performSeamlessRefresh(activeApiChannelUrl, 1);
-            } else {
-                showLoadError('توقف البث، حاول إعادة المحاولة أو اختر سيرفراً آخر يدوياً.');
-            }
-        }
-
-        function setLowBandwidthMode(enabled, isAutoTriggered = false) {
-            lowBandwidthMode = enabled;
-            try { localStorage.setItem('yalla_low_bandwidth_mode', enabled ? 'true' : 'false'); } catch (e) {}
-            const btn = document.getElementById('lowBandwidthToggle');
-            if (btn) btn.classList.toggle('active', enabled);
-        }
-
-        const HEALTH_CHECK_INTERVAL_MS = 5000;
-        const HEALTH_STALL_TICKS_THRESHOLD = 2;
-
-        function startHealthMonitor() {
-            stopHealthMonitor();
-            healthMonitorLastTime = -1;
-            healthMonitorStallTicks = 0;
-
-            healthMonitorInterval = setInterval(() => {
-                const video = document.getElementById('vPlayer');
-                if (!video) return;
-
-                if (video.paused || video.seeking || video.readyState < 2) {
-                    healthMonitorLastTime = video.currentTime;
-                    healthMonitorStallTicks = 0;
-                    return;
-                }
-
-                if (video.currentTime === healthMonitorLastTime) {
-                    healthMonitorStallTicks++;
-                    console.warn(`مراقب الصحة: لم يتقدّم زمن التشغيل (فحص ${healthMonitorStallTicks}/${HEALTH_STALL_TICKS_THRESHOLD})`);
-                    if (healthMonitorStallTicks >= HEALTH_STALL_TICKS_THRESHOLD) {
-                        console.error('مراقب الصحة: توقف حقيقي مؤكد في البث.');
-                        healthMonitorStallTicks = 0;
-                        if (lastPlayedChannel) reportRealStall(lastPlayedChannel.name, lastPlayedChannel.el);
-                    }
-                } else {
-                    healthMonitorLastTime = video.currentTime;
-                    healthMonitorStallTicks = 0;
-                }
-            }, HEALTH_CHECK_INTERVAL_MS);
-        }
-
-        function resetHealthMonitor() {
-            healthMonitorLastTime = -1;
-            healthMonitorStallTicks = 0;
-        }
-
-        function stopHealthMonitor() {
-            if (healthMonitorInterval) { clearInterval(healthMonitorInterval); healthMonitorInterval = null; }
-        }
-
-        let isRefreshInProgress = false;
-
-        function scheduleStreamRefresh(expiresInSeconds, wasStale) {
-            if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-            if (!activeApiChannelUrl) return;
-
-            let refreshAfterMs;
-            if (wasStale) {
-                refreshAfterMs = 15000;
-            } else {
-                const safetyMarginSeconds = Math.max(45, expiresInSeconds * 0.5);
-                refreshAfterMs = Math.max(5000, (expiresInSeconds - safetyMarginSeconds) * 1000);
-            }
-
-            streamRefreshTimer = setTimeout(() => {
-                performSeamlessRefresh(activeApiChannelUrl, 1);
-            }, refreshAfterMs);
-        }
-
-        async function performSeamlessRefresh(apiUrl, attemptNumber) {
-            if (activeApiChannelUrl !== apiUrl) return;
-            if (isRefreshInProgress) {
-                console.warn('تجديد آخر قيد التنفيذ فعلاً — تجاهل هذا الاستدعاء المتزامن.');
-                return;
-            }
-            isRefreshInProgress = true;
-
-            const MAX_SILENT_ATTEMPTS = 5;
-            try {
-                const { streamUrl: newUrl, expiresInSeconds, wasStale } = await resolveStreamUrl(apiUrl, {
-                    retries: 1,
-                    timeoutMs: 8000,
-                    previousStreamUrl: currentActiveStreamUrl
-                });
-                if (activeApiChannelUrl !== apiUrl) return;
-
-                if (wasStale) {
-                    console.warn('الـ API أعاد رابطاً مكرراً (cached) — إعادة محاولة بسرعة أكبر.');
-                    scheduleStreamRefresh(expiresInSeconds, true);
-                    return;
-                }
-
-                const urlToSwap = isCurrentSessionProxied ? (buildProxiedUrl(newUrl) || newUrl) : newUrl;
-
-                await hotSwapHlsSource(urlToSwap);
-                if (activeApiChannelUrl !== apiUrl) return;
-
-                currentActiveStreamUrl = newUrl;
-                resetHealthMonitor();
-                scheduleStreamRefresh(expiresInSeconds, false);
-            } catch (err) {
-                console.warn(`فشل التجديد الصامت للرابط (محاولة ${attemptNumber}):`, err.message || err);
-                if (activeApiChannelUrl !== apiUrl) return;
-
-                if (attemptNumber < MAX_SILENT_ATTEMPTS) {
-                    streamRefreshTimer = setTimeout(() => {
-                        performSeamlessRefresh(apiUrl, attemptNumber + 1);
-                    }, 8000);
-                } else {
-                    streamRefreshTimer = setTimeout(() => {
-                        performSeamlessRefresh(apiUrl, attemptNumber);
-                    }, 20000);
-                }
-            } finally {
-                isRefreshInProgress = false;
-            }
-        }
-
-        function hotSwapHlsSource(newUrl) {
-            return new Promise((resolve, reject) => {
-                const oldVideo = document.getElementById('vPlayer');
-                if (!oldVideo) { reject(new Error('لا يوجد مشغّل نشط للتبديل')); return; }
-
-                // إذا كانت القناة الحالية تعمل عبر DASH (.mpd) نجدد المصدر مباشرة بدون تبديل خفي لمشغّل HLS
-                if (dashPlayer) {
-                    try {
-                        dashPlayer.attachSource(newUrl);
-                        resolve();
-                    } catch (err) {
-                        reject(err);
-                    }
-                    return;
-                }
-
-                if (!hls) {
-                    try {
-                        const wasPaused = oldVideo.paused;
-                        oldVideo.src = newUrl;
-                        if (!wasPaused) oldVideo.play().catch(() => {});
-                        resolve();
-                    } catch (err) {
-                        reject(err);
-                    }
-                    return;
-                }
-
-                const root = document.getElementById('dynamic-player-root');
-                const shadowVideo = document.createElement('video');
-                shadowVideo.muted = true;
-                shadowVideo.setAttribute('playsinline', '');
-                shadowVideo.style.position = 'absolute';
-                shadowVideo.style.inset = '0';
-                shadowVideo.style.width = '100%';
-                shadowVideo.style.height = '100%';
-                shadowVideo.style.opacity = '0';
-                shadowVideo.style.pointerEvents = 'none';
-                shadowVideo.className = oldVideo.className;
-
-                const shadowHls = new Hls(hls.config || {});
-                let settled = false;
-                const cleanupShadow = () => {
-                    try { shadowHls.destroy(); } catch (e) {}
-                    if (shadowVideo.parentNode) shadowVideo.remove();
-                };
-                const failTimer = setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    cleanupShadow();
-                    reject(new Error('انتهت مهلة تجهيز الرابط الجديد بصمت'));
-                }, 10000);
-
-                shadowHls.on(Hls.Events.ERROR, (event, data) => {
-                    if (!data.fatal || settled) return;
-                    settled = true;
-                    clearTimeout(failTimer);
-                    cleanupShadow();
-                    reject(new Error('فشل تحميل الرابط الجديد للقناة بصمت: ' + data.type));
-                });
-
-                shadowHls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    const trySwap = () => {
-                        if (settled) return;
-                        settled = true;
-                        clearTimeout(failTimer);
-
-                        try {
-                            const wasPaused = oldVideo.paused;
-                            const oldCurrentTime = oldVideo.currentTime;
-
-                            const oldHls = hls;
-                            hls = shadowHls;
-
-                            shadowVideo.id = 'vPlayer';
-                            shadowVideo.style.opacity = '';
-                            shadowVideo.style.pointerEvents = '';
-                            shadowVideo.muted = false;
-                            shadowVideo.volume = oldVideo.volume;
-
-                            oldVideo.id = '';
-                            root.appendChild(shadowVideo);
-
-                            if (plyr) {
-                                try { plyr.media = shadowVideo; } catch (e) { /* تجاهل */ }
-                            }
-
-                            if (!wasPaused) shadowVideo.play().catch(() => {});
-
-                            try { oldHls.destroy(); } catch (e) {}
-                            if (oldVideo.parentNode) oldVideo.remove();
-
-                            resolve();
-                        } catch (swapErr) {
-                            cleanupShadow();
-                            reject(swapErr);
-                        }
-                    };
-                    shadowVideo.addEventListener('canplay', trySwap, { once: true });
-                    setTimeout(trySwap, 1500);
-                });
-
-                root.appendChild(shadowVideo);
-                shadowHls.loadSource(newUrl);
-                shadowHls.attachMedia(shadowVideo);
-            });
-        }
 
         function isApiUrl(url) {
             return url.includes('/api/channel') || url.includes('vercel.app/api/channel') || url.includes('?ch=');
@@ -2189,7 +1661,6 @@
 
             const target = targetElement || document.getElementById('mainPlayerArea');
             target.appendChild(bar);
-            updateControlsVisibility();
         }
 
         const preconnectedHosts = new Set();
@@ -2268,14 +1739,6 @@
                 }
             }
 
-            if (originalApiUrl) {
-                const expires = initialExpiresInSeconds || 600;
-                activeApiChannelUrl = originalApiUrl;
-                currentActiveStreamUrl = resolvedRealStreamUrl || finalUrl;
-                isCurrentSessionProxied = true;
-                scheduleStreamRefresh(expires, false);
-            }
-
             if (type === 'i') {
                 const iframe = document.createElement('iframe');
                 iframe.id = "iPlayer";
@@ -2310,324 +1773,13 @@
                 }, 2000);
 
             } else {
-                // 🎬 تشغيل خارجي: حسب إعداد المجلد الحالي إن وجد، وإلا الإعداد العام من الإعدادات.
-                // قنوات الـ iframe (النوع 'i' بالأعلى) لا تتأثر بهذا إطلاقاً وتبقى تعمل كما هي.
-                if (shouldUseExternalPlayer() && window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
-                    document.getElementById('placeholderScreen').classList.add('hidden');
+                // 🎬 لا يوجد مشغل مدمج داخل التطبيق بعد الآن: كل القنوات تُفتح دائماً عبر تطبيق مشغل فيديو خارجي
+                document.getElementById('placeholderScreen').classList.add('hidden');
+                if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
                     window.AndroidPlayer.playExternal(window.__YG_TOKEN__, finalUrl, name || 'يلا گول', getExternalPlayerPackage());
-                    return;
-                }
-
-                const root = document.getElementById('dynamic-player-root');
-                const video = document.createElement('video');
-                video.id = "vPlayer";
-                video.className = "w-full h-full video-fit-contain";
-                video.autoplay = true;
-                video.setAttribute('playsinline', '');
-                video.playbackRate = 1.0;
-                video.addEventListener('ratechange', () => {
-                    if (video.playbackRate !== 1.0) video.playbackRate = 1.0;
-                });
-                root.appendChild(video);
-
-                let instantStallTimer = null;
-                video.addEventListener('waiting', () => {
-                    console.warn('الفيديو في وضع الانتظار (waiting) — رصد فوري لاحتمال تجمّد');
-                    if (instantStallTimer) clearTimeout(instantStallTimer);
-                    instantStallTimer = setTimeout(() => {
-                        if (video.paused || video.seeking) return;
-                        if (!video.readyState || video.readyState < 2) {
-                            console.error('تجمّد حقيقي مؤكد عبر حدث waiting المستمر.');
-                            if (activeApiChannelUrl) {
-                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                                performSeamlessRefresh(activeApiChannelUrl, 1);
-                            } else {
-                                showLoadError('توقف البث، حاول إعادة المحاولة أو اختر سيرفراً آخر يدوياً.');
-                            }
-                        }
-                    }, 10000);
-                });
-                video.addEventListener('playing', () => {
-                    if (instantStallTimer) { clearTimeout(instantStallTimer); instantStallTimer = null; }
-                });
-
-                root.onclick = (e) => {
-                    if (e.target.closest('.plyr__controls')) return;
-                    manualToggleControls();
-                };
-
-                const plyrOptions = {
-                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
-                    settings: ['quality', 'speed'],
-                    hideControls: false,
-                    clickToPlay: false,
-                    tooltips: { controls: false, seek: true },
-                    i18n: { quality: 'الجودة', speed: 'السرعة' }
-                };
-
-                let plyrSetupDone = false;
-                const setupPlyr = () => {
-                    if (plyrSetupDone) return;
-                    plyrSetupDone = true;
-                    if (currentChannelLoadWatchdog) {
-                        clearTimeout(currentChannelLoadWatchdog);
-                        currentChannelLoadWatchdog = null;
-                    }
-                    plyr = new Plyr(video, plyrOptions);
-                    document.getElementById('placeholderScreen').classList.add('hidden');
-                    controlsVisible = true;
-                    plyr.on('controlshidden', () => {
-                        if (controlsVisible) plyr.toggleControls(true);
-                    });
-
-                    const serverBar = document.getElementById('serverTabBar');
-                    if (serverBar) {
-                        const plyrContainer = document.querySelector('.plyr');
-                        if (plyrContainer) {
-                            plyrContainer.appendChild(serverBar);
-                            updateControlsVisibility();
-                        }
-                    }
-
-                    const controls = document.querySelector('.plyr__controls');
-                    if (controls) {
-                        const aspectBtn = document.createElement('button');
-                        aspectBtn.type = 'button';
-                        aspectBtn.className = 'plyr__control custom-aspect-btn aspect-ratio-toggle';
-                        aspectBtn.innerText = 'Fit';
-                        aspectBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            toggleAspectRatio(video);
-                        };
-                        const fullscreenBtn = controls.querySelector('[data-plyr="fullscreen"]');
-                        if (fullscreenBtn) controls.insertBefore(aspectBtn, fullscreenBtn);
-                        else controls.appendChild(aspectBtn);
-
-                        const lowBwBtn = document.createElement('button');
-                        lowBwBtn.type = 'button';
-                        lowBwBtn.id = 'lowBandwidthToggle';
-                        lowBwBtn.className = 'plyr__control custom-aspect-btn' + (lowBandwidthMode ? ' active' : '');
-                        lowBwBtn.innerHTML = '<i class="fa-solid fa-wifi" style="font-size:11px"></i>';
-                        lowBwBtn.title = 'وضع أضعف انترنت (جودة منخفضة ثابتة لتقليل التقطيع)';
-                        lowBwBtn.onclick = (e) => {
-                            e.stopPropagation();
-                            setLowBandwidthMode(!lowBandwidthMode);
-                            if (lastPlayedChannel) {
-                                playChannel(lastPlayedChannel.url, lastPlayedChannel.type, lastPlayedChannel.name, lastPlayedChannel.el, true, false, null, lastPlayedChannel.channelCtx);
-                            }
-                        };
-                        if (fullscreenBtn) controls.insertBefore(lowBwBtn, fullscreenBtn);
-                        else controls.appendChild(lowBwBtn);
-                    }
-                };
-
-                // ================================================================
-                //  📡 تشغيل DASH (.mpd) باستخدام dash.js
-                // ================================================================
-                if (finalUrl.includes('.mpd') && typeof dashjs !== 'undefined') {
-                    if (location.protocol === 'https:' && finalUrl.startsWith('http://')) {
-                        finalUrl = 'https://' + finalUrl.slice('http://'.length);
-                    }
-
-                    dashPlayer = dashjs.MediaPlayer().create();
-                    dashPlayer.updateSettings({
-                        streaming: {
-                            buffer: {
-                                fastSwitchEnabled: true,
-                                bufferTimeAtTopQuality: 30,
-                                bufferToKeep: 20
-                            },
-                            abr: {
-                                autoSwitchBitrate: { video: true, audio: true },
-                                initialBitrate: { video: lowBandwidthMode ? 300 : undefined }
-                            },
-                            retryAttempts: { MPD: 5, MediaSegment: 5 },
-                            retryIntervals: { MPD: 800, MediaSegment: 500 }
-                        }
-                    });
-
-                    dashPlayer.initialize(video, finalUrl, true);
-
-                    dashPlayer.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-                        setupPlyr();
-                        startHealthMonitor();
-                    });
-
-                    dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e) => {
-                        console.error('خطأ DASH:', e);
-                        if (!plyrSetupDone) {
-                            if (activeApiChannelUrl) {
-                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                                performSeamlessRefresh(activeApiChannelUrl, 1);
-                            } else {
-                                showLoadError('تعذر تشغيل بث DASH (MPD) الخاص بهذه القناة.');
-                            }
-                        }
-                    });
-
-                    currentChannelLoadWatchdog = setTimeout(() => {
-                        currentChannelLoadWatchdog = null;
-                        if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
-                            if (activeApiChannelUrl) {
-                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                                performSeamlessRefresh(activeApiChannelUrl, 1);
-                            } else {
-                                showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر سيرفراً آخر يدوياً.');
-                            }
-                        }
-                    }, 25000);
-
-                // ================================================================
-                //  🎬 تشغيل HLS باستخدام الرابط النهائي (المُعدّل عبر البروكسي)
-                // ================================================================
-                } else if (Hls.isSupported() && finalUrl.includes('.m3u8')) {
-                    if (location.protocol === 'https:' && finalUrl.startsWith('http://')) {
-                        const upgradedUrl = 'https://' + finalUrl.slice('http://'.length);
-                        console.warn('رابط HTTP غير مشفّر داخل صفحة HTTPS (Mixed Content) — محاولة ترقية تلقائية إلى HTTPS:', upgradedUrl);
-                        finalUrl = upgradedUrl;
-                    }
-
-                    function buildHlsPerformanceConfig() {
-                        return {
-                            enableWorker: true,
-                            lowLatencyMode: false,
-                            maxBufferLength: 60,
-                            maxMaxBufferLength: 180,
-                            backBufferLength: 30,
-                            maxBufferHole: 0.5,
-                            maxFragLookUpTolerance: 0.25,
-                            maxBufferSize: 90 * 1000 * 1000,
-                            abrEwmaDefaultEstimate: lowBandwidthMode ? 200000 : 500000,
-                            abrEwmaFastLive: 3.0,
-                            abrEwmaSlowLive: 9.0,
-                            abrBandWidthFactor: lowBandwidthMode ? 0.6 : 0.75,
-                            abrBandWidthUpFactor: lowBandwidthMode ? 0.4 : 0.5,
-                            abrMaxWithRealBitrate: true,
-                            maxStarvationDelay: 1,
-                            maxLoadingDelay: 2,
-                            startLevel: lowBandwidthMode ? 0 : -1,
-                            capLevelToPlayerSize: false,
-                            nudgeMaxRetry: 8,
-                            manifestLoadingMaxRetry: 5,
-                            manifestLoadingRetryDelay: 800,
-                            manifestLoadingMaxRetryTimeout: 8000,
-                            levelLoadingMaxRetry: 5,
-                            levelLoadingRetryDelay: 800,
-                            fragLoadingMaxRetry: 8,
-                            fragLoadingRetryDelay: 500,
-                            fragLoadingMaxRetryTimeout: 8000
-                        };
-                    }
-                    const SHARED_HLS_PERFORMANCE_CONFIG = buildHlsPerformanceConfig();
-
-                    if (finalUrl.includes('man1ted.com') || finalUrl.includes('vercel.app')) {
-                        hls = new Hls({
-                            ...SHARED_HLS_PERFORMANCE_CONFIG,
-                            liveSyncDuration: 20
-                        });
-                    } else {
-                        hls = new Hls(SHARED_HLS_PERFORMANCE_CONFIG);
-                    }
-                    hls.loadSource(finalUrl);
-                    hls.attachMedia(video);
-
-                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                        const availableQualities = hls.levels.map(l => l.height).sort((a, b) => b - a);
-                        plyrOptions.quality = {
-                            default: lowBandwidthMode ? Math.min(...availableQualities) : 0,
-                            options: lowBandwidthMode ? availableQualities : [0, ...availableQualities],
-                            forced: true,
-                            onChange: (q) => {
-                                if (q === 0) hls.currentLevel = -1;
-                                else hls.levels.forEach((level, idx) => {
-                                    if (level.height === q) hls.currentLevel = idx;
-                                });
-                            }
-                        };
-                        plyrOptions.i18n = { ...plyrOptions.i18n, qualityLabel: { 0: 'تلقائي' } };
-                        setupPlyr();
-
-                        if (lowBandwidthMode && hls.levels.length > 0) {
-                            let lowestIdx = 0;
-                            for (let i = 1; i < hls.levels.length; i++) {
-                                if (hls.levels[i].height < hls.levels[lowestIdx].height) lowestIdx = i;
-                            }
-                            hls.currentLevel = lowestIdx;
-                            hls.autoLevelCapping = lowestIdx;
-                            console.warn('وضع أضعف انترنت مفعّل: تثبيت الجودة على أدنى مستوى متاح (' +
-                                hls.levels[lowestIdx].height + 'p) ومنع أي ترقية تلقائية.');
-                        }
-
-                        startHealthMonitor();
-                    });
-
-                    let networkRetryCount = 0;
-                    const MAX_NETWORK_RETRIES = 3;
-                    const boundHlsInstance = hls;
-
-                    boundHlsInstance.on(Hls.Events.ERROR, (event, data) => {
-                        if (data.fatal || hls !== boundHlsInstance) return;
-                        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
-                            try {
-                                const v = document.getElementById('vPlayer');
-                                if (v && v.buffered.length > 0) {
-                                    const bufferedEnd = v.buffered.end(v.buffered.length - 1);
-                                    if (bufferedEnd > v.currentTime) v.currentTime = Math.min(v.currentTime + 0.1, bufferedEnd);
-                                }
-                            } catch (e) { /* تجاهل */ }
-                        }
-                    });
-
-                    boundHlsInstance.on(Hls.Events.ERROR, (event, data) => {
-                        if (!data.fatal) return;
-                        if (hls !== boundHlsInstance) return;
-
-                        switch (data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                if (networkRetryCount < MAX_NETWORK_RETRIES) {
-                                    networkRetryCount++;
-                                    console.warn(`خطأ شبكة في HLS، إعادة محاولة ${networkRetryCount}/${MAX_NETWORK_RETRIES}`, data.details);
-                                    setTimeout(() => {
-                                        try { boundHlsInstance.startLoad(); } catch (e) { /* تجاهل */ }
-                                    }, 1000 * networkRetryCount);
-                                } else {
-                                    showLoadError('تعذر الاتصال بمصدر البث بعد عدة محاولات. قد يكون السيرفر متوقفاً مؤقتاً.');
-                                }
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                console.warn('خطأ ميديا في HLS، محاولة استعادة التشغيل...');
-                                try { boundHlsInstance.recoverMediaError(); } catch (e) {
-                                    showLoadError('تعذر تشغيل تنسيق هذا البث على هذا المتصفح.');
-                                }
-                                break;
-                            default:
-                                showLoadError('المصدر غير متاح حالياً أو تم تغييره من مزود القناة.');
-                                break;
-                        }
-                    });
-
-                    currentChannelLoadWatchdog = setTimeout(() => {
-                        currentChannelLoadWatchdog = null;
-                        if (hls !== boundHlsInstance) return;
-                        if (!plyrSetupDone && document.getElementById('placeholderScreen') && !document.getElementById('placeholderScreen').classList.contains('hidden')) {
-                            if (activeApiChannelUrl) {
-                                if (streamRefreshTimer) { clearTimeout(streamRefreshTimer); streamRefreshTimer = null; }
-                                performSeamlessRefresh(activeApiChannelUrl, 1);
-                            } else {
-                                showLoadError('استغرق تحميل القناة وقتاً طويلاً جداً. حاول مجدداً أو اختر سيرفراً آخر يدوياً.');
-                            }
-                        }
-                    }, 25000);
-
-                } else if (Hls.isSupported() || video.canPlayType('application/vnd.apple.mpegurl')) {
-                    video.src = finalUrl;
-                    video.addEventListener('error', () => {
-                        showLoadError('تعذر تشغيل هذا الرابط مباشرة على هذا المتصفح.');
-                    }, { once: true });
-                    setupPlyr();
-                    startHealthMonitor();
                 } else {
-                    showLoadError('متصفحك لا يدعم تشغيل بث HLS. يرجى تحديث المتصفح أو استخدام متصفح آخر.');
+                    // لا يوجد تكامل تطبيق أندرويد (تصفح من متصفح عادي مثلاً) — نحاول فتح رابط البث مباشرة كخيار احتياطي
+                    window.open(finalUrl, '_blank');
                 }
             }
         }
