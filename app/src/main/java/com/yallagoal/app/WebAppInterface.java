@@ -211,6 +211,20 @@ public class WebAppInterface {
     }
 
     /**
+     * تستدعى من الصفحة عند تحميلها لأخذ قراءة فورية لآخر أرقام معروفة (إجمالي المستخدمين
+     * والمستخدمين النشطين الآن) قبل وصول أي تحديث حيّ لاحق عبر window.__ygOnStatsUpdate.
+     * لا تتطلب فتح القفل (PIN) لأنها بيانات إجمالية عامة غير حساسة لأي مستخدم بعينه.
+     */
+    @JavascriptInterface
+    public String getSnapshotStats(String token) {
+        if (!isTokenValid(token)) return "{\"total\":0,\"active\":0}";
+        UserStatsManager manager = UserStatsManager.getInstance(context);
+        long total = manager.getCachedTotalUsers();
+        long active = manager.getCachedActiveUsers();
+        return "{\"total\":" + total + ",\"active\":" + active + "}";
+    }
+
+    /**
      * تستدعى من زر "بث إلى التلفاز" بجانب كل سيرفر — تفتح قائمة أجهزة العرض المتوفرة
      * على نفس الشبكة (Android TV، Chromecast، تلفزيونات LG المعتمدة من گوگل...) وتبدأ
      * تشغيل الرابط عليها مباشرة بعد الاتصال.
