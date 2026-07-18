@@ -44,6 +44,9 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String LOCAL_URL = "file:///android_asset/index.html";
 
+    // يدفع عدد المستخدمين/النشطين مباشرةً للواجهة (WebView) فور تغيّرهما، بدون أي polling.
+    private UserStatsManager.StatsListener statsListener;
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -117,7 +120,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 if (LOCAL_URL.equals(url)) {
                     view.evaluateJavascript(
-                            "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false }); checkAuth();", null);
+                            "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false }); checkAuth(); if (window.initUserStats) { initUserStats(); }", null);
                 }
             }
         });
@@ -168,6 +171,26 @@ public class MainActivity extends AppCompatActivity {
         FirebaseMessaging.getInstance().subscribeToTopic("all_users");
 
         new UpdateManager().checkForUpdate(this);
+
+        startLiveStatsUpdates();
+    }
+
+    /**
+     * يشترك بعدّاد المستخدمين/النشطين الحيّ ويدفع كل تحديث فوراً إلى صفحة الويب عبر
+     * window.__ygOnStatsUpdate(total, active) — بدون أي استعلام دوري (polling) من الواجهة.
+     */
+    private void startLiveStatsUpdates() {
+        try {
+            statsListener = (total, active) -> runOnUiThread(() -> {
+                if (webView == null) return;
+                String js = "window.__ygOnStatsUpdate && window.__ygOnStatsUpdate("
+                        + total + "," + active + ");";
+                webView.evaluateJavascript(js, null);
+            });
+            UserStatsManager.getInstance(this).addListener(statsListener);
+        } catch (Exception ignored) {
+            // أي خلل هنا لا يجب أن يؤثر على تشغيل التطبيق أو القنوات إطلاقاً.
+        }
     }
 
     private void requestNotificationPermissionIfNeeded() {
@@ -226,6 +249,11 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (statsListener != null) {
+            try {
+                UserStatsManager.getInstance(this).removeListener(statsListener);
+            } catch (Exception ignored) {}
+        }
         if (webView != null) {
             webView.destroy();
         }
