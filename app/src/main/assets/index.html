@@ -705,7 +705,7 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
 
         .overlay-screen {
-            position: absolute;
+            position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             z-index: 100;
             display: flex;
@@ -973,7 +973,7 @@
         </div>
     </div>
 
-    <aside class="aside-container w-full lg:w-80 xl:w-96 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
+    <aside class="aside-container w-full flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 flex-1 h-full overflow-hidden">
         <div class="p-4 border-b border-slate-900 hidden lg:block text-center">
     <h1 class="text-xl font-black text-emerald-500 tracking-tight">يلا گـــول</h1>
     <p class="text-[10px] text-emerald-400 font-black uppercase tracking-widest mt-1" style="filter:drop-shadow(0 0 5px rgba(16,185,129,0.4));">تطوير أُسامه - v2.7</p>
@@ -1016,8 +1016,8 @@
         <div id="channelsBox" class="flex-1 overflow-y-auto p-3 space-y-1 no-scrollbar"></div>
     </aside>
 
-    <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[40vh] lg:h-full overflow-hidden">
-        <div id="placeholderScreen" class="overlay-screen">
+    <main id="mainPlayerArea" class="relative order-1 overflow-visible shrink-0">
+        <div id="placeholderScreen" class="overlay-screen hidden">
             <div class="w-10 h-10 rounded-full border-2 border-slate-800 border-t-emerald-500 animate-spin"></div>
             <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-2">انتظار القناة...</span>
         </div>
@@ -1942,13 +1942,13 @@
                 iframe.setAttribute('allowfullscreen', 'true');
                 iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
                 iframe.setAttribute('referrerpolicy', 'no-referrer');
-                iframe.style.position = 'absolute';
+                iframe.style.position = 'fixed';
                 iframe.style.top = '0';
                 iframe.style.left = '0';
                 iframe.style.width = '100%';
                 iframe.style.height = '100%';
                 iframe.style.border = '0';
-                iframe.style.zIndex = '40';
+                iframe.style.zIndex = '70';
                 iframe.style.backgroundColor = '#000';
                 iframe.src = finalUrl;
 
