@@ -1,0 +1,23 @@
+{
+  "rules": {
+    "installs": {
+      "$deviceId": {
+        ".read": false,
+        ".write": true,
+        ".validate": "newData.hasChildren(['lastSeenAt']) && (!data.child('firstInstallAt').exists() || newData.child('firstInstallAt').val() == data.child('firstInstallAt').val())"
+      }
+    },
+
+    "stats": {
+      "totalInstalls": {
+        ".read": true,
+        ".write": "!data.exists() || newData.val() == data.val() + 1"
+      }
+    },
+
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
