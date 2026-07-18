@@ -62,9 +62,15 @@ dependencies {
 
     implementation platform('com.google.firebase:firebase-bom:34.15.0')
     implementation 'com.google.firebase:firebase-messaging'
+    // نظام عدّاد المستخدمين / المستخدمين النشطين (Realtime Database)
+    implementation 'com.google.firebase:firebase-database'
 
     implementation 'androidx.mediarouter:mediarouter:1.8.1'
     implementation 'com.google.android.gms:play-services-cast-framework:22.3.1'
+
+    // لمعرفة دقيقة بلحظة انتقال التطبيق كاملاً بين المقدمة/الخلفية (بمعزل عن دوران الشاشة
+    // أو التنقل بين الشاشات الداخلية) — أساس دقة عدّاد "المستخدمين النشطين الآن"
+    implementation 'androidx.lifecycle:lifecycle-process:2.8.7'
 }
 
 configurations.all {
