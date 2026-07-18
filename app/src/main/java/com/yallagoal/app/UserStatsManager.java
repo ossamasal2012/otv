@@ -24,12 +24,6 @@ import com.google.firebase.database.ValueEventListener;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -37,8 +31,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 
 /**
  * ============================================================================================
@@ -51,10 +50,11 @@ import java.util.concurrent.Executors;
  *    Database. هذا الرقم لا سقف له إطلاقاً (يقدر يوصل لملايين)، لأنه مجرد قراءة/كتابة عرضية
  *    لعدد صحيح واحد، ولا يتطلب إبقاء اتصال دائم مفتوح.
  *
- *  • "المستخدمون النشطون الآن" (يتغيّر باستمرار طالما التطبيق مفتوح) → Cloudflare Worker +
- *    Workers KV، عبر "نبضات" HTTP دورية قصيرة بدل اتصال دائم. هذا يتفادى بالكامل سقف
- *    "الاتصالات المتزامنة" (100 فقط) المفروض على خطة Firebase المجانية، ولا يحتاج أي بطاقة
- *    دفع أيضاً (خطة Cloudflare المجانية بدون بطاقة إطلاقاً).
+ *  • "المستخدمون النشطون الآن" (يتغيّر باستمرار طالما التطبيق مفتوح) → اتصال WebSocket حقيقي
+ *    ومباشر مع Cloudflare Worker (مبني على Durable Objects). لحظة اتصال أو انفصال أي جهاز،
+ *    الخادم يدفع الرقم الجديد فوراً لكل الأجهزة المتصلة — بدون أي تأخير استطلاع دوري، وبدون
+ *    سقف "اتصالات متزامنة" (100 فقط كان سقف فايربيس)، وبدون أي بطاقة دفع (Durable Objects
+ *    Hibernation API تجعل آلاف الاتصالات المفتوحة شبه مجانية أثناء عدم النشاط).
  *
  * كل استدعاءات هذا الصنف آمنة تماماً (Fail-safe): أي خلل بالشبكة أو بإعداد الخدمتين لا يُسقط
  * التطبيق أبداً ولا يؤثر على تشغيل القنوات — أقصى ما يحدث هو عدم تحديث الأرقام مؤقتاً.
@@ -84,11 +84,10 @@ public final class UserStatsManager {
     // README_USER_STATS.md لخطوات النشر الكاملة). قبل التعديل، ميزة "نشط الآن"
     // تبقى معطّلة بهدوء (لا تُسبب أي خطأ)، بينما "إجمالي المستخدمين" يعمل طبيعياً.
     // ============================================================================
-    private static final String ACTIVE_STATS_BASE_URL = "https://yallagoal-active-users.ossamasal2012.workers.dev";
-    private static final String ACTIVE_STATS_SHARED_SECRET = "CehBJ9onRc16htCkWyMBnCMbM5vFqQ2zHfn8qtWlUW0";
+    private static final String ACTIVE_STATS_BASE_URL = "https://REPLACE_ME.workers.dev";
+    private static final String ACTIVE_STATS_SHARED_SECRET = "REPLACE_ME_WITH_LONG_RANDOM_SECRET";
 
-    private static final long HEARTBEAT_INTERVAL_MS = 30_000L; // كل 30 ثانية طالما التطبيق مفتوح
-    private static final int HTTP_TIMEOUT_MS = 8_000;
+    private static final long RECONNECT_DELAY_MS = 4_000L;
 
     private static volatile UserStatsManager instance;
 
@@ -99,18 +98,15 @@ public final class UserStatsManager {
     @Nullable private final DatabaseReference installRef;
     @Nullable private final DatabaseReference totalUsersRef;
 
-    private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
-    private final Handler heartbeatHandler = new Handler(Looper.getMainLooper());
-    private volatile boolean heartbeatLoopRunning = false;
+    // ping بروتوكولي كل 25 ثانية يبقي الاتصال حياً عبر أي وسيط شبكي، ويكتشف الانقطاع الفعلي
+    // بسرعة معقولة (OkHttp يستدعي onFailure تلقائياً لو ما وصل رد على الـ ping).
+    private final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .pingInterval(25, TimeUnit.SECONDS)
+            .build();
 
-    private final Runnable heartbeatRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (!heartbeatLoopRunning) return;
-            sendHeartbeatOnce();
-            heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS);
-        }
-    };
+    private final Handler wsHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean wantsConnection = false;
+    @Nullable private volatile WebSocket activeSocket;
 
     private final CopyOnWriteArraySet<StatsListener> listeners = new CopyOnWriteArraySet<>();
     private volatile boolean totalUsersListenerAttached = false;
@@ -185,6 +181,8 @@ public final class UserStatsManager {
             rawIdentity = "fb1:" + fallback;
         }
 
+        // معرّف الـ WebSocket يجب أن يحوي فقط أحرف/أرقام/شرطات (يُستخدم كوسيطة رابط + وسم اتصال
+        // بالخادم)، فنشتق من الـ SHA-256 نسخة hex نظيفة تماماً بدل استخدام نص خام قد يحوي رموزاً.
         return sha256(rawIdentity + ":com.yallagoal.app");
     }
 
@@ -317,112 +315,104 @@ public final class UserStatsManager {
     }
 
     // ======================== الحضور (المستخدم النشط الآن) ========================
-    // (Cloudflare Worker عبر HTTP — بدون اتصال دائم، وبدون أي سقف اتصالات متزامنة)
+    // (WebSocket مباشر مع Cloudflare Durable Object — تحديث فوري، بدون سقف اتصالات، بدون بطاقة)
 
     /**
      * التطبيق بأكمله أصبح بالمقدمة فعلياً أمام المستخدم. تُستدعى من ProcessLifecycleOwner.onStart
      * على مستوى التطبيق كله (وليس نشاطاً منفرداً)، فلا تتأثر بدوران الشاشة أو التنقل الداخلي.
-     * تبدأ حلقة "نبضات" HTTP دورية (كل 30 ثانية) تبقي هذا الجهاز محتسباً ضمن "نشط الآن"، وتتوقف
-     * تلقائياً بمجرد استدعاء markInactive().
+     * تفتح اتصال WebSocket مباشراً يبقى مفتوحاً طوال بقاء التطبيق بالمقدمة، ويستقبل تحديث العدد
+     * فوراً من الخادم لحظة أي تغيّر — بدون أي استطلاع دوري.
      */
     public void markActive() {
         touchLastSeen();
-
-        if (heartbeatLoopRunning) return;
-        heartbeatLoopRunning = true;
-        heartbeatHandler.removeCallbacks(heartbeatRunnable);
-        heartbeatHandler.post(heartbeatRunnable);
+        wantsConnection = true;
+        connectWebSocketIfNeeded();
     }
 
     /**
-     * التطبيق بأكمله انتقل للخلفية (لا شاشة منه ظاهرة). نوقف حلقة النبضات فوراً، ونرسل إشعار
-     * "خروج" أخير (best-effort) ليختفي هذا الجهاز من عدّاد "نشط الآن" فوراً بدل انتظار انتهاء
-     * صلاحية آخر نبضة على خادم Cloudflare (وهي خط أمان احتياطي فقط للحالات غير الطبيعية مثل
-     * تعطّل التطبيق أو فقد الشبكة المفاجئ، حيث يختفي الجهاز تلقائياً من العدّاد خلال ثوانٍ معدودة
-     * دون الحاجة لأي إشعار صريح منه).
+     * التطبيق بأكمله انتقل للخلفية (لا شاشة منه ظاهرة). نغلق اتصال WebSocket فوراً وبشكل صريح،
+     * فيختفي هذا الجهاز من عدّاد "نشط الآن" على الفور عند كل الأجهزة الأخرى بنفس اللحظة تقريباً.
      */
     public void markInactive() {
-        heartbeatLoopRunning = false;
-        heartbeatHandler.removeCallbacks(heartbeatRunnable);
-        sendLeaveOnce();
-    }
-
-    private void sendHeartbeatOnce() {
-        networkExecutor.execute(() -> {
+        wantsConnection = false;
+        wsHandler.removeCallbacksAndMessages(null);
+        WebSocket socket = activeSocket;
+        activeSocket = null;
+        if (socket != null) {
             try {
-                JSONObject body = new JSONObject();
-                body.put("deviceId", deviceId);
-                JSONObject response = postJson("/heartbeat", body);
-                applyActiveCountFromResponse(response);
-            } catch (Exception e) {
-                Log.w(TAG, "تعذر إرسال نبضة النشاط: " + e.getMessage());
-            }
-        });
+                socket.close(1000, "app_backgrounded");
+            } catch (Exception ignored) {}
+        }
     }
 
-    private void sendLeaveOnce() {
-        networkExecutor.execute(() -> {
-            try {
-                JSONObject body = new JSONObject();
-                body.put("deviceId", deviceId);
-                JSONObject response = postJson("/leave", body);
-                applyActiveCountFromResponse(response);
-            } catch (Exception e) {
-                Log.w(TAG, "تعذر إرسال إشعار الخروج: " + e.getMessage());
-            }
-        });
-    }
-
-    private void applyActiveCountFromResponse(@Nullable JSONObject response) {
-        if (response == null || !response.has("active")) return;
-        cachedActiveUsers = response.optLong("active", cachedActiveUsers);
-        notifyListeners();
-    }
-
-    /** ينفّذ طلب POST بصيغة JSON على خادم Cloudflare Worker. يعمل دوماً على خيط بالخلفية. */
-    @Nullable
-    private JSONObject postJson(String path, JSONObject body) {
+    private void connectWebSocketIfNeeded() {
+        if (activeSocket != null) return;
         if (ACTIVE_STATS_BASE_URL.contains("REPLACE_ME")) {
             // Worker لم يُنشر/يُهيّأ بعد بهذا المشروع — لا نحاول الاتصال، ولا نُسبب أي خطأ مرئي.
-            return null;
+            return;
         }
-        HttpURLConnection conn = null;
+
+        String wsUrl;
         try {
-            URL url = new URL(ACTIVE_STATS_BASE_URL + path);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setConnectTimeout(HTTP_TIMEOUT_MS);
-            conn.setReadTimeout(HTTP_TIMEOUT_MS);
-            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            conn.setRequestProperty("X-YG-Secret", ACTIVE_STATS_SHARED_SECRET);
-            conn.setDoOutput(true);
-
-            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(payload);
-            }
-
-            int code = conn.getResponseCode();
-            InputStream stream = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
-            if (stream == null) return null;
-
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) sb.append(line);
-            }
-
-            if (code < 200 || code >= 300) {
-                Log.w(TAG, "خادم إحصائيات النشاط أعاد الحالة " + code + ": " + sb);
-                return null;
-            }
-            return new JSONObject(sb.toString());
+            wsUrl = ACTIVE_STATS_BASE_URL.replaceFirst("^https://", "wss://")
+                    .replaceFirst("^http://", "ws://") + "/ws?deviceId=" + deviceId;
         } catch (Exception e) {
-            Log.w(TAG, "خطأ اتصال بخادم إحصائيات النشاط: " + e.getMessage());
-            return null;
-        } finally {
-            if (conn != null) conn.disconnect();
+            return;
         }
+
+        Request request;
+        try {
+            request = new Request.Builder()
+                    .url(wsUrl)
+                    .addHeader("X-YG-Secret", ACTIVE_STATS_SHARED_SECRET)
+                    .build();
+        } catch (Exception e) {
+            Log.w(TAG, "رابط خادم النشاط غير صالح: " + e.getMessage());
+            return;
+        }
+
+        activeSocket = httpClient.newWebSocket(request, new WebSocketListener() {
+            @Override
+            public void onMessage(@NonNull WebSocket webSocket, @NonNull String text) {
+                try {
+                    JSONObject json = new JSONObject(text);
+                    if (json.has("active")) {
+                        cachedActiveUsers = json.optLong("active", cachedActiveUsers);
+                        notifyListeners();
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "رسالة غير متوقعة من خادم النشاط: " + e.getMessage());
+                }
+            }
+
+            @Override
+            public void onFailure(@NonNull WebSocket webSocket, @NonNull Throwable t, @Nullable Response response) {
+                Log.w(TAG, "انقطع اتصال النشاط المباشر: " + t.getMessage());
+                if (webSocket == activeSocket) {
+                    activeSocket = null;
+                }
+                scheduleReconnect();
+            }
+
+            @Override
+            public void onClosed(@NonNull WebSocket webSocket, int code, @NonNull String reason) {
+                if (webSocket == activeSocket) {
+                    activeSocket = null;
+                }
+                // لو انغلق الاتصال من طرف الخادم أو الشبكة (لا نحن من طلب الإغلاق) بينما التطبيق
+                // لا يزال بالمقدمة، نعيد الاتصال فوراً تقريباً.
+                if (wantsConnection && code != 1000) {
+                    scheduleReconnect();
+                }
+            }
+        });
+    }
+
+    private void scheduleReconnect() {
+        if (!wantsConnection) return;
+        wsHandler.postDelayed(() -> {
+            if (wantsConnection) connectWebSocketIfNeeded();
+        }, RECONNECT_DELAY_MS);
     }
 
     // ================================ أرقام حيّة (Live) ================================
