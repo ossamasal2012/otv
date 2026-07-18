@@ -1,0 +1,9 @@
+name = "yallagoal-active-users"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+# بعد تنفيذ: wrangler kv namespace create PRESENCE
+# الصق الـ id الذي يطبعه الأمر هنا مكان REPLACE_WITH_KV_NAMESPACE_ID
+kv_namespaces = [
+  { binding = "PRESENCE", id = "REPLACE_WITH_KV_NAMESPACE_ID" }
+]
