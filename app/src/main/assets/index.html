@@ -1,5 +1,3 @@
-
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -261,6 +259,126 @@
         .settings-gear-btn:hover {
             color: #10b981;
             border-color: #10b981;
+        }
+
+        /* ===== شريط إحصائيات المستخدمين المباشر (أسفل الشريط العلوي) ===== */
+        .stats-strip {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.6rem;
+        }
+
+        .stat-chip {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(30, 41, 59, 0.55);
+            border: 1px solid #1e293b;
+            border-radius: 0.6rem;
+            padding: 0.45rem 0.6rem;
+            min-width: 0;
+        }
+
+        .stat-chip-icon {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .stat-chip-icon.dot-total {
+            background: #475569;
+        }
+
+        .stat-chip-icon.dot-active {
+            background: #10b981;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.6);
+            animation: activePulse 1.8s infinite;
+        }
+
+        @keyframes activePulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
+            70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .stat-chip-text {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            line-height: 1.15;
+        }
+
+        .stat-chip-value {
+            font-size: 0.8rem;
+            font-weight: 900;
+            color: #f1f5f9;
+            font-variant-numeric: tabular-nums;
+            transition: color 0.2s;
+        }
+
+        .stat-chip-value.bumped {
+            color: #10b981;
+        }
+
+        .stat-chip-label {
+            font-size: 0.6rem;
+            color: #64748b;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ===== بطاقات الإحصائيات داخل شاشة الإعدادات ===== */
+        .stats-cards {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stats-card {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid #1e293b;
+            border-radius: 0.85rem;
+            padding: 1rem 0.75rem;
+            text-align: center;
+        }
+
+        .stats-card-icon {
+            font-size: 1.1rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .stats-card-value {
+            font-size: 1.5rem;
+            font-weight: 900;
+            color: #10b981;
+            font-variant-numeric: tabular-nums;
+            direction: ltr;
+        }
+
+        .stats-card-label {
+            font-size: 0.68rem;
+            color: #94a3b8;
+            font-weight: 700;
+            margin-top: 0.25rem;
+        }
+
+        .stats-card.is-active .stats-card-value {
+            color: #34d399;
+        }
+
+        .stats-card-live-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            margin-left: 4px;
+            animation: activePulse 1.8s infinite;
         }
 
         /* ===== شاشة الإعدادات ===== */
@@ -828,6 +946,20 @@
         </div>
 
         <div class="settings-body">
+            <p class="settings-section-title">إحصائيات التطبيق <span class="stats-card-live-dot"></span></p>
+            <div class="stats-cards">
+                <div class="stats-card">
+                    <div class="stats-card-icon">👥</div>
+                    <div class="stats-card-value" id="settingsTotalUsers">—</div>
+                    <div class="stats-card-label">إجمالي المستخدمين</div>
+                </div>
+                <div class="stats-card is-active">
+                    <div class="stats-card-icon">🟢</div>
+                    <div class="stats-card-value" id="settingsActiveUsers">—</div>
+                    <div class="stats-card-label">نشطون الآن</div>
+                </div>
+            </div>
+
             <p class="settings-section-title">اختر المشغل الخارجي</p>
             <div id="externalPlayerList"></div>
         </div>
@@ -853,6 +985,22 @@
                 <button type="button" class="settings-gear-btn" onclick="openSettings()" title="الإعدادات">
                     <i class="fa-solid fa-gear"></i>
                 </button>
+            </div>
+            <div class="stats-strip" id="statsStrip" title="إحصائيات مستخدمي التطبيق">
+                <div class="stat-chip">
+                    <span class="stat-chip-icon dot-total"></span>
+                    <span class="stat-chip-text">
+                        <span class="stat-chip-value" id="stripTotalUsers">—</span>
+                        <span class="stat-chip-label">إجمالي المستخدمين</span>
+                    </span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-chip-icon dot-active"></span>
+                    <span class="stat-chip-text">
+                        <span class="stat-chip-value" id="stripActiveUsers">—</span>
+                        <span class="stat-chip-label">نشطون الآن</span>
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -905,6 +1053,55 @@
 
             // الروابط الخارجية تستخدم ?url= (للتوافق مع المواقع الأخرى)
             return `${CORS_PROXY_BASE}/?url=${encodeURIComponent(originalUrl)}`;
+        }
+        // ============================================================
+
+        // ============================================================
+        //  👥 عدّاد المستخدمين / المستخدمين النشطين الآن (مباشر Real-time)
+        //  الأرقام تُغذّى من نظام دقيق على مستوى تطبيق أندرويد (UserStatsManager) عبر
+        //  window.__ygOnStatsUpdate(total, active) — لا يوجد أي polling من هذه الصفحة.
+        // ============================================================
+        function formatStatNumber(n) {
+            const num = Number(n) || 0;
+            return num.toLocaleString('en-US');
+        }
+
+        function flashBump(el) {
+            if (!el) return;
+            el.classList.add('bumped');
+            setTimeout(() => el.classList.remove('bumped'), 700);
+        }
+
+        function setStatText(id, value) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const formatted = formatStatNumber(value);
+            if (el.textContent !== formatted && el.textContent !== '—') {
+                flashBump(el);
+            }
+            el.textContent = formatted;
+        }
+
+        // يُستدعى مباشرةً من الكود الأصلي لأندرويد (MainActivity) في كل مرة يتغيّر فيها أي رقم.
+        window.__ygOnStatsUpdate = function (total, active) {
+            setStatText('stripTotalUsers', total);
+            setStatText('stripActiveUsers', active);
+            setStatText('settingsTotalUsers', total);
+            setStatText('settingsActiveUsers', active);
+        };
+
+        // قراءة فورية أولى (قبل وصول أي دفعة حيّة) حتى لا تظهر الأرقام فارغة عند فتح التطبيق.
+        function initUserStats() {
+            try {
+                if (window.AndroidPlayer && window.__YG_TOKEN__
+                    && typeof window.AndroidPlayer.getSnapshotStats === 'function') {
+                    const raw = window.AndroidPlayer.getSnapshotStats(window.__YG_TOKEN__);
+                    const parsed = JSON.parse(raw);
+                    window.__ygOnStatsUpdate(parsed.total, parsed.active);
+                }
+            } catch (e) {
+                // منصة غير أندرويد (اختبار بمتصفح عادي) أو الجسر غير متوفر بعد — تجاهل بهدوء.
+            }
         }
         // ============================================================
 
@@ -1785,6 +1982,7 @@
         }
 
         checkAuth();
+        initUserStats();
         window.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => {
                 const splash = document.getElementById('loadingSplashScreen');
