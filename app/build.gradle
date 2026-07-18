@@ -8,8 +8,8 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 24
-        versionName "3.5"
+        versionCode 22
+        versionName "3.3"
     }
 
     signingConfigs {
@@ -67,6 +67,9 @@ dependencies {
 
     implementation 'androidx.mediarouter:mediarouter:1.8.1'
     implementation 'com.google.android.gms:play-services-cast-framework:22.3.1'
+
+    // لدعم اتصال WebSocket المباشر (تحديث فوري لعدّاد "نشط الآن" بدون أي تأخير استطلاع دوري)
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
     // لمعرفة دقيقة بلحظة انتقال التطبيق كاملاً بين المقدمة/الخلفية (بمعزل عن دوران الشاشة
     // أو التنقل بين الشاشات الداخلية) — أساس دقة عدّاد "المستخدمين النشطين الآن"
