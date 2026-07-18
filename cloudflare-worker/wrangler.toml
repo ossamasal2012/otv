@@ -2,8 +2,12 @@ name = "yallagoal-active-users"
 main = "worker.js"
 compatibility_date = "2026-06-01"
 
-# بعد تنفيذ: wrangler kv namespace create PRESENCE
-# الصق الـ id الذي يطبعه الأمر هنا مكان REPLACE_WITH_KV_NAMESPACE_ID
-kv_namespaces = [
-  { binding = "PRESENCE", id = "REPLACE_WITH_KV_NAMESPACE_ID" }
-]
+# ربط اسم "PRESENCE_ROOM" بكلاس PresenceRoom المُصدَّر من worker.js
+[[durable_objects.bindings]]
+name = "PRESENCE_ROOM"
+class_name = "PresenceRoom"
+
+# يسجّل الكلاس كـ Durable Object جديد بتخزين SQLite (مطلوب مرة واحدة فقط عند أول نشر)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PresenceRoom"]
