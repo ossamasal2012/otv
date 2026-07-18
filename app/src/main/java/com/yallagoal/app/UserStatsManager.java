@@ -84,8 +84,8 @@ public final class UserStatsManager {
     // README_USER_STATS.md لخطوات النشر الكاملة). قبل التعديل، ميزة "نشط الآن"
     // تبقى معطّلة بهدوء (لا تُسبب أي خطأ)، بينما "إجمالي المستخدمين" يعمل طبيعياً.
     // ============================================================================
-    private static final String ACTIVE_STATS_BASE_URL = "https://REPLACE_ME.workers.dev";
-    private static final String ACTIVE_STATS_SHARED_SECRET = "REPLACE_ME_WITH_LONG_RANDOM_SECRET";
+    private static final String ACTIVE_STATS_BASE_URL = "https://yallagoal-active-users.ossamasal2012.workers.dev";
+    private static final String ACTIVE_STATS_SHARED_SECRET = "CehBJ9onRc16htCkWyMBnCMbM5vFqQ2zHfn8qtWlUW0";
 
     private static final long HEARTBEAT_INTERVAL_MS = 30_000L; // كل 30 ثانية طالما التطبيق مفتوح
     private static final int HTTP_TIMEOUT_MS = 8_000;
