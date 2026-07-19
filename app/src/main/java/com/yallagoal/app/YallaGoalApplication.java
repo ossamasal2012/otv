@@ -22,22 +22,13 @@ public class YallaGoalApplication extends Application implements DefaultLifecycl
     @Override
     public void onCreate() {
         super.onCreate();
-
-        // تسجيل هذا الجهاز كـ"مستخدم" (تثبيت فريد) مرة واحدة فقط طوال عمر التثبيت على هذا
-        // الجهاز — لا يزيد عند التحديث، ولا يتكرر عند إعادة الفتح. أي خلل هنا لا يجب أن يوقف
-        // إقلاع التطبيق أبداً.
-        try {
-            UserStatsManager.getInstance(this).registerOrTouch();
-        } catch (Exception e) {
-            Log.w(TAG, "تعذر تهيئة عدّاد المستخدمين عند الإقلاع: " + e.getMessage());
-        }
-
         ProcessLifecycleOwner.get().getLifecycle().addObserver(this);
     }
 
     @Override
     public void onStart(@NonNull LifecycleOwner owner) {
-        // التطبيق بأكمله بات ظاهراً أمام المستخدم الآن -> "نشط".
+        // التطبيق بأكمله بات ظاهراً أمام المستخدم الآن -> "نشط". فتح الاتصال هنا وحده يكفي
+        // ليُسجَّل هذا الجهاز أيضاً كـ"مستخدم فريد" تلقائياً على الخادم (راجع UserStatsManager).
         try {
             UserStatsManager.getInstance(this).markActive();
         } catch (Exception e) {
