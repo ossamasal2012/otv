@@ -8,8 +8,8 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 38
-        versionName "3.8"
+        versionCode 39
+        versionName "3.9"
     }
 
     signingConfigs {
@@ -62,8 +62,6 @@ dependencies {
 
     implementation platform('com.google.firebase:firebase-bom:34.15.0')
     implementation 'com.google.firebase:firebase-messaging'
-    // نظام عدّاد المستخدمين / المستخدمين النشطين (Realtime Database)
-    implementation 'com.google.firebase:firebase-database'
 
     implementation 'androidx.mediarouter:mediarouter:1.8.1'
     implementation 'com.google.android.gms:play-services-cast-framework:22.3.1'
