@@ -64,8 +64,8 @@ public final class UserStatsManager {
     // ⚠️ مهم: عدّل هذين السطرين حسب رابط وسر Cloudflare Worker عندك (لم يتغيّرا عن آخر مرة —
     // لا حاجة لإعادة نشر أي binding جديد، نفس الـ Worker والمعرّفات المستخدمة سابقاً).
     // ============================================================================
-    private static final String ACTIVE_STATS_BASE_URL = "https://REPLACE_ME.workers.dev";
-    private static final String ACTIVE_STATS_SHARED_SECRET = "REPLACE_ME_WITH_LONG_RANDOM_SECRET";
+    private static final String ACTIVE_STATS_BASE_URL = "https://yallagoal-active-users.ossamasal2012.workers.dev";
+    private static final String ACTIVE_STATS_SHARED_SECRET = "CehBJ9onRc16htCkWyMBnCMbM5vFqQ2zHfn8qtWlUW0";
 
     // نبضة تطبيقية خفيفة كل 15 ثانية تبقي الخادم يعرف أن هذا الاتصال لا يزال حياً فعلاً —
     // أساس اكتشاف الانقطاع المفاجئ خلال وقت قصير ومضبوط (راجع alarm() بملف worker.js).
