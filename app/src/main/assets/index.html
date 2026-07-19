@@ -716,51 +716,6 @@
             gap: 1rem;
         }
 
-        /* ===== شريط السيرفرات (يظهر دائماً، فوق كل شيء) ===== */
-        .server-tab-bar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            z-index: 200;
-            display: flex;
-            gap: 6px;
-            padding: 8px 10px;
-            overflow-x: auto;
-            scrollbar-width: none;
-            -webkit-overflow-scrolling: touch;
-            background: linear-gradient(to bottom, rgba(2, 6, 23, 0.88) 0%, rgba(2, 6, 23, 0.5) 70%, transparent 100%);
-            direction: rtl;
-            transition: opacity 0.25s ease, visibility 0.25s ease;
-        }
-        .server-tab-bar::-webkit-scrollbar { display: none; }
-        .server-tab-bar.hidden-server-bar {
-            opacity: 0 !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
-        }
-
-        .server-chip {
-            flex-shrink: 0;
-            white-space: nowrap;
-            font-family: 'Tajawal', sans-serif;
-            font-size: 11px;
-            font-weight: 700;
-            padding: 5px 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            background: rgba(15, 23, 42, 0.6);
-            color: #cbd5e1;
-            cursor: pointer;
-            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-        }
-        .server-chip:hover { border-color: rgba(16, 185, 129, 0.55); color: #f1f5f9; }
-        .server-chip.active {
-            background: #10b981;
-            border-color: #10b981;
-            color: #022c22;
-        }
-
         .server-count-badge {
             background: rgba(16, 185, 129, 0.15);
             color: #10b981;
@@ -1301,9 +1256,6 @@
         let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
         let currentIframeFallbackTimer = null;
 
-        let currentOpenChannel = null;
-        let currentServerIndex = 0;
-
         const MAIN_CHANNELS_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/channels.json";
         const QURAN_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/quran.json";
         const POEMS_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/quran/refs/heads/main/peoms.json";
@@ -1630,11 +1582,6 @@
                 oldIframe.remove();
             }
 
-            const oldBar = document.getElementById('serverTabBar');
-            if (oldBar) {
-                oldBar.remove();
-            }
-
             if (currentIframeFallbackTimer) {
                 clearTimeout(currentIframeFallbackTimer);
                 currentIframeFallbackTimer = null;
@@ -1642,6 +1589,32 @@
 
             document.getElementById('errorScreen').classList.add('hidden');
             document.getElementById('placeholderScreen').classList.remove('hidden');
+
+            // نُعلم أندرويد أن أي iframe مفتوح سابقاً صار مغلقاً الآن، حتى يعود زر الرجوع
+            // لسلوكه الطبيعي (بدل اعتراض الخروج من التطبيق). آمن للاستدعاء حتى لو لم يكن هناك
+            // iframe مفتوح أصلاً.
+            if (window.__ygIsIframeOpen) {
+                window.__ygIsIframeOpen = false;
+                try {
+                    if (window.AndroidPlayer && window.__YG_TOKEN__
+                        && typeof window.AndroidPlayer.notifyIframeState === 'function') {
+                        window.AndroidPlayer.notifyIframeState(false, window.__YG_TOKEN__);
+                    }
+                } catch (e) { /* تجاهل */ }
+            }
+        }
+
+        /**
+         * تُستدعى حصراً من الكود الأصلي لأندرويد عند ضغط زر الرجوع بينما iframe مفتوح بملء
+         * الشاشة. تُغلق الـ iframe وتُعيد الواجهة لحالتها الخاملة (قائمة القنوات) تماماً،
+         * بخلاف cleanup() وحدها التي تترك شاشة التحميل ظاهرة تحضيراً لتشغيل قناة جديدة.
+         */
+        function closeIframeAndReturnToList() {
+            cleanup();
+            document.getElementById('placeholderScreen').classList.add('hidden');
+            document.getElementById('errorScreen').classList.add('hidden');
+            document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
+            lastPlayedChannel = null;
         }
 
         function toggleFavorite(event, name) {
@@ -1821,45 +1794,6 @@
             pendingServerChoice = null;
         }
 
-        function switchServer(serverIndex) {
-            if (!currentOpenChannel) return;
-            const srv = currentOpenChannel.servers[serverIndex];
-            if (!srv) return;
-            const targetEl = lastPlayedChannel ? lastPlayedChannel.el : null;
-            playChannel(srv.url, srv.type, currentOpenChannel.name, targetEl, false, false, null,
-                { channel: currentOpenChannel, serverIndex });
-        }
-
-        function renderServerBar(targetElement) {
-            const oldBar = document.getElementById('serverTabBar');
-            if (oldBar) oldBar.remove();
-
-            if (!currentOpenChannel || !Array.isArray(currentOpenChannel.servers) || currentOpenChannel.servers.length < 2) {
-                return;
-            }
-
-            const bar = document.createElement('div');
-            bar.id = 'serverTabBar';
-            bar.className = 'server-tab-bar';
-            bar.onclick = (e) => e.stopPropagation();
-
-            currentOpenChannel.servers.forEach((srv, idx) => {
-                const chip = document.createElement('button');
-                chip.type = 'button';
-                chip.className = 'server-chip' + (idx === currentServerIndex ? ' active' : '');
-                chip.textContent = srv.name;
-                chip.onclick = (e) => {
-                    e.stopPropagation();
-                    if (idx === currentServerIndex) return;
-                    switchServer(idx);
-                };
-                bar.appendChild(chip);
-            });
-
-            const target = targetElement || document.getElementById('mainPlayerArea');
-            target.appendChild(bar);
-        }
-
         const preconnectedHosts = new Set();
         function preconnectToStreamHost(streamUrl) {
             try {
@@ -1894,12 +1828,7 @@
 
             preconnectToStreamHost(finalUrl);
 
-            currentOpenChannel = channelCtx ? channelCtx.channel : null;
-            currentServerIndex = channelCtx ? (channelCtx.serverIndex || 0) : 0;
-
             cleanup();
-
-            renderServerBar(document.getElementById('mainPlayerArea'));
 
             document.getElementById('placeholderScreen').classList.remove('hidden');
 
@@ -1968,6 +1897,14 @@
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     currentIframeFallbackTimer = null;
                 }, 2000);
+
+                window.__ygIsIframeOpen = true;
+                try {
+                    if (window.AndroidPlayer && window.__YG_TOKEN__
+                        && typeof window.AndroidPlayer.notifyIframeState === 'function') {
+                        window.AndroidPlayer.notifyIframeState(true, window.__YG_TOKEN__);
+                    }
+                } catch (e) { /* تجاهل — منصة غير أندرويد أو الجسر غير متوفر */ }
 
             } else {
                 // 🎬 لا يوجد مشغل مدمج داخل التطبيق بعد الآن: كل القنوات تُفتح دائماً عبر تطبيق مشغل فيديو خارجي
