@@ -47,6 +47,14 @@ public class MainActivity extends AppCompatActivity {
     // يدفع عدد المستخدمين/النشطين مباشرةً للواجهة (WebView) فور تغيّرهما، بدون أي polling.
     private UserStatsManager.StatsListener statsListener;
 
+    // تُحدَّث من الصفحة (JS) عبر WebAppInterface.notifyIframeState() كلما فُتح/أُغلق مشغل
+    // iframe بملء الشاشة — تجعل زر الرجوع يخرج من الـ iframe فقط بدل إغلاق التطبيق بالكامل.
+    private volatile boolean isIframeOpen = false;
+
+    public void setIframeOpen(boolean open) {
+        isIframeOpen = open;
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -226,6 +234,14 @@ public class MainActivity extends AppCompatActivity {
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             if (customView != null) {
                 exitFullscreenVideo();
+                return true;
+            }
+            if (isIframeOpen) {
+                // نطلب من الصفحة نفسها إغلاق الـ iframe والرجوع للقائمة الرئيسية — لا نغلق
+                // النشاط (Activity) إطلاقاً هنا. isIframeOpen سيتحدّث تلقائياً لـ false بمجرد
+                // أن تستدعي الصفحة notifyIframeState(false, ...) من داخل closeIframeAndReturnToList().
+                webView.evaluateJavascript(
+                        "if (window.closeIframeAndReturnToList) { closeIframeAndReturnToList(); }", null);
                 return true;
             }
             if (webView.canGoBack()) {
