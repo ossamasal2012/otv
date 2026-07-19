@@ -123,7 +123,7 @@ public class WebAppInterface {
 
     /**
      * تستدعى من JavaScript داخل الصفحة (window.AndroidPlayer.playExternal(token, url, title, packageName))
-     * لتشغيل رابط بث مباشر بمشغل فيديو خارجي محدد (VLC) بدل تشغيله داخل الصفحة.
+     * لتشغيل رابط بث مباشر بمشغل فيديو خارجي محدد (GTV Player) بدل تشغيله داخل الصفحة.
      * packageName هو حزمة التطبيق المختار من الإعدادات؛ لو فارغ أو غير مثبت، يعرض قائمة اختيار عامة.
      *
      * مهم: لا نضيف Intent.FLAG_ACTIVITY_NEW_TASK هنا عمداً، حتى يبقى المشغل الخارجي
@@ -164,14 +164,14 @@ public class WebAppInterface {
                 context.startActivity(Intent.createChooser(genericIntent, "افتح باستخدام"));
             } catch (ActivityNotFoundException e) {
                 Toast.makeText(context,
-                        "لا يوجد مشغل فيديو مثبت على جهازك. ثبّت VLC من الإعدادات.",
+                        "لا يوجد مشغل فيديو مثبت على جهازك. ثبّت GTV Player من الإعدادات.",
                         Toast.LENGTH_LONG).show();
             }
         });
     }
 
     /**
-     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (VLC) مثبت على الجهاز،
+     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (GTV Player) مثبت على الجهاز،
      * لإظهار زر "تثبيت" فقط عند الحاجة.
      */
     @JavascriptInterface
