@@ -225,6 +225,18 @@ public class WebAppInterface {
     }
 
     /**
+     * تستدعى من الصفحة كل مرة يُفتح أو يُغلق فيها مشغل iframe بملء الشاشة (القنوات النادرة من
+     * نوع "i"). هذا يسمح لزر الرجوع بأندرويد أن يخرج من الـ iframe فقط بدل إغلاق التطبيق كاملاً.
+     */
+    @JavascriptInterface
+    public void notifyIframeState(boolean isOpen, String token) {
+        if (!isTokenValid(token)) return;
+        if (context instanceof MainActivity) {
+            ((MainActivity) context).setIframeOpen(isOpen);
+        }
+    }
+
+    /**
      * تستدعى من زر "بث إلى التلفاز" بجانب كل سيرفر — تفتح قائمة أجهزة العرض المتوفرة
      * على نفس الشبكة (Android TV، Chromecast، تلفزيونات LG المعتمدة من گوگل...) وتبدأ
      * تشغيل الرابط عليها مباشرة بعد الاتصال.
