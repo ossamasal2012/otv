@@ -656,6 +656,20 @@
             white-space: nowrap;
         }
 
+        .recommended-badge {
+            font-size: 0.62rem;
+            font-weight: 800;
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.35);
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            white-space: nowrap;
+        }
+
         .channel-item {
             transition: all 0.2s ease;
             cursor: pointer;
@@ -915,7 +929,7 @@
                 </div>
             </div>
 
-            <p class="settings-section-title">مشغل الفيديو المعتمد</p>
+            <p class="settings-section-title">اختر المشغل الخارجي</p>
             <div id="externalPlayerList"></div>
         </div>
     </div>
@@ -1074,58 +1088,91 @@
 
         // ============================================================
         //  ⚙️ الإعدادات: نوع المشغل (افتراضي داخل التطبيق / خارجي)
-        //  + اختيار تطبيق المشغل الخارجي (VLC)
+        //  + اختيار تطبيق المشغل الخارجي (GTV Player / VLC / أي مشغل آخر)
         //  + إعداد مستقل لكل مجلد (القرآن الكريم / قصائد حسينية)
         // ============================================================
-        // مشغل الفيديو الوحيد المعتمد للتطبيق. لا يوجد أي اختيار بعد الآن — كل القنوات
-        // تُفتح دائماً بهذا التطبيق تحديداً فور تثبيته (عبر playExternal بالأسفل).
-        const GTV_PLAYER_PACKAGE = 'com.gtv.player';
-        const GTV_PLAYER_NAME = 'GTV Player';
+        const EXTERNAL_PLAYER_APP_KEY = 'yalla_external_player_app';
+
+        const EXTERNAL_PLAYERS = [
+            { id: 'gtv', name: 'GTV Player', pkg: 'com.gtv.player', recommended: true },
+            { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
+            { id: 'any', name: 'أي مشغل خارجي آخر', pkg: '' },
+        ];
+
+        function getExternalPlayerApp() {
+            return localStorage.getItem(EXTERNAL_PLAYER_APP_KEY) || 'gtv';
+        }
+
+        function setExternalPlayerApp(id) {
+            localStorage.setItem(EXTERNAL_PLAYER_APP_KEY, id);
+            renderExternalPlayerList();
+        }
 
         function getExternalPlayerPackage() {
-            return GTV_PLAYER_PACKAGE;
+            const app = EXTERNAL_PLAYERS.find(p => p.id === getExternalPlayerApp());
+            return app ? app.pkg : '';
         }
 
         function renderExternalPlayerList() {
             const container = document.getElementById('externalPlayerList');
             if (!container) return;
+            const current = getExternalPlayerApp();
             container.innerHTML = '';
 
-            const installed = (window.AndroidPlayer && typeof window.AndroidPlayer.isPackageInstalled === 'function')
-                ? window.AndroidPlayer.isPackageInstalled(window.__YG_TOKEN__, GTV_PLAYER_PACKAGE)
-                : true;
+            EXTERNAL_PLAYERS.forEach(p => {
+                const hasSpecificPackage = !!p.pkg;
+                const installed = hasSpecificPackage
+                    ? ((window.AndroidPlayer && typeof window.AndroidPlayer.isPackageInstalled === 'function')
+                        ? window.AndroidPlayer.isPackageInstalled(window.__YG_TOKEN__, p.pkg)
+                        : true)
+                    : true; // خيار "أي مشغل آخر" ليس له حزمة محددة يتحقق منها
 
-            const row = document.createElement('div');
-            row.className = 'player-app-row active';
+                const row = document.createElement('div');
+                row.className = 'player-app-row' + (current === p.id ? ' active' : '');
 
-            const label = document.createElement('label');
-            label.className = 'player-app-label';
-            label.style.cursor = 'default';
-            const icon = document.createElement('i');
-            icon.className = 'fa-solid fa-tv';
-            icon.style.color = '#10b981';
-            icon.style.fontSize = '1rem';
-            const span = document.createElement('span');
-            span.textContent = GTV_PLAYER_NAME;
-            label.appendChild(icon);
-            label.appendChild(span);
-            row.appendChild(label);
+                const label = document.createElement('label');
+                label.className = 'player-app-label';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = 'externalPlayerApp';
+                radio.value = p.id;
+                radio.checked = current === p.id;
+                radio.onchange = () => setExternalPlayerApp(p.id);
+                const span = document.createElement('span');
+                span.textContent = p.name;
+                label.appendChild(radio);
+                label.appendChild(span);
 
-            if (installed) {
-                const badge = document.createElement('span');
-                badge.className = 'installed-badge';
-                badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> مثبت';
-                row.appendChild(badge);
-            } else {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'install-btn install-btn-sm';
-                btn.innerHTML = '<i class="fa-solid fa-download"></i> تثبيت';
-                btn.onclick = (e) => { e.stopPropagation(); installPlayerApp(GTV_PLAYER_PACKAGE); };
-                row.appendChild(btn);
-            }
+                if (p.recommended) {
+                    const recBadge = document.createElement('span');
+                    recBadge.className = 'recommended-badge';
+                    recBadge.innerHTML = '<i class="fa-solid fa-star"></i> موصى به';
+                    label.appendChild(recBadge);
+                }
 
-            container.appendChild(row);
+                row.appendChild(label);
+
+                if (!hasSpecificPackage) {
+                    const badge = document.createElement('span');
+                    badge.className = 'installed-badge';
+                    badge.innerHTML = '<i class="fa-solid fa-list"></i> يعرض قائمة اختيار';
+                    row.appendChild(badge);
+                } else if (installed) {
+                    const badge = document.createElement('span');
+                    badge.className = 'installed-badge';
+                    badge.innerHTML = '<i class="fa-solid fa-circle-check"></i> مثبت';
+                    row.appendChild(badge);
+                } else {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'install-btn install-btn-sm';
+                    btn.innerHTML = '<i class="fa-solid fa-download"></i> تثبيت';
+                    btn.onclick = (e) => { e.stopPropagation(); installPlayerApp(p.pkg); };
+                    row.appendChild(btn);
+                }
+
+                container.appendChild(row);
+            });
         }
 
         function installPlayerApp(packageName) {
