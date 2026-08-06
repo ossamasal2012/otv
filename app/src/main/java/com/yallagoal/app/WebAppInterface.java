@@ -237,6 +237,22 @@ public class WebAppInterface {
     }
 
     /**
+     * تستدعى من الصفحة كل مرة يتغيّر فيها عمق مكدس التنقّل الداخلي (JS navStack) — أي كل
+     * مرة يُفتح فيها مستوى جديد (مثلاً: قائمة سيرفرات Xtream، ثم سيرفر مُحدد، ثم تصنيفاته،
+     * ثم قائمة قنواته/أفلامه/مسلسلاته، ثم مواسم/حلقات مسلسل...) أو يُرجع خطوة للخلف.
+     * canGoBack=true يعني وجود خطوة سابقة يمكن الرجوع لها داخل الصفحة نفسها، فيتولى زر
+     * الرجوع بالجهاز إرجاع خطوة واحدة داخل التطبيق (عبر window.__ygHandleAppBack) بدل
+     * إغلاق التطبيق مباشرة.
+     */
+    @JavascriptInterface
+    public void notifyNavDepth(boolean canGoBack, String token) {
+        if (!isTokenValid(token)) return;
+        if (context instanceof MainActivity) {
+            ((MainActivity) context).setJsCanGoBack(canGoBack);
+        }
+    }
+
+    /**
      * تستدعى من زر "بث إلى التلفاز" بجانب كل سيرفر — تفتح قائمة أجهزة العرض المتوفرة
      * على نفس الشبكة (Android TV، Chromecast، تلفزيونات LG المعتمدة من گوگل...) وتبدأ
      * تشغيل الرابط عليها مباشرة بعد الاتصال.
