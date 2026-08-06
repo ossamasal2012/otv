@@ -55,6 +55,17 @@ public class MainActivity extends AppCompatActivity {
         isIframeOpen = open;
     }
 
+    // تُحدَّث من الصفحة (JS) عبر WebAppInterface.notifyNavDepth() كلما تغيّر عمق مكدس التنقّل
+    // الداخلي بالتطبيق (مثلاً: التنقّل داخل سيرفرات Xtream — قائمة السيرفرات، ثم قنوات/أفلام/
+    // مسلسلات السيرفر، ثم التصنيفات، ثم القائمة، ثم مواسم/حلقات المسلسل...). عندما تكون true
+    // فهذا يعني أن هناك خطوة سابقة يمكن الرجوع لها داخل الصفحة نفسها، فيتولى زر الرجوع
+    // بالجهاز إرجاع خطوة واحدة داخل التطبيق بدل إغلاقه بالكامل مباشرة.
+    private volatile boolean jsCanGoBack = false;
+
+    public void setJsCanGoBack(boolean canGoBack) {
+        jsCanGoBack = canGoBack;
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -242,6 +253,14 @@ public class MainActivity extends AppCompatActivity {
                 // أن تستدعي الصفحة notifyIframeState(false, ...) من داخل closeIframeAndReturnToList().
                 webView.evaluateJavascript(
                         "if (window.closeIframeAndReturnToList) { closeIframeAndReturnToList(); }", null);
+                return true;
+            }
+            if (jsCanGoBack) {
+                // نطلب من الصفحة الرجوع خطوة واحدة داخل مكدس التنقّل الخاص بها (مثلاً: من قائمة
+                // حلقات موسم إلى قائمة المواسم، أو من قائمة قنوات سيرفر Xtream إلى تصنيفاته...).
+                // jsCanGoBack سيتحدّث تلقائياً بعدها عبر notifyNavDepth() لو وصلنا للجذر.
+                webView.evaluateJavascript(
+                        "if (window.__ygHandleAppBack) { window.__ygHandleAppBack(); }", null);
                 return true;
             }
             if (webView.canGoBack()) {
