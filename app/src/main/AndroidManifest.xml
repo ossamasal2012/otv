@@ -1,86 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.yallagoal.app">
 
-    <!-- يدعم الإنترنت: مطلوبة لتحميل channels.json/xtream.json والاتصال بسيرفرات
-         Xtream مباشرة (لا يوجد أي بروكسي وسيط) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <!-- مطلوبة لنظام تحديث التطبيق OTA: بدونها يرفض أندرويد 8+ (API 26+) فتح مثبّت
-         الحزم لملف الـAPK الذي نزّلناه، حتى لو منح المستخدم صلاحية "تثبيت من مصادر
-         غير معروفة" يدوياً من الإعدادات — هذا التصريح هو ما "يُفعِّل" تلك الصلاحية
-         لتطبيقنا تحديداً أصلاً. لا تخزين خارجي إضافي مطلوب (WRITE_EXTERNAL_STORAGE):
-         نُنزِّل ملف التحديث لمجلد التطبيق الخاص (getExternalFilesDir) وهو دائماً قابل
-         للكتابة لتطبيقنا بلا أي صلاحية إضافية على كل إصدارات أندرويد المدعومة هنا. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-
-    <!-- التطبيق يعمل بلا لمس إطلاقاً (تحكم كامل بالريموت/لوحة مفاتيح)، لذا نصرّح أن
-         اللمس غير مطلوب — ضروري حتى تعتبر متاجر التطبيقات وأجهزة Android TV هذا
-         التطبيق متوافقاً معها (بدون هذا السطر تُستبعد أجهزة التلفاز افتراضياً) -->
-    <uses-feature
-        android:name="android.hardware.touchscreen"
-        android:required="false" />
-
-    <!-- تصريح Leanback (واجهة أندرويد تي‌ڤي) — required="false" يسمح بتثبيت نفس الـ APK
-         على هواتف/أجهزة لوحية عادية أيضاً بجانب أجهزة التلفاز -->
-    <uses-feature
-        android:name="android.software.leanback"
-        android:required="false" />
-
-    <!-- ⚠️ ضرورية جداً بدءاً من أندرويد 11 (API 30): بدون هذا التصريح، لا يستطيع
-         تطبيقنا "رؤية" ما إذا كان VLC أو Just Player مثبَّتاً على الجهاز إطلاقاً (حتى
-         لو كانا مثبَّتين فعلياً)، بسبب قيود خصوصية رؤية الحزم (Package Visibility) —
-         سيفشل فحص التثبيت ويفشل فتح المشغّل بصمت دون هذا السطر تحديداً لكل منهما. -->
-    <queries>
-        <package android:name="org.videolan.vlc" />
-        <package android:name="com.brouken.player" />
-    </queries>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
-        android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:banner="@drawable/banner"
+        android:name=".YallaGoalApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@drawable/app_icon"
         android:label="@string/app_name"
-        android:hardwareAccelerated="true"
-        android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="true"
-        android:theme="@style/AppTheme">
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:hardwareAccelerated="true"
+        android:theme="@style/AppTheme.Fullscreen">
 
-        <!-- adjustNothing (وليس adjustResize): واجهة هذا التطبيق ثابتة الحجم بالكامل
-             (لا نموذج تمرير عادي)، وحقل البحث بأعلى الشاشة بعيداً عن منطقة تغطية لوحة
-             المفاتيح أصلاً — فلا داعي لأي تغيير بحجم نافذة النشاط عند ظهورها. adjustResize
-             كان يُجبر أندرويد فعلياً على تصغير نافذة التطبيق بالكامل (وبالتالي كل تخطيط
-             WebView المبني على 100vh) في كل مرة تظهر لوحة المفاتيح، وهذا بالضبط ما كان
-             يُحدِث القفزة/الانتقال المرئي المزعج للواجهة عند فتح البحث. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize|keyboardHidden|keyboard|uiMode"
-            android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustNothing"
-            android:theme="@style/AppTheme">
-
-            <!-- منفذ الإطلاق العادي (هواتف/أجهزة لوحية) -->
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize|uiMode"
+            android:theme="@style/AppTheme.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <!-- منفذ الإطلاق الخاص بواجهة Android TV (Leanback) — بدونه لن يظهر
-                 التطبيق إطلاقاً بشاشة تطبيقات جهاز التلفاز -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-
         </activity>
 
-        <!-- FileProvider: يمنح مثبّت الحزم (Package Installer) وصولاً آمناً ومؤقتاً
-             لملف الـAPK المُنزَّل عبر رابط content:// بدل file:// مباشر — إلزامي منذ
-             أندرويد 7 (API 24)، إذ يرفض النظام حينها أي مشاركة رابط file:// خام مع
-             تطبيق آخر (FileUriExposedException). android:exported="false" لأن هذا
-             المزوِّد داخلي لتطبيقنا فقط، ولا حاجة لأي تطبيق آخر الوصول إليه مباشرة. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -91,6 +41,27 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <service
+            android:name=".YallaGoalFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="yallagoal_notifications" />
+
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.yallagoal.app.CastOptionsProvider" />
     </application>
 
 </manifest>
