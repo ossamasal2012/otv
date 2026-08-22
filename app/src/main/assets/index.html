@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -894,6 +893,332 @@
             pointer-events: none !important;
             transform: scale(1.05);
         }
+
+        /* ==============================================================
+           🎬 قسم Xtream الغني بالصور: قنوات / أفلام / مسلسلات
+           تصميم Mobile-first قائم على CSS Grid (auto-fill) — يتكيف مع أي
+           عرض شاشة تلقائياً بدون الحاجة لـ media queries صريحة.
+           ============================================================== */
+
+        .xtream-grid {
+            display: grid;
+            gap: 0.65rem;
+        }
+        .xtream-grid--posters { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+        .xtream-grid--channels { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 0.55rem; }
+
+        .xtream-card {
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+
+        /* الحاوية المرئية للصورة/الشعار — تحافظ على Aspect Ratio ثابت دائماً فلا تتمدد أو تُشوَّه أي صورة */
+        .xtream-card-media {
+            position: relative;
+            width: 100%;
+            border-radius: 0.7rem;
+            overflow: hidden;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .xtream-card:active .xtream-card-media { transform: scale(0.97); }
+        .xtream-card:hover .xtream-card-media { border-color: rgba(16, 185, 129, 0.5); }
+
+        /* بطاقات الأفلام/المسلسلات: نسبة أبعاد بوستر قياسية 2:3 + الصورة تملأ الإطار بالكامل (Cover) */
+        .xtream-card-media--poster { aspect-ratio: 2 / 3; }
+        .xtream-card-media--poster .xtream-card-img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* بطاقات القنوات: مربّعة + الشعار يظهر كاملاً بدون قص (Contain) فوق خلفية بيضاء موحّدة —
+           تصميم موحّد سواء توفر الشعار أو لا (بطاقة بيضاء دائماً)، ويحترم شفافية شعارات القنوات */
+        .xtream-card-media--square {
+            aspect-ratio: 1 / 1;
+            background: #f8fafc;
+            padding: 10%;
+        }
+        .xtream-card-media--square .xtream-card-img { width: 100%; height: 100%; object-fit: contain; }
+
+        .xtream-card-img { display: block; }
+
+        .xtream-card-caption {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #cbd5e1;
+            text-align: center;
+            line-height: 1.35;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Placeholder أبيض موحّد لكل من القنوات/الأفلام/المسلسلات عند غياب الصورة أو فشل تحميلها */
+        .xtream-placeholder {
+            position: absolute;
+            inset: 0;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10%;
+            text-align: center;
+        }
+        .xtream-placeholder span {
+            color: #0f172a;
+            font-weight: 800;
+            font-size: 0.72rem;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .xtream-rating-badge {
+            position: absolute;
+            top: 6px;
+            inset-inline-end: 6px;
+            background: rgba(2, 6, 23, 0.82);
+            border: 1px solid rgba(245, 158, 11, 0.5);
+            color: #fbbf24;
+            font-size: 0.62rem;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            z-index: 2;
+        }
+
+        /* ===== حالات تحميل هيكلية (Skeleton) لشبكات البطاقات ===== */
+        .xtream-skeleton-media {
+            position: relative;
+            border-radius: 0.7rem;
+            overflow: hidden;
+            background: linear-gradient(100deg, #0f172a 30%, #1e293b 50%, #0f172a 70%);
+            background-size: 200% 100%;
+            animation: xtreamShimmer 1.4s ease-in-out infinite;
+        }
+        .xtream-skeleton-line {
+            height: 9px;
+            border-radius: 5px;
+            margin: 0 auto;
+            background: linear-gradient(100deg, #0f172a 30%, #1e293b 50%, #0f172a 70%);
+            background-size: 200% 100%;
+            animation: xtreamShimmer 1.4s ease-in-out infinite;
+        }
+        @keyframes xtreamShimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* ==============================================================
+           📄 شاشة تفاصيل الفيلم/المسلسل
+           ============================================================== */
+
+        .xtream-hero {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #0f172a;
+            overflow: hidden;
+        }
+        .xtream-hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .xtream-hero-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to top, #020617 2%, rgba(2, 6, 23, 0.55) 45%, transparent 85%);
+        }
+        .xtream-hero-content {
+            position: absolute;
+            inset-inline: 0;
+            bottom: 0;
+            display: flex;
+            align-items: flex-end;
+            gap: 0.85rem;
+            padding: 0.9rem;
+        }
+        .xtream-hero-poster {
+            position: relative;
+            flex-shrink: 0;
+            width: 84px;
+            aspect-ratio: 2 / 3;
+            border-radius: 0.6rem;
+            overflow: hidden;
+            border: 2px solid #020617;
+            background: #0f172a;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+        }
+        .xtream-hero-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .xtream-hero-title-wrap { min-width: 0; padding-bottom: 2px; }
+        .xtream-hero-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #f8fafc;
+            line-height: 1.3;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* بدون Backdrop: رأس مبسّط (بوستر أكبر + عنوان) بدل ترك مساحة فارغة */
+        .xtream-simple-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.9rem;
+            padding: 0.9rem 0.9rem 0;
+        }
+        .xtream-simple-header .xtream-hero-poster { width: 108px; border: none; box-shadow: 0 8px 22px rgba(0,0,0,0.35); }
+        .xtream-simple-header .xtream-hero-title { color: #f1f5f9; text-shadow: none; font-size: 1.1rem; }
+
+        .xtream-detail-body { padding: 0.9rem; display: flex; flex-direction: column; gap: 0.9rem; }
+
+        .xtream-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #94a3b8;
+        }
+        .xtream-meta-row .dot { opacity: 0.5; }
+        .xtream-meta-rating { color: #fbbf24; display: inline-flex; align-items: center; gap: 3px; }
+
+        .xtream-watch-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border-radius: 0.75rem;
+            background: #10b981;
+            color: #052e21;
+            font-weight: 800;
+            font-size: 0.9rem;
+            border: none;
+            cursor: pointer;
+            transition: filter 0.15s, transform 0.15s;
+        }
+        .xtream-watch-btn:hover { filter: brightness(1.08); }
+        .xtream-watch-btn:active { transform: scale(0.98); }
+
+        .xtream-section-title {
+            font-size: 0.78rem;
+            font-weight: 800;
+            color: #64748b;
+            margin-bottom: 0.45rem;
+        }
+
+        .xtream-plot-text {
+            font-size: 0.82rem;
+            line-height: 1.7;
+            color: #cbd5e1;
+        }
+
+        .xtream-chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .xtream-chip {
+            background: rgba(148, 163, 184, 0.1);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            color: #cbd5e1;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.3rem 0.65rem;
+            border-radius: 999px;
+            white-space: nowrap;
+        }
+
+        .xtream-trailer-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.55rem 0.9rem;
+            border-radius: 0.65rem;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #f87171;
+            font-size: 0.78rem;
+            font-weight: 800;
+            cursor: pointer;
+            width: fit-content;
+        }
+        .xtream-trailer-btn:hover { background: rgba(239, 68, 68, 0.18); }
+
+        /* ===== تبويبات المواسم (Horizontal Scrollable Tabs) ===== */
+        .xtream-season-tabs {
+            display: flex;
+            gap: 0.5rem;
+            overflow-x: auto;
+            padding-bottom: 0.3rem;
+            scrollbar-width: none;
+        }
+        .xtream-season-tabs::-webkit-scrollbar { display: none; }
+        .xtream-season-tab {
+            flex-shrink: 0;
+            padding: 0.45rem 0.95rem;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 800;
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #1e293b;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .xtream-season-tab.active {
+            background: #10b981;
+            border-color: #10b981;
+            color: #052e21;
+        }
+
+        /* ===== صفوف الحلقات (مع صورة مصغّرة اختيارية) ===== */
+        .xtream-episode-row {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.55rem;
+            border-radius: 0.75rem;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid #1e293b;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .xtream-episode-row:hover { border-color: rgba(16, 185, 129, 0.45); }
+        .xtream-episode-thumb {
+            position: relative;
+            flex-shrink: 0;
+            width: 86px;
+            aspect-ratio: 16 / 9;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background: #0f172a;
+            border: 1px solid #1e293b;
+        }
+        .xtream-episode-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .xtream-episode-thumb .xtream-placeholder span { font-size: 0.55rem; -webkit-line-clamp: 3; }
+        .xtream-episode-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+        .xtream-episode-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #e2e8f0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .xtream-episode-sub { font-size: 0.68rem; color: #64748b; font-weight: 600; }
+
+        /* ===== حالة فارغة/خطأ داخل شبكة البطاقات ===== */
+        .xtream-grid-empty {
+            grid-column: 1 / -1;
+        }
     </style>
 </head>
 <body class="flex flex-col lg:flex-row">
@@ -1679,6 +2004,16 @@
         }
 
         function pushScreen(screenObj) {
+            // نحفظ موضع التمرير الحالي داخل كائن الشاشة الحالية (وليست الجديدة) قبل مغادرتها،
+            // لنستعيده بدقة عند العودة إليها لاحقاً عبر popScreen. نتحقق أولاً من وجود منطقة
+            // تمرير افتراضي داخلية (#xtreamScrollRegion) لأن channelsBox نفسه لا يتمرر في تلك
+            // الحالة (overflow:hidden) — التمرير الفعلي يكون داخل تلك المنطقة الداخلية عندئذٍ.
+            const box = document.getElementById('channelsBox');
+            if (box && navStack.length > 0) {
+                const scrollRegion = document.getElementById('xtreamScrollRegion');
+                const scrollSource = scrollRegion || box;
+                navStack[navStack.length - 1].__scrollTop = scrollSource.scrollTop;
+            }
             navStack.push(screenObj);
             notifyNavDepth();
             renderCurrentScreen();
@@ -1753,8 +2088,8 @@
                 case 'xtream-series':
                     loadXtreamSeriesDetail(s.serverId, s.seriesId, s.seriesName);
                     break;
-                case 'xtream-episodes':
-                    loadXtreamEpisodes(s.serverId, s.seriesId, s.seasonNumber, s.seasonName);
+                case 'xtream-vod-detail':
+                    loadXtreamVodDetail(s.serverId, s.vodId, s.vodName);
                     break;
                 default:
                     currentTab = 'main';
@@ -1784,13 +2119,11 @@
                     paintXtreamContent();
                     break;
                 case 'xtream-series':
+                    // البحث هنا يُصفّي حلقات الموسم المختار حالياً فقط (وليس تبويبات المواسم نفسها)
                     paintXtreamSeriesDetail();
                     break;
-                case 'xtream-episodes':
-                    paintXtreamEpisodes();
-                    break;
                 default:
-                    break; // شاشة "دخول السيرفر" (الصفحة الرئيسية للسيرفر) لا تحتوي قائمة قابلة للبحث
+                    break; // شاشات "دخول السيرفر" و"تفاصيل الفيلم" لا تحتويان قائمة قابلة للبحث
             }
         }
 
@@ -1870,12 +2203,93 @@
             paint();
         }
 
+        /**
+         * نظير renderListEfficient لكن لعرض البطاقات (شعارات قنوات/بوسترات أفلام ومسلسلات) بشكل
+         * Grid متعدد الأعمدة بدل صفوف مفردة. يحسب عدد الأعمدة تلقائياً من عرض الحاوية الفعلي —
+         * Mobile-first Responsive حقيقي بدون أي media queries صريحة، يتكيف مع أي عرض شاشة.
+         * يُفعّل تمريراً افتراضياً (Virtual Scrolling) تلقائياً فقط للقوائم الكبيرة (فوق الحد
+         * المحدد): يُبنى DOM لصفوف البطاقات الظاهرة فعلياً على الشاشة فقط (+ هامش أمان)، بدل حقن
+         * آلاف البطاقات (وبالتالي آلاف الصور) دفعة واحدة — هذا ما يبقي تصفح آلاف الأفلام سلساً.
+         */
+        function renderGridEfficient(outerBox, headerHtml, items, renderCardHtml, opts = {}) {
+            const gridClass = opts.gridClass || 'xtream-grid xtream-grid--posters';
+            const minCardWidth = opts.minCardWidth || 100;
+            const gap = opts.gap || 10;
+            const useVirtual = items.length > (opts.virtualizeThreshold || 150);
+
+            if (!useVirtual) {
+                outerBox.onscroll = null;
+                outerBox.style.display = '';
+                outerBox.style.flexDirection = '';
+                outerBox.style.overflowY = '';
+                const cardsHtml = items.length
+                    ? `<div class="${gridClass}">` + items.map((it, idx) => renderCardHtml(it, idx)).join('') + `</div>`
+                    : (opts.emptyHtml || '');
+                outerBox.innerHTML = headerHtml + cardsHtml;
+                if (opts.initialScrollTop) outerBox.scrollTop = opts.initialScrollTop;
+                return;
+            }
+
+            outerBox.style.display = 'flex';
+            outerBox.style.flexDirection = 'column';
+            outerBox.style.overflowY = 'hidden';
+            outerBox.innerHTML = `<div class="shrink-0">${headerHtml}</div>` +
+                `<div id="xtreamScrollRegion" style="flex:1 1 auto; overflow-y:auto; position:relative; margin:0 -0.75rem; padding:0 0.75rem;"></div>`;
+            const scrollRegion = document.getElementById('xtreamScrollRegion');
+
+            if (!items.length) {
+                scrollRegion.innerHTML = opts.emptyHtml || '';
+                return;
+            }
+
+            // عدد الأعمدة يُحسب من عرض الحاوية الفعلي؛ نستخدمه لاحقاً كـ grid-template-columns
+            // صريح (وليس auto-fill) بالصفوف الافتراضية تحديداً، لضمان تطابق تام بين عدد العناصر
+            // الموضوعة بكل صف افتراضي وما يُعرض فعلياً — أي تفاوت هنا يكسر حساب الارتفاعات.
+            const containerWidth = scrollRegion.clientWidth || outerBox.clientWidth || 320;
+            const columns = Math.max(1, Math.floor((containerWidth + gap) / (minCardWidth + gap)));
+            const rowCount = Math.ceil(items.length / columns);
+            const rowHeight = opts.rowHeight || 210;
+            const overscanRows = opts.overscanRows != null ? opts.overscanRows : 2;
+            const totalHeight = rowCount * rowHeight;
+
+            scrollRegion.innerHTML =
+                `<div style="position:relative; height:${totalHeight}px; width:100%;">` +
+                `<div id="xtreamRowsLayer" style="position:absolute; top:0; left:0; right:0;"></div></div>`;
+            const rowsLayer = document.getElementById('xtreamRowsLayer');
+
+            let lastStart = -1, lastEnd = -1;
+            function paint() {
+                const viewportHeight = scrollRegion.clientHeight || 400;
+                const scrollTop = scrollRegion.scrollTop;
+                const startRow = Math.max(0, Math.floor(scrollTop / rowHeight) - overscanRows);
+                const visibleRows = Math.ceil(viewportHeight / rowHeight) + overscanRows * 2;
+                const endRow = Math.min(rowCount, startRow + visibleRows);
+                if (startRow === lastStart && endRow === lastEnd) return;
+                lastStart = startRow; lastEnd = endRow;
+
+                let html = '';
+                for (let r = startRow; r < endRow; r++) {
+                    const startIdx = r * columns;
+                    const endIdx = Math.min(items.length, startIdx + columns);
+                    let rowCardsHtml = '';
+                    for (let i = startIdx; i < endIdx; i++) rowCardsHtml += renderCardHtml(items[i], i);
+                    html += `<div style="display:grid; grid-template-columns:repeat(${columns}, 1fr); gap:${gap}px; height:${rowHeight}px; box-sizing:border-box; padding-bottom:12px;">${rowCardsHtml}</div>`;
+                }
+                rowsLayer.style.transform = `translateY(${startRow * rowHeight}px)`;
+                rowsLayer.innerHTML = html;
+            }
+
+            scrollRegion.onscroll = () => window.requestAnimationFrame(paint);
+            if (opts.initialScrollTop) scrollRegion.scrollTop = opts.initialScrollTop;
+            paint();
+        }
+
         // ============================================================
         //  📡 عميل Xtream Codes API — يبني روابط player_api.php بنفسه ويحلّل الاستجابات.
         //  لا تسجيل دخول منفصل يطلبه المستخدم إطلاقاً: نستخدم host/username/password من
         //  ملف xtream.json مباشرة وبشكل شفاف بالكامل.
         // ============================================================
-        const xtreamCache = { auth: {}, categories: {}, streams: {}, seriesInfo: {} };
+        const xtreamCache = { auth: {}, categories: {}, streams: {}, seriesInfo: {}, vodInfo: {} };
 
         const XTREAM_TYPE_LABELS = { live: 'البث المباشر', movie: 'الأفلام', series: 'المسلسلات' };
 
@@ -1994,6 +2408,19 @@
             const data = await xtreamApiCall(server, { action: 'get_series_info', series_id: seriesId }, { timeoutMs: 15000 });
             const result = { seasons: buildSeasonsFromSeriesInfo(data || {}), info: (data && data.info) || {} };
             xtreamCache.seriesInfo[key] = result;
+            return result;
+        }
+
+        // get_vod_info يوفر تفاصيل الفيلم الكاملة (قصة/ممثلين/تقييم/Trailer...) بعكس get_vod_streams
+        // (قائمة البث) التي لا توفر إلا الحد الأدنى. نستدعيه فقط عند فتح شاشة تفاصيل فيلم، ونخزّنه
+        // بالكاش حتى لا يُطلب أكثر من مرة لنفس الفيلم بلا داعٍ.
+        async function xtreamGetVodInfo(serverId, vodId) {
+            const key = serverId + ':' + vodId;
+            if (xtreamCache.vodInfo[key]) return xtreamCache.vodInfo[key];
+            const server = xtreamServers[serverId];
+            const data = await xtreamApiCall(server, { action: 'get_vod_info', vod_id: vodId }, { timeoutMs: 15000 });
+            const result = { info: (data && data.info) || {}, movieData: (data && data.movie_data) || {} };
+            xtreamCache.vodInfo[key] = result;
             return result;
         }
 
@@ -2290,20 +2717,169 @@
             paintXtreamContent();
         }
 
-        function xtreamContentRowHtml(item, idx, type) {
-            const name = (item && item.name) || 'بدون اسم';
-            if (type === 'series') {
-                return `
-                <div onclick="openXtreamSeries(${idx})" class="channel-item folder-item p-2.5 rounded-lg flex items-center justify-between group">
-                    <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors truncate">${escHtml(name)}</span>
-                    <i class="fa-solid fa-chevron-left text-[10px] text-slate-600 group-hover:text-emerald-500 shrink-0"></i>
-                </div>`;
+        // ============================================================
+        //  🧩 طبقة تحويل Raw Xtream Data → UI Model
+        //  كل دالة تحويل هنا توثّق بالتعليق المجاور مصدر كل حقل UI من بيانات Xtream الخام تحديداً؛
+        //  دوال الرسم (Paint) لا تلمس JSON الخام إطلاقاً — تتعامل فقط مع الكائن الناتج هنا.
+        //  هذا يفصل تماماً بين Raw Xtream Data و UI Model كما هو مطلوب.
+        // ============================================================
+        function xVal(...vals) {
+            for (const v of vals) {
+                if (v === undefined || v === null) continue;
+                const s = String(v).trim();
+                if (s) return s;
             }
-            return `
-            <div onclick="playXtreamItem(${idx})" class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
-                <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors truncate">${escHtml(name)}</span>
-                <i class="fa-solid ${type === 'live' ? 'fa-play' : 'fa-circle-play'} text-[11px] text-slate-700 group-hover:text-emerald-500 shrink-0"></i>
-            </div>`;
+            return '';
+        }
+        function xList(str) {
+            if (!str) return [];
+            return String(str).split(',').map(s => s.trim()).filter(Boolean);
+        }
+        function xYear(str) {
+            if (!str) return '';
+            const m = String(str).match(/(\d{4})/);
+            return m ? m[1] : '';
+        }
+        function xDuration(secs) {
+            const n = Number(secs);
+            if (!Number.isFinite(n) || n <= 0) return '';
+            const h = Math.floor(n / 3600);
+            const m = Math.round((n % 3600) / 60);
+            if (h > 0) return `${h} س${m > 0 ? ' ' + m + ' د' : ''}`;
+            return `${m} د`;
+        }
+        function xRating(...vals) {
+            for (const v of vals) {
+                const n = Number(v);
+                if (Number.isFinite(n) && n > 0) return Math.round(n * 10) / 10;
+            }
+            return null;
+        }
+        function xTrailerUrl(val) {
+            const raw = xVal(val);
+            if (!raw) return '';
+            if (/^https?:\/\//i.test(raw)) return raw;
+            // بعض سيرفرات Xtream ترجع معرّف فيديو يوتيوب فقط بدل رابط كامل
+            return `https://www.youtube.com/watch?v=${encodeURIComponent(raw)}`;
+        }
+        function xBackdrop(info) {
+            if (info && Array.isArray(info.backdrop_path) && info.backdrop_path.length && info.backdrop_path[0]) {
+                return String(info.backdrop_path[0]).trim();
+            }
+            return '';
+        }
+
+        /** يحوّل استجابة get_vod_info الخام إلى UI Model موحّد. */
+        function mapVodToUiModel(rawInfo, rawMovieData, listItem) {
+            const info = rawInfo || {};
+            const movieData = rawMovieData || {};
+            const li = listItem || {};
+            return {
+                streamId: (movieData.stream_id != null ? movieData.stream_id : li.stream_id),
+                name: xVal(li.name, info.name, movieData.name) || 'بدون اسم',
+                poster: xVal(info.movie_image, info.cover_big, li.stream_icon),           // مصدر: info.movie_image ← info.cover_big ← أيقونة القائمة
+                backdrop: xBackdrop(info),                                                // مصدر: info.backdrop_path[0]
+                plot: xVal(info.plot, info.description),                                  // مصدر: info.plot ← info.description
+                cast: xList(xVal(info.cast, info.actors)),                                // مصدر: info.cast ← info.actors
+                director: xVal(info.director),                                            // مصدر: info.director
+                genre: xVal(info.genre),                                                  // مصدر: info.genre
+                year: xYear(xVal(info.releasedate, info.release_date)),                   // مصدر: info.releasedate
+                durationLabel: xVal(info.duration) || xDuration(info.duration_secs),      // مصدر: info.duration ← info.duration_secs
+                rating: xRating(info.rating, li.rating),                                  // مصدر: info.rating ← عنصر القائمة
+                trailerUrl: xTrailerUrl(info.youtube_trailer),                            // مصدر: info.youtube_trailer
+                containerExtension: xVal(movieData.container_extension, li.container_extension) || 'mp4' // مصدر: movie_data.container_extension
+            };
+        }
+
+        /** يحوّل استجابة get_series_info الخام إلى UI Model موحّد. */
+        function mapSeriesToUiModel(rawInfo, listItem) {
+            const info = rawInfo || {};
+            const li = listItem || {};
+            return {
+                name: xVal(li.name, info.name) || 'بدون اسم',
+                poster: xVal(info.cover, li.cover),                                       // مصدر: info.cover
+                backdrop: xBackdrop(info) || xBackdrop(li),                               // مصدر: info.backdrop_path[0]
+                plot: xVal(info.plot, li.plot),                                           // مصدر: info.plot
+                cast: xList(xVal(info.cast, li.cast)),                                    // مصدر: info.cast
+                director: xVal(info.director, li.director),                              // مصدر: info.director
+                genre: xVal(info.genre, li.genre),                                        // مصدر: info.genre
+                // releaseDate بصيغة camelCase موثّقة من get_series_info، مع احتياطات لتفاوت تسمية الحقل بين نسخ الأنظمة
+                year: xYear(xVal(info.releaseDate, info.release_date, info.releasedate, li.releaseDate)),
+                rating: xRating(info.rating, li.rating),                                  // مصدر: info.rating
+                trailerUrl: xTrailerUrl(xVal(info.youtube_trailer, li.youtube_trailer))   // مصدر: info.youtube_trailer
+            };
+        }
+
+        /** يحوّل عنصر حلقة خام (من episodes[season][]) إلى UI Model موحّد. */
+        function mapEpisodeToUiModel(rawEp, idx) {
+            const ep = rawEp || {};
+            const info = ep.info || {};
+            const num = ep.episode_num != null ? ep.episode_num : (idx + 1);
+            return {
+                id: ep.id,
+                num,
+                title: xVal(ep.title) || ('الحلقة ' + num),                               // مصدر: episode.title
+                thumb: xVal(info.movie_image),                                            // مصدر: episode.info.movie_image
+                durationLabel: xVal(info.duration) || xDuration(info.duration_secs),      // مصدر: episode.info.duration/duration_secs
+                plot: xVal(info.plot, info.overview),                                     // مصدر: episode.info.plot (نادر التوفر)
+                containerExtension: xVal(ep.container_extension) || 'mp4'
+            };
+        }
+
+        // ============================================================
+        //  🖼️ الصور والـ Placeholder الموحّد (أبيض + نص أسود) عبر كل بطاقات Xtream
+        // ============================================================
+        function xtreamPlaceholderHtml(name) {
+            return `<div class="xtream-placeholder"><span>${escHtml(name || '')}</span></div>`;
+        }
+
+        // نداء onerror لأي <img> ببطاقات/تفاصيل Xtream — يستبدل الصورة الفاشلة بالـ Placeholder الموحّد
+        // فوراً، بمعزل تام عن أي بطاقة أخرى بجانبها (لا يؤثر أي فشل صورة واحدة على بقية القنوات/الأفلام).
+        function xtreamImgFallback(imgEl, name) {
+            const wrap = imgEl && imgEl.parentElement;
+            if (!wrap) return;
+            imgEl.remove();
+            wrap.insertAdjacentHTML('beforeend', xtreamPlaceholderHtml(name));
+        }
+
+        function xtreamMediaHtml(url, name, sizeClass, extraInnerHtml) {
+            const inner = (url
+                ? `<img src="${escHtml(url)}" alt="${escHtml(name)}" loading="lazy" decoding="async" class="xtream-card-img" onerror="xtreamImgFallback(this, '${escAttr(name || '')}')">`
+                : xtreamPlaceholderHtml(name)
+            ) + (extraInnerHtml || '');
+            return `<div class="xtream-card-media ${sizeClass}">${inner}</div>`;
+        }
+
+        function xtreamOpenExternalUrl(url) {
+            if (!url) return;
+            try {
+                if (window.AndroidPlayer && window.__YG_TOKEN__
+                    && typeof window.AndroidPlayer.openExternalUrl === 'function') {
+                    window.AndroidPlayer.openExternalUrl(window.__YG_TOKEN__, url);
+                }
+            } catch (e) { /* منصة غير أندرويد أو الجسر غير متوفر بعد — تجاهل بهدوء */ }
+        }
+
+        // ============================================================
+        //  🧱 بطاقات الشبكة (قنوات/أفلام/مسلسلات) — Mobile-first Grid بدل صفوف نصية
+        // ============================================================
+        function xtreamChannelCardHtml(item, idx) {
+            const name = (item && item.name) || 'بدون اسم';
+            const logo = xVal(item && item.stream_icon);
+            return `<div class="xtream-card" onclick="playXtreamItem(${idx})">` +
+                xtreamMediaHtml(logo, name, 'xtream-card-media--square') +
+                `<div class="xtream-card-caption">${escHtml(name)}</div></div>`;
+        }
+
+        function xtreamPosterCardHtml(item, idx, type) {
+            const name = (item && item.name) || 'بدون اسم';
+            const poster = xVal(item && (type === 'series' ? item.cover : item.stream_icon));
+            const rating = xRating(item && item.rating, item && item.rating_5based);
+            const badge = rating != null ? `<div class="xtream-rating-badge"><i class="fa-solid fa-star"></i> ${rating}</div>` : '';
+            const clickFn = type === 'series' ? `openXtreamSeries(${idx})` : `openXtreamVod(${idx})`;
+            return `<div class="xtream-card" onclick="${clickFn}">` +
+                xtreamMediaHtml(poster, name, 'xtream-card-media--poster', badge) +
+                `<div class="xtream-card-caption">${escHtml(name)}</div></div>`;
         }
 
         function paintXtreamContent() {
@@ -2317,14 +2893,24 @@
 
             const headerHtml = xtreamHeaderBlock(title) +
                 `<p class="text-[10px] text-slate-500 font-bold px-1 mb-2">${formatStatNumber(filtered.length)} عنصر</p>`;
+            const emptyHtml = `<p class="text-[11px] text-slate-500 text-center py-6">لا توجد نتائج${searchQuery.trim() ? ' مطابقة للبحث' : ''}</p>`;
 
-            renderListEfficient(box, headerHtml, filtered, (item, idx) => xtreamContentRowHtml(item, idx, type), {
-                rowHeight: 48,
+            const isChannels = type === 'live';
+            const cardRenderer = isChannels
+                ? (item, idx) => xtreamChannelCardHtml(item, idx)
+                : (item, idx) => xtreamPosterCardHtml(item, idx, type);
+
+            renderGridEfficient(box, headerHtml, filtered, cardRenderer, {
+                gridClass: isChannels ? 'xtream-grid xtream-grid--channels' : 'xtream-grid xtream-grid--posters',
+                minCardWidth: isChannels ? 92 : 100,
+                rowHeight: isChannels ? 150 : 210,
                 virtualizeThreshold: 150,
-                emptyHtml: `<p class="text-[11px] text-slate-500 text-center py-6">لا توجد نتائج${searchQuery.trim() ? ' مطابقة للبحث' : ''}</p>`
+                initialScrollTop: currentScreen().__scrollTop,
+                emptyHtml
             });
         }
 
+        // تشغيل مباشر: يُستخدم فقط لقنوات البث المباشر (لا شاشة تفاصيل لها بحسب الطلب)
         function playXtreamItem(idx) {
             const item = xtreamCurrentListItems[idx];
             const ctx = xtreamCurrentContentCtx;
@@ -2339,10 +2925,134 @@
         }
 
         // ============================================================
-        //  5️⃣ شاشة: تفاصيل مسلسل (قائمة المواسم)
+        //  📄 القسم المشترك بين شاشتي تفاصيل الفيلم والمسلسل
         // ============================================================
+        function xtreamDetailHeaderHtml(model, opts = {}) {
+            const metaParts = [];
+            if (model.year) metaParts.push(escHtml(model.year));
+            if (model.genre) metaParts.push(escHtml(model.genre));
+            if (model.durationLabel) metaParts.push(escHtml(model.durationLabel));
+            const ratingHtml = model.rating != null
+                ? `<span class="xtream-meta-rating"><i class="fa-solid fa-star"></i> ${model.rating}</span>` : '';
+            let metaHtml = '';
+            if (metaParts.length || ratingHtml) {
+                const allParts = metaParts.map(p => `<span>${p}</span>`);
+                if (ratingHtml) allParts.push(ratingHtml);
+                metaHtml = `<div class="xtream-meta-row">` +
+                    allParts.map((p, i) => (i > 0 ? `<span class="dot">•</span>` : '') + p).join('') +
+                    `</div>`;
+            }
+
+            const posterInner = model.poster
+                ? `<img src="${escHtml(model.poster)}" alt="${escHtml(model.name)}" onerror="xtreamImgFallback(this, '${escAttr(model.name)}')">`
+                : xtreamPlaceholderHtml(model.name);
+
+            let mediaHeaderHtml;
+            if (model.backdrop) {
+                mediaHeaderHtml = `
+                <div class="xtream-hero">
+                    <img class="xtream-hero-img" src="${escHtml(model.backdrop)}" alt="${escHtml(model.name)}" onerror="this.remove()">
+                    <div class="xtream-hero-overlay"></div>
+                    <div class="xtream-hero-content">
+                        <div class="xtream-hero-poster">${posterInner}</div>
+                        <div class="xtream-hero-title-wrap"><div class="xtream-hero-title">${escHtml(model.name)}</div></div>
+                    </div>
+                </div>`;
+            } else {
+                mediaHeaderHtml = `
+                <div class="xtream-simple-header">
+                    <div class="xtream-hero-poster">${posterInner}</div>
+                    <div class="xtream-hero-title-wrap"><div class="xtream-hero-title">${escHtml(model.name)}</div></div>
+                </div>`;
+            }
+
+            let bodyHtml = `<div class="xtream-detail-body">`;
+            if (metaHtml) bodyHtml += metaHtml;
+            if (opts.watchButtonHtml) bodyHtml += opts.watchButtonHtml;
+            if (model.plot) {
+                bodyHtml += `<div><div class="xtream-section-title">القصة</div><p class="xtream-plot-text">${escHtml(model.plot)}</p></div>`;
+            }
+            if (model.cast && model.cast.length) {
+                bodyHtml += `<div><div class="xtream-section-title">الممثلون</div><div class="xtream-chip-row">` +
+                    model.cast.map(c => `<span class="xtream-chip">${escHtml(c)}</span>`).join('') + `</div></div>`;
+            }
+            if (model.director) {
+                bodyHtml += `<div><div class="xtream-section-title">الإخراج</div><p class="xtream-plot-text">${escHtml(model.director)}</p></div>`;
+            }
+            if (model.trailerUrl) {
+                bodyHtml += `<button class="xtream-trailer-btn" onclick="xtreamOpenExternalUrl('${escAttr(model.trailerUrl)}')">
+                    <i class="fa-brands fa-youtube"></i> مشاهدة الإعلان
+                </button>`;
+            }
+            bodyHtml += `</div>`;
+
+            return mediaHeaderHtml + bodyHtml;
+        }
+
+        // ============================================================
+        //  5️⃣ شاشة: تفاصيل فيلم (Xtream VOD)
+        // ============================================================
+        let xtreamCurrentVodModel = null;
+        let xtreamCurrentVodCtx = null;
+
+        function openXtreamVod(idx) {
+            const item = xtreamCurrentListItems[idx];
+            const ctx = xtreamCurrentContentCtx;
+            if (!item || !ctx) return;
+            pushScreen({ screen: 'xtream-vod-detail', serverId: ctx.serverId, vodId: item.stream_id, vodName: item.name });
+        }
+
+        async function loadXtreamVodDetail(serverId, vodId, vodName) {
+            const box = document.getElementById('channelsBox');
+            const title = vodName || 'الفيلم';
+            box.innerHTML = xtreamHeaderBlock(title) + xtreamLoadingBlock('جاري تحميل تفاصيل الفيلم...');
+
+            let result;
+            try {
+                result = await xtreamGetVodInfo(serverId, vodId);
+            } catch (e) {
+                if (!isScreen('xtream-vod-detail', s => String(s.vodId) === String(vodId))) return;
+                box.innerHTML = xtreamHeaderBlock(title) + xtreamErrorBlock('تعذر تحميل تفاصيل هذا الفيلم.',
+                    `loadXtreamVodDetail(${serverId}, '${escAttr(vodId)}', '${escAttr(vodName || '')}')`);
+                return;
+            }
+            if (!isScreen('xtream-vod-detail', s => String(s.vodId) === String(vodId))) return;
+
+            xtreamCurrentVodModel = mapVodToUiModel(result.info, result.movieData, { name: vodName, stream_id: vodId });
+            xtreamCurrentVodCtx = { serverId, vodId };
+            paintXtreamVodDetail();
+        }
+
+        function paintXtreamVodDetail() {
+            if (!xtreamCurrentVodModel || !xtreamCurrentVodCtx) return;
+            const box = document.getElementById('channelsBox');
+            resetChannelsBoxLayout();
+            const model = xtreamCurrentVodModel;
+            const watchButtonHtml = `<button class="xtream-watch-btn" onclick="playXtreamVod()"><i class="fa-solid fa-play"></i> مشاهدة</button>`;
+            box.innerHTML = xtreamHeaderBlock(model.name) + xtreamDetailHeaderHtml(model, { watchButtonHtml });
+        }
+
+        function playXtreamVod() {
+            const model = xtreamCurrentVodModel;
+            const ctx = xtreamCurrentVodCtx;
+            if (!model || !ctx) return;
+            const server = xtreamServers[ctx.serverId];
+            if (!server) return;
+            const url = xtreamStreamUrl(server, 'movie', { stream_id: model.streamId, container_extension: model.containerExtension }, null);
+            if (!url) return;
+            playChannel(url, 'v', model.name || server.name, null, false, false, null, null);
+        }
+
+        // ============================================================
+        //  6️⃣ شاشة: تفاصيل مسلسل (معلومات + تبويبات مواسم أفقية + حلقات الموسم المختار)
+        //  المواسم والحلقات جميعها محمّلة أصلاً ضمن نفس استدعاء xtreamGetSeriesInfo الواحد، لذلك
+        //  التبديل بين المواسم هنا لا يفتح شاشة/سجل تنقل جديد ولا يطلب أي بيانات إضافية من السيرفر —
+        //  مجرد إعادة رسم فورية لنفس الشاشة (يطابق: "لا تعاد الشاشة كاملاً ولا تُطلب البيانات مجدداً").
+        // ============================================================
+        let xtreamCurrentSeriesModel = null;
         let xtreamCurrentSeasons = [];
         let xtreamCurrentSeriesCtx = null;
+        let xtreamCurrentEpisodeItems = [];
 
         function openXtreamSeries(idx) {
             const item = xtreamCurrentListItems[idx];
@@ -2354,141 +3064,99 @@
         async function loadXtreamSeriesDetail(serverId, seriesId, seriesName) {
             const box = document.getElementById('channelsBox');
             const title = seriesName || 'المسلسل';
-            box.innerHTML = xtreamHeaderBlock(title) + xtreamLoadingBlock('جاري تحميل المواسم...');
+            box.innerHTML = xtreamHeaderBlock(title) + xtreamLoadingBlock('جاري تحميل المسلسل...');
 
             let result;
             try {
                 result = await xtreamGetSeriesInfo(serverId, seriesId);
             } catch (e) {
-                if (!isScreen('xtream-series', s => s.serverId === serverId && s.seriesId === seriesId)) return;
-                box.innerHTML = xtreamHeaderBlock(title) + xtreamErrorBlock('تعذر تحميل مواسم هذا المسلسل.',
+                if (!isScreen('xtream-series', s => String(s.seriesId) === String(seriesId))) return;
+                box.innerHTML = xtreamHeaderBlock(title) + xtreamErrorBlock('تعذر تحميل هذا المسلسل.',
                     `loadXtreamSeriesDetail(${serverId}, '${escAttr(seriesId)}', '${escAttr(seriesName || '')}')`);
                 return;
             }
-            if (!isScreen('xtream-series', s => s.serverId === serverId && s.seriesId === seriesId)) return;
+            if (!isScreen('xtream-series', s => String(s.seriesId) === String(seriesId))) return;
 
             xtreamCurrentSeasons = result.seasons;
-            xtreamCurrentSeriesCtx = { serverId, seriesId, seriesName, title };
+            xtreamCurrentSeriesModel = mapSeriesToUiModel(result.info, { name: seriesName });
+            xtreamCurrentSeriesCtx = { serverId, seriesId, selectedSeasonIdx: 0 };
+            paintXtreamSeriesDetail();
+        }
+
+        // يُستدعى من تبويبات المواسم — تحديث محلي فوري بدون أي طلب شبكة أو دخول شاشة جديدة
+        function xtreamSelectSeason(seasonIdx) {
+            if (!xtreamCurrentSeriesCtx) return;
+            xtreamCurrentSeriesCtx.selectedSeasonIdx = seasonIdx;
             paintXtreamSeriesDetail();
         }
 
         function paintXtreamSeriesDetail() {
-            if (!xtreamCurrentSeriesCtx) return;
-            const { title } = xtreamCurrentSeriesCtx;
+            if (!xtreamCurrentSeriesModel || !xtreamCurrentSeriesCtx) return;
             const box = document.getElementById('channelsBox');
-            resetChannelsBoxLayout();
+            const model = xtreamCurrentSeriesModel;
+            const seasons = xtreamCurrentSeasons;
 
-            const normalizedQuery = normalizeArabic(searchQuery);
-            const filteredSeasons = xtreamCurrentSeasons
-                .map((se, idx) => Object.assign({ __idx: idx }, se))
-                .filter(se => normalizeArabic(se.name).includes(normalizedQuery));
+            let headerHtml = xtreamHeaderBlock(model.name) + xtreamDetailHeaderHtml(model, {});
 
-            let html = xtreamHeaderBlock(title);
-
-            if (!xtreamCurrentSeasons.length) {
-                html += `<p class="text-[11px] text-slate-500 text-center py-8">لا توجد مواسم متاحة لهذا المسلسل حالياً</p>`;
-            } else if (!filteredSeasons.length) {
-                html += `<p class="text-[11px] text-slate-500 text-center py-6">لا توجد نتائج مطابقة للبحث</p>`;
-            } else {
-                html += `<div class="space-y-1">` + filteredSeasons.map(se => `
-                    <div onclick="openXtreamEpisodes(${se.__idx})" class="channel-item folder-item p-3 rounded-lg flex items-center justify-between group mb-1">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                            <i class="fa-solid fa-layer-group text-emerald-500 text-[15px] shrink-0"></i>
-                            <span class="text-[12px] font-black text-white group-hover:text-emerald-400 transition-colors truncate">${escHtml(se.name)}</span>
-                        </div>
-                        <div class="flex items-center gap-1 shrink-0">
-                            <span class="folder-badge">${formatStatNumber(se.episodeCount)} حلقة</span>
-                            <i class="fa-solid fa-chevron-left text-[10px] text-slate-600 group-hover:text-emerald-500"></i>
-                        </div>
-                    </div>
-                `).join('') + `</div>`;
-            }
-
-            box.innerHTML = html;
-        }
-
-        // ============================================================
-        //  6️⃣ شاشة: حلقات موسم مُحدد — بتمرير افتراضي للمسلسلات الطويلة جداً
-        // ============================================================
-        let xtreamCurrentEpisodesRaw = [];
-        let xtreamCurrentEpisodesCtx = null;
-        let xtreamCurrentEpisodeItems = [];
-
-        function openXtreamEpisodes(seasonIdx) {
-            const season = xtreamCurrentSeasons[seasonIdx];
-            if (!season || !xtreamCurrentSeriesCtx) return;
-            const { serverId, seriesId, seriesName } = xtreamCurrentSeriesCtx;
-            pushScreen({
-                screen: 'xtream-episodes', serverId, seriesId, seriesName,
-                seasonNumber: season.seasonNumber, seasonName: season.name
-            });
-        }
-
-        async function loadXtreamEpisodes(serverId, seriesId, seasonNumber, seasonName) {
-            const box = document.getElementById('channelsBox');
-            const title = seasonName || ('الموسم ' + seasonNumber);
-            box.innerHTML = xtreamHeaderBlock(title) + xtreamLoadingBlock('جاري تحميل الحلقات...');
-
-            let result;
-            try {
-                result = await xtreamGetSeriesInfo(serverId, seriesId);
-            } catch (e) {
-                if (!isScreen('xtream-episodes', s => s.serverId === serverId && s.seriesId === seriesId && s.seasonNumber === seasonNumber)) return;
-                box.innerHTML = xtreamHeaderBlock(title) + xtreamErrorBlock('تعذر تحميل حلقات هذا الموسم.',
-                    `loadXtreamEpisodes(${serverId}, '${escAttr(seriesId)}', ${seasonNumber}, '${escAttr(seasonName || '')}')`);
+            if (!seasons.length) {
+                resetChannelsBoxLayout();
+                headerHtml += `<p class="text-[11px] text-slate-500 text-center py-8">لا توجد مواسم متاحة لهذا المسلسل حالياً</p>`;
+                box.innerHTML = headerHtml;
                 return;
             }
-            if (!isScreen('xtream-episodes', s => s.serverId === serverId && s.seriesId === seriesId && s.seasonNumber === seasonNumber)) return;
 
-            const season = result.seasons.find(se => se.seasonNumber === seasonNumber);
-            xtreamCurrentEpisodesRaw = season ? season.episodes : [];
-            xtreamCurrentEpisodesCtx = { serverId, seriesId, seasonNumber, title };
-            paintXtreamEpisodes();
+            const selectedIdx = Math.min(xtreamCurrentSeriesCtx.selectedSeasonIdx || 0, seasons.length - 1);
+            const selectedSeason = seasons[selectedIdx];
+
+            const tabsHtml = `<div class="xtream-season-tabs px-1">` + seasons.map((se, idx) =>
+                `<button class="xtream-season-tab ${idx === selectedIdx ? 'active' : ''}" onclick="xtreamSelectSeason(${idx})">${escHtml(se.name)}</button>`
+            ).join('') + `</div>`;
+            headerHtml += `<div class="xtream-section-title px-1">الحلقات</div>` + tabsHtml;
+
+            const rawEpisodes = selectedSeason ? selectedSeason.episodes : [];
+            const episodeModels = rawEpisodes.map((ep, idx) => mapEpisodeToUiModel(ep, idx));
+            const normalizedQuery = normalizeArabic(searchQuery);
+            const filteredEpisodes = episodeModels.filter(ep => normalizeArabic(ep.title).includes(normalizedQuery));
+            xtreamCurrentEpisodeItems = filteredEpisodes;
+
+            headerHtml += `<p class="text-[10px] text-slate-500 font-bold px-1 my-2">${formatStatNumber(filteredEpisodes.length)} حلقة</p>`;
+            const emptyHtml = `<p class="text-[11px] text-slate-500 text-center py-6">لا توجد حلقات${searchQuery.trim() ? ' مطابقة للبحث' : ''}</p>`;
+
+            renderListEfficient(box, headerHtml, filteredEpisodes, (ep, idx) => xtreamEpisodeRowHtml(ep, idx), {
+                rowHeight: 78,
+                virtualizeThreshold: 150,
+                emptyHtml
+            });
         }
 
         function xtreamEpisodeRowHtml(ep, idx) {
-            const label = (ep.title && String(ep.title).trim()) ? ep.title : ('الحلقة ' + (ep.episode_num != null ? ep.episode_num : (idx + 1)));
+            const thumbHtml = ep.thumb
+                ? `<div class="xtream-episode-thumb"><img src="${escHtml(ep.thumb)}" alt="${escHtml(ep.title)}" loading="lazy" decoding="async" onerror="xtreamImgFallback(this, '${escAttr(String(ep.num))}')"></div>`
+                : `<div class="xtream-episode-thumb">${xtreamPlaceholderHtml(String(ep.num))}</div>`;
+            const subHtml = ep.durationLabel ? `<div class="xtream-episode-sub">${escHtml(ep.durationLabel)}</div>` : '';
             return `
-            <div onclick="playXtreamEpisode(${idx})" class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
-                <div class="flex items-center gap-2 min-w-0">
-                    <span class="episode-num-badge">${ep.episode_num != null ? ep.episode_num : (idx + 1)}</span>
-                    <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors truncate">${escHtml(label)}</span>
+            <div class="xtream-episode-row" onclick="playXtreamEpisode(${idx})">
+                ${thumbHtml}
+                <div class="xtream-episode-body">
+                    <div class="flex items-center gap-2">
+                        <span class="episode-num-badge">${escHtml(String(ep.num))}</span>
+                        <span class="xtream-episode-title">${escHtml(ep.title)}</span>
+                    </div>
+                    ${subHtml}
                 </div>
-                <i class="fa-solid fa-circle-play text-[11px] text-slate-700 group-hover:text-emerald-500 shrink-0"></i>
+                <i class="fa-solid fa-circle-play text-[13px] text-slate-700 shrink-0"></i>
             </div>`;
-        }
-
-        function paintXtreamEpisodes() {
-            if (!xtreamCurrentEpisodesCtx) return;
-            const { title } = xtreamCurrentEpisodesCtx;
-            const box = document.getElementById('channelsBox');
-
-            const normalizedQuery = normalizeArabic(searchQuery);
-            const filtered = xtreamCurrentEpisodesRaw.filter(ep => {
-                const label = (ep && ep.title && String(ep.title).trim()) ? ep.title : ('الحلقة ' + (ep && ep.episode_num));
-                return normalizeArabic(label).includes(normalizedQuery);
-            });
-            xtreamCurrentEpisodeItems = filtered;
-
-            const headerHtml = xtreamHeaderBlock(title) +
-                `<p class="text-[10px] text-slate-500 font-bold px-1 mb-2">${formatStatNumber(filtered.length)} حلقة</p>`;
-
-            renderListEfficient(box, headerHtml, filtered, (ep, idx) => xtreamEpisodeRowHtml(ep, idx), {
-                rowHeight: 48,
-                virtualizeThreshold: 150,
-                emptyHtml: `<p class="text-[11px] text-slate-500 text-center py-6">لا توجد حلقات${searchQuery.trim() ? ' مطابقة للبحث' : ''}</p>`
-            });
         }
 
         function playXtreamEpisode(idx) {
             const item = xtreamCurrentEpisodeItems[idx];
-            const ctx = xtreamCurrentEpisodesCtx;
+            const ctx = xtreamCurrentSeriesCtx;
             if (!item || !ctx) return;
             const server = xtreamServers[ctx.serverId];
             if (!server) return;
-            const url = xtreamStreamUrl(server, 'episode', item, null);
-            const label = (item.title && String(item.title).trim()) ? item.title : ('الحلقة ' + item.episode_num);
-            playChannel(url, 'v', label, null, false, false, null, null);
+            const url = xtreamStreamUrl(server, 'episode', { id: item.id, container_extension: item.containerExtension }, null);
+            if (!url) return;
+            playChannel(url, 'v', item.title, null, false, false, null, null);
         }
 
         function filter(c) { 
