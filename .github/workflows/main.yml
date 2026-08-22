@@ -64,6 +64,15 @@ jobs:
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
 
+      # SHA-256 لملف APK الموقّع فعلياً — يُستخدم من تطبيق Android نفسه (UpdateManager) للتحقق من
+      # سلامة الملف بعد التنزيل قبل السماح بالتثبيت. يُحسب هنا مرة واحدة وقت البناء الموثوق،
+      # وليس من أي مصدر لاحق يمكن العبث به.
+      - name: Compute release APK SHA-256
+        id: checksum
+        run: |
+          HASH=$(sha256sum app/build/outputs/apk/release/app-release.apk | awk '{print $1}')
+          echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
+
       - name: Generate version.json
         run: |
           cat > version.json << EOF
@@ -72,7 +81,8 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "force_update": true,
             "changelog": "يتوفر إصدار جديد من تطبيق يلا گول (الإصدار ${{ steps.version.outputs.name }}). يرجى التحديث للمتابعة.",
-            "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk"
+            "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk",
+            "sha256": "${{ steps.checksum.outputs.sha256 }}"
           }
           EOF
 
