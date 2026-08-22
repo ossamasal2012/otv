@@ -270,4 +270,27 @@ public class WebAppInterface {
             castManager.castToTv(url, title);
         });
     }
+
+    /**
+     * تستدعى من شاشات تفاصيل الأفلام/المسلسلات لفتح رابط ويب عام (مثل إعلان Trailer على
+     * يوتيوب) بأنسب تطبيق على الجهاز. بعكس playExternal المخصص حصراً لروابط بث الفيديو
+     * المباشرة (تفرض نوع video/*)، هنا لا نفرض أي MIME Type فيختار النظام تلقائياً تطبيق
+     * يوتيوب المثبت إن وجد، وإلا المتصفح الافتراضي. نقبل فقط روابط http/https حماية إضافية
+     * ضد أي مخطط رابط (scheme) غير متوقع قد يصل من بيانات سيرفر خارجي.
+     */
+    @JavascriptInterface
+    public void openExternalUrl(String token, String url) {
+        if (!isTokenValid(token) || !isUnlocked()) return;
+        if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return;
+
+        Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            try {
+                context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            } catch (ActivityNotFoundException e) {
+                Toast.makeText(context, "تعذر فتح الرابط.", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
 }
