@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    تخطيط مخصص لحوار تقدّم تحديث التطبيق (OTA).
+    يعرض حالة نصية + شريط تقدّم حقيقي (Determinate/Indeterminate) + نسبة مئوية + الحجم المُنزَّل/الكلي.
+    كل القيم المعروضة هنا تُحدَّث برمجياً من UpdateManager بالاعتماد على بيانات التنزيل الفعلية فقط.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingEnd="24dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <!-- سطر الحالة: "جاري الاتصال بالسيرفر..."، "جاري تحميل التحديث..."، "جاري التحقق من سلامة الملف..." -->
+    <TextView
+        android:id="@+id/updateStatusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="جاري تحضير التنزيل..."
+        android:textColor="#F1F5F9"
+        android:textSize="14sp"
+        android:textStyle="bold" />
+
+    <!-- شريط التقدّم الحقيقي. max=1000 لإتاحة دقة أنعم بصرياً من دقة 1% (تُحسب من downloadedBytes/totalBytes الفعليين) -->
+    <ProgressBar
+        android:id="@+id/updateProgressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="10dp"
+        android:layout_marginTop="16dp"
+        android:indeterminate="false"
+        android:max="1000"
+        android:progress="0"
+        android:progressBackgroundTint="#1E293B"
+        android:progressTint="#10B981" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <!-- النسبة المئوية الحقيقية، مثال: 72% — يُخفى إن كان Content-Length غير متوفر -->
+        <TextView
+            android:id="@+id/updatePercentText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="start"
+            android:text=""
+            android:textColor="#10B981"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <!-- الحجم المُنزَّل/الكلي، مثال: 72 MB / 100 MB -->
+        <TextView
+            android:id="@+id/updateSizeText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:text=""
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+</LinearLayout>
