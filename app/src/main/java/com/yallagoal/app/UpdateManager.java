@@ -5,6 +5,9 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -14,8 +17,10 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -55,7 +60,8 @@ import okhttp3.ResponseBody;
  *   - حساب SHA-256 أثناء التنزيل نفسه (بدون قراءة إضافية للملف) والتحقق منه مقابل القيمة الموثوقة
  *     الموجودة في version.json (حقل "sha256" الاختياري).
  *   - منع التثبيت نهائياً إن فشل أي تحقق (الحجم، الهاش، رقم الإصدار).
- *   - حوار تقدّم مخصص (dialog_update_progress) يعمل على UI Thread فقط بينما التنزيل يعمل على Thread منفصل.
+ *   - حوار تقدّم مبني برمجياً بالكامل (بدون أي ملف Layout خارجي) يعمل على UI Thread فقط بينما
+ *     التنزيل يعمل على Thread منفصل تماماً.
  */
 public class UpdateManager {
 
@@ -202,14 +208,71 @@ public class UpdateManager {
 
     // ==================== حوار التقدّم ====================
 
+    private int dp(int value) {
+        float density = activity.getResources().getDisplayMetrics().density;
+        return Math.round(value * density);
+    }
+
+    /**
+     * يبني تخطيط حوار التقدّم برمجياً بالكامل (بدون أي ملف XML خارجي في res/layout) —
+     * هذا مقصود: ملف Java واحد ذاتي الاكتفاء لا يعتمد على وجود ملف موارد منفصل، حتى لا
+     * يفشل البناء لو نُسي إضافة ملف جديد بالمسار الصحيح عند دمج التعديلات يدوياً بمشروع قائم.
+     */
+    private View buildProgressView() {
+        int hPad = dp(24);
+
+        LinearLayout root = new LinearLayout(activity);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(hPad, dp(8), hPad, dp(8));
+
+        progressStatusText = new TextView(activity);
+        progressStatusText.setText("جاري تحضير التنزيل...");
+        progressStatusText.setTextColor(Color.parseColor("#F1F5F9"));
+        progressStatusText.setTextSize(14);
+        progressStatusText.setTypeface(Typeface.DEFAULT_BOLD);
+        root.addView(progressStatusText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar.setMax(1000); // دقة 0.1% لحركة أنعم بصرياً، محسوبة من downloadedBytes/totalBytes الفعليين
+        progressBar.setProgress(0);
+        progressBar.setIndeterminate(false);
+        progressBar.setProgressTintList(ColorStateList.valueOf(Color.parseColor("#10B981")));
+        progressBar.setProgressBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1E293B")));
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(10));
+        barParams.topMargin = dp(16);
+        root.addView(progressBar, barParams);
+
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(10);
+
+        progressPercentText = new TextView(activity);
+        progressPercentText.setText("");
+        progressPercentText.setTextColor(Color.parseColor("#10B981"));
+        progressPercentText.setTypeface(Typeface.DEFAULT_BOLD);
+        progressPercentText.setTextSize(13);
+        progressPercentText.setGravity(Gravity.START);
+        row.addView(progressPercentText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        progressSizeText = new TextView(activity);
+        progressSizeText.setText("");
+        progressSizeText.setTextColor(Color.parseColor("#94A3B8"));
+        progressSizeText.setTextSize(12);
+        progressSizeText.setGravity(Gravity.END);
+        row.addView(progressSizeText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        root.addView(row, rowParams);
+        return root;
+    }
+
     private void buildProgressDialogIfNeeded() {
         if (!isActivityUsable()) return;
 
-        View view = activity.getLayoutInflater().inflate(R.layout.dialog_update_progress, null);
-        progressStatusText = view.findViewById(R.id.updateStatusText);
-        progressPercentText = view.findViewById(R.id.updatePercentText);
-        progressSizeText = view.findViewById(R.id.updateSizeText);
-        progressBar = view.findViewById(R.id.updateProgressBar);
+        View view = buildProgressView();
 
         AlertDialog.Builder builder = new AlertDialog.Builder(activity)
                 .setTitle("جاري تحديث التطبيق")
