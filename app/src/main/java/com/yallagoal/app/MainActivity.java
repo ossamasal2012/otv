@@ -15,6 +15,8 @@ import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -65,6 +67,11 @@ public class MainActivity extends AppCompatActivity {
     public void setJsCanGoBack(boolean canGoBack) {
         jsCanGoBack = canGoBack;
     }
+
+    // ذاكرة تخزين الصور المؤقتة الأصلية (شعارات قنوات/بوسترات أفلام ومسلسلات Xtream) — تُنشأ
+    // مرة واحدة وتُستخدم طوال عمر النشاط عبر shouldInterceptRequest بالأسفل. راجع التوثيق
+    // الكامل داخل ImageCacheInterceptor.java لسبب اعتمادها على الاعتراض الأصلي بدل JavaScript.
+    private ImageCacheInterceptor imageCacheInterceptor;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -121,12 +128,29 @@ public class MainActivity extends AppCompatActivity {
 
         final String bridgeToken = UUID.randomUUID().toString();
 
+        imageCacheInterceptor = new ImageCacheInterceptor(getApplicationContext());
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
                 view.loadUrl(url);
                 return true;
+            }
+
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                try {
+                    if (imageCacheInterceptor != null && imageCacheInterceptor.shouldHandle(request)) {
+                        WebResourceResponse cached = imageCacheInterceptor.intercept(request);
+                        if (cached != null) return cached;
+                        // null يعني: تعذر الجلب من هنا لأي سبب — نُسقط لسلوك WebView الافتراضي
+                        // بالأسفل بدل حجب الصورة نهائياً.
+                    }
+                } catch (Exception ignored) {
+                    // أي عطل غير متوقع بطبقة الكاش لا يجب أن يكسر تحميل أي مورد إطلاقاً.
+                }
+                return super.shouldInterceptRequest(view, request);
             }
 
             @Override
