@@ -442,7 +442,7 @@
             color: #94a3b8;
             text-transform: uppercase;
             letter-spacing: 1px;
-            margin: 0 0 0.75rem;
+            margin: 1.25rem 0 0.75rem;
         }
 
         .vlc-notice {
@@ -1297,8 +1297,18 @@
                 </div>
             </div>
 
-            <p class="settings-section-title">اختر المشغل الخارجي</p>
-            <div id="externalPlayerList"></div>
+            <p class="settings-section-title">نوع التشغيل</p>
+            <div id="playerModeList"></div>
+
+            <div id="internalEngineSection">
+                <p class="settings-section-title">محرك المشغل الداخلي</p>
+                <div id="internalEngineList"></div>
+            </div>
+
+            <div id="externalPlayerSection">
+                <p class="settings-section-title">اختر المشغل الخارجي</p>
+                <div id="externalPlayerList"></div>
+            </div>
         </div>
     </div>
 
@@ -1455,20 +1465,52 @@
         }
 
         // ============================================================
-        //  ⚙️ الإعدادات: نوع المشغل (افتراضي داخل التطبيق / خارجي)
-        //  + اختيار تطبيق المشغل الخارجي (GTV Player / VLC / أي مشغل آخر)
+        //  ⚙️ الإعدادات: نوع المشغل (داخلي جديد / خارجي) + محرك المشغل الداخلي
+        //  + اختيار تطبيق المشغل الخارجي (Just Player / VLC / أي مشغل آخر)
         //  + إعداد مستقل لكل مجلد (القرآن الكريم / قصائد حسينية)
         // ============================================================
+        const PLAYER_MODE_KEY = 'yalla_player_mode';
+        const INTERNAL_ENGINE_KEY = 'yalla_internal_engine';
         const EXTERNAL_PLAYER_APP_KEY = 'yalla_external_player_app';
 
+        const PLAYER_MODES = [
+            { id: 'internal', name: 'المشغل الداخلي (جديد)', recommended: true },
+            { id: 'external', name: 'مشغل خارجي' },
+        ];
+
+        const INTERNAL_ENGINES = [
+            { id: 'exo', name: 'ExoPlayer', recommended: true },
+            { id: 'vlc', name: 'VLC' },
+        ];
+
         const EXTERNAL_PLAYERS = [
-            { id: 'gtv', name: 'GTV Player', pkg: 'com.gtv.player', recommended: true },
+            { id: 'just', name: 'Just Player', pkg: 'com.brouken.player', recommended: true },
             { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
             { id: 'any', name: 'أي مشغل خارجي آخر', pkg: '' },
         ];
 
+        function getPlayerMode() {
+            const saved = localStorage.getItem(PLAYER_MODE_KEY);
+            return (saved === 'internal' || saved === 'external') ? saved : 'internal';
+        }
+        function setPlayerMode(id) {
+            localStorage.setItem(PLAYER_MODE_KEY, id);
+            renderPlayerSettingsSections();
+        }
+
+        function getInternalEngine() {
+            const saved = localStorage.getItem(INTERNAL_ENGINE_KEY);
+            return (saved === 'exo' || saved === 'vlc') ? saved : 'exo';
+        }
+        function setInternalEngine(id) {
+            localStorage.setItem(INTERNAL_ENGINE_KEY, id);
+            renderInternalEngineList();
+        }
+
         function getExternalPlayerApp() {
-            return localStorage.getItem(EXTERNAL_PLAYER_APP_KEY) || 'gtv';
+            const saved = localStorage.getItem(EXTERNAL_PLAYER_APP_KEY);
+            const stillValid = EXTERNAL_PLAYERS.some(p => p.id === saved);
+            return stillValid ? saved : 'just';
         }
 
         function setExternalPlayerApp(id) {
@@ -1479,6 +1521,64 @@
         function getExternalPlayerPackage() {
             const app = EXTERNAL_PLAYERS.find(p => p.id === getExternalPlayerApp());
             return app ? app.pkg : '';
+        }
+
+        // عارض قوائم اختيار بسيطة بنمط بصري مطابق تماماً لقائمة المشغلات الخارجية (بدون منطق
+        // التحقق من التثبيت الخاص بها) — يُستخدم لقائمتي "نوع التشغيل" و"محرك المشغل الداخلي"
+        function renderSimpleChoiceList(containerId, items, currentId, radioGroupName, onSelect) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+
+            items.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'player-app-row' + (currentId === item.id ? ' active' : '');
+
+                const label = document.createElement('label');
+                label.className = 'player-app-label';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = radioGroupName;
+                radio.value = item.id;
+                radio.checked = currentId === item.id;
+                radio.onchange = () => onSelect(item.id);
+                const span = document.createElement('span');
+                span.textContent = item.name;
+                label.appendChild(radio);
+                label.appendChild(span);
+
+                if (item.recommended) {
+                    const recBadge = document.createElement('span');
+                    recBadge.className = 'recommended-badge';
+                    recBadge.innerHTML = '<i class="fa-solid fa-star"></i> موصى به';
+                    label.appendChild(recBadge);
+                }
+
+                row.appendChild(label);
+                container.appendChild(row);
+            });
+        }
+
+        function renderPlayerModeList() {
+            renderSimpleChoiceList('playerModeList', PLAYER_MODES, getPlayerMode(), 'playerMode', setPlayerMode);
+        }
+
+        function renderInternalEngineList() {
+            renderSimpleChoiceList('internalEngineList', INTERNAL_ENGINES, getInternalEngine(), 'internalEngine', setInternalEngine);
+        }
+
+        // يُعيد رسم الأقسام الثلاثة معاً، ويُظهر قسم "محرك المشغل الداخلي" أو "اختر المشغل
+        // الخارجي" فقط بحسب نوع التشغيل المُختار حالياً (بدل عرض الاثنين معاً بشكل مربك)
+        function renderPlayerSettingsSections() {
+            const mode = getPlayerMode();
+            renderPlayerModeList();
+            renderInternalEngineList();
+            renderExternalPlayerList();
+
+            const engineSection = document.getElementById('internalEngineSection');
+            const externalSection = document.getElementById('externalPlayerSection');
+            if (engineSection) engineSection.style.display = mode === 'internal' ? '' : 'none';
+            if (externalSection) externalSection.style.display = mode === 'external' ? '' : 'none';
         }
 
         function renderExternalPlayerList() {
@@ -1552,7 +1652,7 @@
         }
 
         function openSettings() {
-            renderExternalPlayerList();
+            renderPlayerSettingsSections();
             document.getElementById('settingsScreen').classList.remove('hidden');
         }
 
@@ -2921,7 +3021,8 @@
             const userInfo = auth && auth.userInfo;
             const url = xtreamStreamUrl(server, ctx.type, item, userInfo);
             if (!url) return;
-            playChannel(url, 'v', item.name || server.name, null, false, false, null, null);
+            // بث مباشر دائماً هنا (بطاقات القنوات فقط تستدعي هذه الدالة) — لا نقطة استئناف له
+            playChannel(url, 'v', item.name || server.name, null, false, false, null, { isLive: true });
         }
 
         // ============================================================
@@ -3040,7 +3141,11 @@
             if (!server) return;
             const url = xtreamStreamUrl(server, 'movie', { stream_id: model.streamId, container_extension: model.containerExtension }, null);
             if (!url) return;
-            playChannel(url, 'v', model.name || server.name, null, false, false, null, null);
+            // مفتاح استئناف ثابت لكل فيلم على حدة (سيرفر + معرّف الفيلم) — يُستخدم فقط مع
+            // المشغل الداخلي لحفظ/استرجاع آخر نقطة توقف تلقائياً
+            const resumeKey = 'vod:' + ctx.serverId + ':' + model.streamId;
+            playChannel(url, 'v', model.name || server.name, null, false, false, null,
+                { isLive: false, resumeKey });
         }
 
         // ============================================================
@@ -3156,7 +3261,10 @@
             if (!server) return;
             const url = xtreamStreamUrl(server, 'episode', { id: item.id, container_extension: item.containerExtension }, null);
             if (!url) return;
-            playChannel(url, 'v', item.title, null, false, false, null, null);
+            // مفتاح استئناف ثابت لكل حلقة على حدة (سيرفر + معرّف الحلقة)
+            const resumeKey = 'ep:' + ctx.serverId + ':' + item.id;
+            playChannel(url, 'v', item.title, null, false, false, null,
+                { isLive: false, resumeKey });
         }
 
         function filter(c) { 
@@ -3516,9 +3624,21 @@
                 } catch (e) { /* تجاهل — منصة غير أندرويد أو الجسر غير متوفر */ }
 
             } else {
-                // 🎬 لا يوجد مشغل مدمج داخل التطبيق بعد الآن: كل القنوات تُفتح دائماً عبر تطبيق مشغل فيديو خارجي
+                // 🎬 المشغل الداخلي الجديد (الافتراضي) أو تطبيق مشغل فيديو خارجي، بحسب اختيار
+                // المستخدم من الإعدادات — راجع قسم "⚙️ الإعدادات: نوع المشغل" أعلاه.
                 document.getElementById('placeholderScreen').classList.add('hidden');
-                if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
+
+                // isLive افتراضياً true (يطابق كل مسارات التشغيل الحالية التي لا تمرّر channelCtx
+                // إطلاقاً، وهي جميعها قنوات مباشرة) — يصبح false فقط عندما يحدّد المستدعي ذلك
+                // صراحة (أفلام/حلقات Xtream)، وعندها فقط تُفعَّل ميزة استئناف نقطة التوقف.
+                const isLive = !(channelCtx && channelCtx.isLive === false);
+                const resumeKey = (channelCtx && channelCtx.resumeKey) ? channelCtx.resumeKey : '';
+
+                if (getPlayerMode() === 'internal'
+                    && window.AndroidPlayer && typeof window.AndroidPlayer.playInternal === 'function') {
+                    window.AndroidPlayer.playInternal(
+                        window.__YG_TOKEN__, finalUrl, name || 'يلا گول', isLive, resumeKey, getInternalEngine());
+                } else if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
                     window.AndroidPlayer.playExternal(window.__YG_TOKEN__, finalUrl, name || 'يلا گول', getExternalPlayerPackage());
                 } else {
                     // لا يوجد تكامل تطبيق أندرويد (تصفح من متصفح عادي مثلاً) — نحاول فتح رابط البث مباشرة كخيار احتياطي
