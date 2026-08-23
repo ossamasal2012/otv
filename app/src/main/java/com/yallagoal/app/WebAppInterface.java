@@ -171,8 +171,37 @@ public class WebAppInterface {
     }
 
     /**
-     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (GTV Player أو VLC) مثبت على الجهاز،
-     * لإظهار زر "تثبيت" فقط عند الحاجة.
+     * تفتح المشغّل الداخلي الجديد (InternalPlayerActivity) بدل تطبيق خارجي — تُستدعى فقط
+     * عندما يكون "المشغل الداخلي" هو خيار التشغيل المُفعَّل حالياً بإعدادات التطبيق (القرار
+     * بالكامل من طرف JS، وتصل هنا القيم جاهزة). isLive/resumeKey يحددان معاً هل يُفعَّل
+     * استئناف نقطة التوقف (فيديوهات فقط) أم لا (بث مباشر). engine: "vlc" أو أي قيمة أخرى
+     * (بما فيها فارغة) = ExoPlayer (الافتراضي).
+     */
+    @JavascriptInterface
+    public void playInternal(String token, String url, String title, boolean isLive,
+                              String resumeKey, String engine) {
+        if (!isTokenValid(token) || !isUnlocked()) return;
+        if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
+
+        Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            Intent intent = new Intent(context, InternalPlayerActivity.class);
+            intent.putExtra(InternalPlayerActivity.EXTRA_URL, url);
+            intent.putExtra(InternalPlayerActivity.EXTRA_TITLE, title != null ? title : "");
+            intent.putExtra(InternalPlayerActivity.EXTRA_IS_LIVE, isLive);
+            intent.putExtra(InternalPlayerActivity.EXTRA_RESUME_KEY, resumeKey != null ? resumeKey : "");
+            intent.putExtra(InternalPlayerActivity.EXTRA_ENGINE, engine != null ? engine : "");
+            try {
+                context.startActivity(intent);
+            } catch (Exception ignored) {
+                Toast.makeText(context, "تعذر فتح المشغل الداخلي.", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    /**
+     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (VLC أو Just Player مثلاً) مثبت على
+     * الجهاز، لإظهار زر "تثبيت" فقط عند الحاجة.
      */
     @JavascriptInterface
     public boolean isPackageInstalled(String token, String packageName) {
