@@ -8,8 +8,8 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 45
-        versionName "4.5"
+        versionCode 46
+        versionName "4.6"
 
         // LibVLC تحديداً تضيف مكتبات native ضخمة الحجم لكل معمارية معالج؛ نقتصر على المعماريتين
         // الشائعتين فعلياً على كل هواتف/أجهزة أندرويد الحقيقية تقريباً (armeabi-v7a/arm64-v8a)
@@ -83,10 +83,18 @@ dependencies {
     // ==================== المشغّل الداخلي الجديد ====================
 
     // محرّك 1 (الافتراضي): AndroidX Media3 / ExoPlayer 1.11.0
-    implementation 'androidx.media3:media3-exoplayer:1.11.0'
-    implementation 'androidx.media3:media3-exoplayer-hls:1.11.0'
-    implementation 'androidx.media3:media3-ui:1.11.0'
-    implementation 'androidx.media3:media3-datasource-okhttp:1.11.0'
+    // ملاحظة إصدار مهمة: 1.11.0 (الأحدث وقت هذا التعديل) يفرض compileSdk 36 على أي مشروع
+    // يعتمد عليه (يُتحقق منه صراحة عبر AAR Metadata عند البناء)، بينما Android Gradle Plugin
+    // بهذا المشروع هو 8.5.2 الذي يدعم حتى compileSdk 34 فقط رسمياً — رفع compileSdk هنا كان
+    // سيتطلب ترقية AGP نفسه أيضاً (تغيير أوسع وأكثر خطورة على بقية الاعتماديات). لذلك اعتُمد
+    // إصدار 1.4.1 عمداً: من حقبة compileSdk 34/AGP 8.5.x نفسها، ومستقر تماماً (وليس Alpha/Beta).
+    // كل الواجهات المستخدمة هنا (ExoPlayer.Builder، DefaultMediaSourceFactory، OkHttpDataSource،
+    // PlaybackException.ERROR_CODE_*، C.TIME_UNSET، MediaItem.fromUri، PlayerView) ثابتة منذ
+    // الإصدار الأول لـ Media3 ولا تتأثر بهذا الفرق بالإصدار.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'
+    implementation 'androidx.media3:media3-ui:1.4.1'
+    implementation 'androidx.media3:media3-datasource-okhttp:1.4.1'
 
     // محرّك 2 (بديل): LibVLC for Android 3.7.0 — أحدث إصدار مستقر منشور رسمياً على Maven
     // Central وقت هذا التعديل. إن فشل Gradle Sync تحديداً على هذا السطر بسبب صدور إصدار
