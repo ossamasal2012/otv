@@ -1,14 +1,19 @@
 package com.yallagoal.app;
 
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
-import android.widget.ImageButton;
-import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -20,13 +25,13 @@ import androidx.core.view.WindowInsetsControllerCompat;
 import java.util.Locale;
 
 /**
- * المشغّل الداخلي الجديد — واجهة واحدة موحّدة ومصمَّمة بالكامل يدوياً (لا عناصر تحكّم جاهزة
- * من أي مكتبة)، تعمل فوق أحد محرّكين قابلين للتبديل عبر PlaybackEngine: ExoPlaybackEngine
- * (AndroidX Media3، الافتراضي) أو VlcPlaybackEngine (LibVLC، بديل).
+ * المشغّل الداخلي الجديد — واجهة واحدة موحّدة تعمل فوق أحد محرّكين قابلين للتبديل عبر
+ * PlaybackEngine: ExoPlaybackEngine (AndroidX Media3، الافتراضي) أو VlcPlaybackEngine (LibVLC).
  *
- * يُفتح حصرياً من WebAppInterface.playInternal(...) عندما يكون "المشغل الداخلي" هو خيار
- * التشغيل المُفعَّل بالإعدادات؛ لا علاقة له إطلاقاً بمسار المشغّلات الخارجية (playExternal)
- * الذي يبقى يعمل تماماً كما كان.
+ * الواجهة بالكامل مبنية برمجياً هنا (بدون أي ملف layout أو drawable من res/) عمداً: أي ملف
+ * مورد جديد يحتاج إضافته يدوياً بمساره الصحيح بمشروع قائم عرضة للنسيان عند الدمج، بينما ملف
+ * Java واحد ذاتي الاكتفاء لا يعتمد على وجود أي شيء خارجه — نفس المبدأ المُتّبع سابقاً في
+ * UpdateManager لحوار التقدّم.
  */
 public class InternalPlayerActivity extends AppCompatActivity {
 
@@ -41,28 +46,31 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private static final int POSITION_SAVE_EVERY_N_TICKS = 10; // كل ~5 ثوانٍ (10 × 500ms)
     private static final long SEEK_STEP_MS = 10_000L;
 
+    private static final int COLOR_ACCENT = 0xFF10B981;
+    private static final int COLOR_ACCENT_DARK_TEXT = 0xFF052E21;
+    private static final int COLOR_TRACK_BG = 0x4DFFFFFF;
+
     private PlaybackEngine engine;
     private String contentUrl;
     private String resumeKey;
     private boolean isLive;
 
     private FrameLayout videoContainer;
-    private View tapCatcher;
-    private View loadingOverlay;
-    private View errorOverlay;
+    private FrameLayout loadingOverlay;
+    private FrameLayout errorOverlay;
     private TextView errorText;
     private FrameLayout controlsOverlay;
-    private ImageButton backBtn;
     private TextView titleText;
     private TextView liveBadge;
-    private FrameLayout rewindBtn;
-    private FrameLayout playPauseBtn;
-    private ImageView playPauseIcon;
-    private FrameLayout forwardBtn;
-    private View bottomBar;
+    private View playPauseBtn;
+    private View playGlyph;
+    private View pauseGlyph;
+    private LinearLayout bottomBar;
+    private View rewindBtn;
+    private View forwardBtn;
     private TextView currentTimeText;
-    private SeekBar seekBar;
     private TextView durationText;
+    private SeekBar seekBar;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean userSeeking = false;
@@ -160,9 +168,8 @@ public class InternalPlayerActivity extends AppCompatActivity {
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        setContentView(R.layout.activity_internal_player);
+        setContentView(buildUi());
         hideSystemBars();
-        bindViews();
 
         contentUrl = getIntent().getStringExtra(EXTRA_URL);
         String title = getIntent().getStringExtra(EXTRA_TITLE);
@@ -186,61 +193,185 @@ public class InternalPlayerActivity extends AppCompatActivity {
         engine.attachTo(videoContainer);
         engine.setListener(engineListener);
 
-        setupControlListeners();
         startPlayback();
     }
 
-    private void bindViews() {
-        videoContainer = findViewById(R.id.videoContainer);
-        tapCatcher = findViewById(R.id.tapCatcher);
-        loadingOverlay = findViewById(R.id.loadingOverlay);
-        errorOverlay = findViewById(R.id.errorOverlay);
-        errorText = findViewById(R.id.errorText);
-        controlsOverlay = findViewById(R.id.controlsOverlay);
-        backBtn = findViewById(R.id.backBtn);
-        titleText = findViewById(R.id.titleText);
-        liveBadge = findViewById(R.id.liveBadge);
-        rewindBtn = findViewById(R.id.rewindBtn);
-        playPauseBtn = findViewById(R.id.playPauseBtn);
-        playPauseIcon = findViewById(R.id.playPauseIcon);
-        forwardBtn = findViewById(R.id.forwardBtn);
-        bottomBar = findViewById(R.id.bottomBar);
-        currentTimeText = findViewById(R.id.currentTimeText);
-        seekBar = findViewById(R.id.seekBar);
-        durationText = findViewById(R.id.durationText);
+    // ==================== بناء الواجهة برمجياً بالكامل ====================
 
-        Button errorRetryBtn = findViewById(R.id.errorRetryBtn);
-        Button errorBackBtn = findViewById(R.id.errorBackBtn);
-        errorRetryBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                hideError();
-                startPlayback();
-            }
-        });
-        errorBackBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                finishAndSave();
-            }
-        });
-    }
+    private View buildUi() {
+        FrameLayout root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
 
-    private void setupControlListeners() {
+        videoContainer = new FrameLayout(this);
+        root.addView(videoContainer, matchParent());
+
+        View tapCatcher = new View(this);
+        tapCatcher.setBackgroundColor(Color.TRANSPARENT);
         tapCatcher.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 toggleControls();
             }
         });
+        root.addView(tapCatcher, matchParent());
 
+        loadingOverlay = buildLoadingOverlay();
+        root.addView(loadingOverlay, matchParent());
+
+        errorOverlay = buildErrorOverlay();
+        errorOverlay.setVisibility(View.GONE);
+        root.addView(errorOverlay, matchParent());
+
+        controlsOverlay = buildControlsOverlay();
+        root.addView(controlsOverlay, matchParent());
+
+        return root;
+    }
+
+    private FrameLayout buildLoadingOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x4D000000);
+
+        ProgressBar spinner = new ProgressBar(this);
+        spinner.setIndeterminateTintList(ColorStateList.valueOf(COLOR_ACCENT));
+        FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(dp(52), dp(52));
+        sp.gravity = Gravity.CENTER;
+        overlay.addView(spinner, sp);
+        return overlay;
+    }
+
+    private FrameLayout buildErrorOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0xCC000000);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER);
+        col.setPadding(dp(32), dp(32), dp(32), dp(32));
+
+        errorText = new TextView(this);
+        errorText.setText("تعذر تشغيل هذا المحتوى.");
+        errorText.setTextColor(Color.WHITE);
+        errorText.setTextSize(15);
+        errorText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams etp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        etp.bottomMargin = dp(20);
+        col.addView(errorText, etp);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+
+        Button retryBtn = new Button(this);
+        retryBtn.setText("إعادة المحاولة");
+        retryBtn.setAllCaps(false);
+        retryBtn.setTextColor(COLOR_ACCENT_DARK_TEXT);
+        retryBtn.setBackgroundTintList(ColorStateList.valueOf(COLOR_ACCENT));
+        retryBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hideError();
+                startPlayback();
+            }
+        });
+        LinearLayout.LayoutParams rbp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rbp.setMargins(dp(6), 0, dp(6), 0);
+        row.addView(retryBtn, rbp);
+
+        Button backBtnErr = new Button(this);
+        backBtnErr.setText("رجوع");
+        backBtnErr.setAllCaps(false);
+        backBtnErr.setTextColor(Color.WHITE);
+        backBtnErr.setBackgroundTintList(ColorStateList.valueOf(0xFF1E293B));
+        backBtnErr.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finishAndSave();
+            }
+        });
+        LinearLayout.LayoutParams bbp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        bbp.setMargins(dp(6), 0, dp(6), 0);
+        row.addView(backBtnErr, bbp);
+
+        col.addView(row);
+        FrameLayout.LayoutParams colParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        colParams.gravity = Gravity.CENTER;
+        overlay.addView(col, colParams);
+        return overlay;
+    }
+
+    private FrameLayout buildControlsOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+
+        // ----- الشريط العلوي: رجوع + العنوان + شارة مباشر -----
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setBackground(scrimDrawable(true));
+        topBar.setPadding(dp(6), dp(10), dp(16), dp(26));
+
+        TextView backBtn = new TextView(this);
+        backBtn.setText("\u2190"); // ←
+        backBtn.setTextColor(Color.WHITE);
+        backBtn.setTextSize(22);
+        backBtn.setGravity(Gravity.CENTER);
+        backBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
         backBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 finishAndSave();
             }
         });
+        topBar.addView(backBtn, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        titleText = new TextView(this);
+        titleText.setTextColor(Color.WHITE);
+        titleText.setTextSize(15);
+        titleText.setTypeface(Typeface.DEFAULT_BOLD);
+        titleText.setMaxLines(1);
+        titleText.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams ttp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        ttp.leftMargin = dp(6);
+        ttp.rightMargin = dp(6);
+        topBar.addView(titleText, ttp);
+
+        liveBadge = new TextView(this);
+        liveBadge.setText("\uD83D\uDD34 مباشر"); // 🔴 مباشر
+        liveBadge.setTextColor(Color.WHITE);
+        liveBadge.setTextSize(11);
+        liveBadge.setTypeface(Typeface.DEFAULT_BOLD);
+        liveBadge.setBackground(roundedDrawable(0xFFDC2626, 999));
+        liveBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
+        liveBadge.setVisibility(View.GONE);
+        topBar.addView(liveBadge, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        FrameLayout.LayoutParams topBarParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        topBarParams.gravity = Gravity.TOP;
+        overlay.addView(topBar, topBarParams);
+
+        // ----- منتصف الشاشة: ترجيع 10 ثوانٍ / تشغيل-إيقاف / تقديم 10 ثوانٍ -----
+        LinearLayout centerRow = new LinearLayout(this);
+        centerRow.setOrientation(LinearLayout.HORIZONTAL);
+        centerRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        rewindBtn = buildCircleTextButton("-10", 58, 15);
+        rewindBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                seekRelative(-SEEK_STEP_MS);
+                resetAutoHideTimer();
+            }
+        });
+        centerRow.addView(rewindBtn, new LinearLayout.LayoutParams(dp(58), dp(58)));
+
+        playPauseBtn = buildPlayPauseButton();
         playPauseBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -253,15 +384,12 @@ public class InternalPlayerActivity extends AppCompatActivity {
                 resetAutoHideTimer();
             }
         });
+        LinearLayout.LayoutParams ppp = new LinearLayout.LayoutParams(dp(76), dp(76));
+        ppp.leftMargin = dp(22);
+        ppp.rightMargin = dp(22);
+        centerRow.addView(playPauseBtn, ppp);
 
-        rewindBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                seekRelative(-SEEK_STEP_MS);
-                resetAutoHideTimer();
-            }
-        });
-
+        forwardBtn = buildCircleTextButton("+10", 58, 15);
         forwardBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -269,7 +397,33 @@ public class InternalPlayerActivity extends AppCompatActivity {
                 resetAutoHideTimer();
             }
         });
+        centerRow.addView(forwardBtn, new LinearLayout.LayoutParams(dp(58), dp(58)));
 
+        FrameLayout.LayoutParams centerParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        centerParams.gravity = Gravity.CENTER;
+        overlay.addView(centerRow, centerParams);
+
+        // ----- الشريط السفلي: الوقت الحالي + شريط التقدّم + المدة الكلية -----
+        bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setGravity(Gravity.CENTER_VERTICAL);
+        bottomBar.setBackground(scrimDrawable(false));
+        bottomBar.setPadding(dp(16), dp(26), dp(16), dp(14));
+
+        currentTimeText = new TextView(this);
+        currentTimeText.setText("00:00");
+        currentTimeText.setTextColor(Color.WHITE);
+        currentTimeText.setTextSize(12);
+        currentTimeText.setMinWidth(dp(42));
+        bottomBar.addView(currentTimeText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        seekBar = new SeekBar(this);
+        seekBar.setMax(1000);
+        seekBar.setProgressTintList(ColorStateList.valueOf(COLOR_ACCENT));
+        seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(COLOR_TRACK_BG));
+        seekBar.setThumbTintList(ColorStateList.valueOf(COLOR_ACCENT));
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
@@ -295,7 +449,118 @@ public class InternalPlayerActivity extends AppCompatActivity {
                 resetAutoHideTimer();
             }
         });
+        LinearLayout.LayoutParams sbp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        sbp.leftMargin = dp(8);
+        sbp.rightMargin = dp(8);
+        bottomBar.addView(seekBar, sbp);
+
+        durationText = new TextView(this);
+        durationText.setText("00:00");
+        durationText.setTextColor(0xFF94A3B8);
+        durationText.setTextSize(12);
+        durationText.setMinWidth(dp(42));
+        bottomBar.addView(durationText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        bottomParams.gravity = Gravity.BOTTOM;
+        overlay.addView(bottomBar, bottomParams);
+
+        return overlay;
     }
+
+    /** زر دائري بسيط بنص فقط (بدون أي رمز/صورة) — يُستخدم للترجيع/التقديم. */
+    private View buildCircleTextButton(String label, int sizeDp, float textSizeSp) {
+        FrameLayout btn = new FrameLayout(this);
+        btn.setBackground(circleDrawable(0x33FFFFFF));
+
+        TextView text = new TextView(this);
+        text.setText(label);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(textSizeSp);
+        text.setTypeface(Typeface.DEFAULT_BOLD);
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        tp.gravity = Gravity.CENTER;
+        btn.addView(text, tp);
+        return btn;
+    }
+
+    /** زر التشغيل/الإيقاف: طبقتان متراكبتان (مثلث تشغيل نصّي، وشريطا إيقاف مؤقت)، تظهر إحداهما فقط. */
+    private View buildPlayPauseButton() {
+        FrameLayout btn = new FrameLayout(this);
+        btn.setBackground(circleDrawable(0x33FFFFFF));
+
+        TextView play = new TextView(this);
+        play.setText("\u25B6"); // ▶
+        play.setTextColor(Color.WHITE);
+        play.setTextSize(26);
+        FrameLayout.LayoutParams playParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        playParams.gravity = Gravity.CENTER;
+        // إزاحة بصرية بسيطة لأن شكل المثلث نفسه غير متمركز بصرياً كباقي الحروف
+        playParams.leftMargin = dp(3);
+        btn.addView(play, playParams);
+        playGlyph = play;
+
+        LinearLayout pause = new LinearLayout(this);
+        pause.setOrientation(LinearLayout.HORIZONTAL);
+        pause.setGravity(Gravity.CENTER);
+        View bar1 = new View(this);
+        bar1.setBackgroundColor(Color.WHITE);
+        LinearLayout.LayoutParams bar1p = new LinearLayout.LayoutParams(dp(6), dp(24));
+        bar1p.rightMargin = dp(5);
+        pause.addView(bar1, bar1p);
+        View bar2 = new View(this);
+        bar2.setBackgroundColor(Color.WHITE);
+        pause.addView(bar2, new LinearLayout.LayoutParams(dp(6), dp(24)));
+        FrameLayout.LayoutParams pauseParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        pauseParams.gravity = Gravity.CENTER;
+        pause.setVisibility(View.GONE);
+        btn.addView(pause, pauseParams);
+        pauseGlyph = pause;
+
+        return btn;
+    }
+
+    // ==================== أدوات مساعدة للرسم برمجياً ====================
+
+    private int dp(int value) {
+        float density = getResources().getDisplayMetrics().density;
+        return Math.round(value * density);
+    }
+
+    private FrameLayout.LayoutParams matchParent() {
+        return new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
+    }
+
+    private GradientDrawable circleDrawable(int color) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setShape(GradientDrawable.OVAL);
+        gd.setColor(color);
+        return gd;
+    }
+
+    private GradientDrawable roundedDrawable(int color, int radiusDp) {
+        GradientDrawable gd = new GradientDrawable();
+        gd.setShape(GradientDrawable.RECTANGLE);
+        gd.setColor(color);
+        gd.setCornerRadius(dp(radiusDp));
+        return gd;
+    }
+
+    /** تدرّج شفاف خفيف لضمان وضوح عناصر التحكّم فوق الفيديو (أعلى الشاشة أو أسفلها). */
+    private GradientDrawable scrimDrawable(boolean darkAtTop) {
+        int[] colors = darkAtTop
+                ? new int[]{0xB3000000, 0x00000000}
+                : new int[]{0x00000000, 0xB3000000};
+        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors);
+    }
+
+    // ==================== منطق التشغيل ====================
 
     private void startPlayback() {
         showLoading();
@@ -337,7 +602,8 @@ public class InternalPlayerActivity extends AppCompatActivity {
     }
 
     private void updatePlayPauseIcon(boolean isPlaying) {
-        playPauseIcon.setImageResource(isPlaying ? R.drawable.ic_player_pause : R.drawable.ic_player_play);
+        playGlyph.setVisibility(isPlaying ? View.GONE : View.VISIBLE);
+        pauseGlyph.setVisibility(isPlaying ? View.VISIBLE : View.GONE);
     }
 
     private void showLoading() {
