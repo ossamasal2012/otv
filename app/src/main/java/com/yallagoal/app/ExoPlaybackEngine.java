@@ -4,29 +4,42 @@ import android.content.Context;
 import android.view.ViewGroup;
 
 import androidx.media3.common.C;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.TrackGroup;
+import androidx.media3.common.TrackSelectionOverride;
+import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.datasource.DataSource;
 import androidx.media3.datasource.okhttp.OkHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
 
 /**
- * محرّك التشغيل الافتراضي للمشغّل الداخلي — AndroidX Media3 (ExoPlayer) بإصدار 1.11.0،
+ * محرّك التشغيل الافتراضي للمشغّل الداخلي — AndroidX Media3 (ExoPlayer) بإصدار 1.4.1،
  * مع OkHttp كطبقة شبكة (نفس نمط الاستخدام المعتمد أصلاً بباقي التطبيق)، ودعم HLS يأتي
  * تلقائياً بمجرد وجود اعتماديّة media3-exoplayer-hls على مسار البناء (media3 يكتشفها
  * ويستخدمها داخلياً دون أي كود إضافي هنا).
  *
  * لا تُستخدم عناصر تحكّم Media3 الجاهزة (PlayerView.useController) إطلاقاً؛ واجهة التحكم
- * بالكامل (زر تشغيل/إيقاف، شريط تقدّم، تقديم/ترجيع 10 ثوانٍ...) مبنية خصيصاً داخل
- * InternalPlayerActivity لضمان تصميم واحد موحّد بغضّ النظر عن المحرّك المُختار.
+ * بالكامل (زر تشغيل/إيقاف، شريط تقدّم، تقديم/ترجيع 10 ثوانٍ، وضع ملء الشاشة، قائمة الدقات...)
+ * مبنية خصيصاً داخل InternalPlayerActivity لضمان تصميم واحد موحّد بغضّ النظر عن المحرّك المُختار.
+ *
+ * اختيار الدقة يدوياً يعتمد على واجهة Media3 القياسية لتجاوز اختيار المسار (TrackSelectionOverride
+ * فوق TrackSelectionParameters) — تماماً كما تفعل أي واجهة "اختيار جودة" قياسية مبنية على
+ * ExoPlayer؛ لا حيلة أو تقريب هنا، فالمحرّك نفسه يُقيَّد فعلياً على الدقة المُختارة.
  */
 @UnstableApi
 final class ExoPlaybackEngine implements PlaybackEngine {
@@ -34,6 +47,7 @@ final class ExoPlaybackEngine implements PlaybackEngine {
     private ExoPlayer player;
     private PlayerView playerView;
     private Listener listener;
+    private volatile String selectedQualityId = "auto";
 
     @Override
     public void initialize(Context context) {
@@ -76,6 +90,11 @@ final class ExoPlaybackEngine implements PlaybackEngine {
             public void onPlayerError(PlaybackException error) {
                 if (listener != null) listener.onError(mapErrorMessage(error));
             }
+
+            @Override
+            public void onTracksChanged(Tracks tracks) {
+                if (listener != null) listener.onTracksChanged();
+            }
         });
     }
 
@@ -83,6 +102,7 @@ final class ExoPlaybackEngine implements PlaybackEngine {
     public void attachTo(ViewGroup container) {
         playerView = new PlayerView(container.getContext());
         playerView.setUseController(false);
+        playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
         playerView.setPlayer(player);
         container.removeAllViews();
         container.addView(playerView, new ViewGroup.LayoutParams(
@@ -97,6 +117,14 @@ final class ExoPlaybackEngine implements PlaybackEngine {
     @Override
     public void playUrl(String url, long startPositionMs) {
         if (player == null) return;
+        selectedQualityId = "auto";
+        // فيديو/قناة جديدة تبدأ دائماً باختيار تلقائي — أي تثبيت دقة يدوي سابق كان يخص المحتوى
+        // السابق فقط ولا معنى لبقائه هنا.
+        player.setTrackSelectionParameters(
+                player.getTrackSelectionParameters().buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                        .build());
+
         MediaItem item = MediaItem.fromUri(url);
         if (startPositionMs > 0) {
             player.setMediaItem(item, startPositionMs);
@@ -137,6 +165,98 @@ final class ExoPlaybackEngine implements PlaybackEngine {
     @Override
     public void seekTo(long positionMs) {
         if (player != null) player.seekTo(Math.max(0L, positionMs));
+    }
+
+    @Override
+    public void setResizeMode(ResizeMode mode) {
+        if (playerView == null || mode == null) return;
+        switch (mode) {
+            case FILL:
+                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FILL);
+                break;
+            case ZOOM:
+                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+                break;
+            case FIT:
+            default:
+                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                break;
+        }
+    }
+
+    @Override
+    public List<QualityOption> getAvailableQualities() {
+        List<QualityOption> result = new ArrayList<>();
+        if (player == null) return result;
+
+        List<Integer> heights = new ArrayList<>();
+        Tracks tracks = player.getCurrentTracks();
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_VIDEO) continue;
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSupported(i)) continue;
+                Format format = group.getTrackFormat(i);
+                int height = format.height;
+                if (height == Format.NO_VALUE || height <= 0) continue;
+                if (!heights.contains(height)) heights.add(height);
+            }
+        }
+
+        Collections.sort(heights, new Comparator<Integer>() {
+            @Override
+            public int compare(Integer a, Integer b) {
+                return b - a; // تنازلياً: الأعلى دقة أولاً
+            }
+        });
+
+        for (Integer h : heights) {
+            result.add(new QualityOption(String.valueOf(h), h + "p"));
+        }
+        return result;
+    }
+
+    @Override
+    public String getSelectedQualityId() {
+        return selectedQualityId;
+    }
+
+    @Override
+    public void selectQuality(String qualityId) {
+        if (player == null) return;
+
+        if (qualityId == null || "auto".equals(qualityId)) {
+            player.setTrackSelectionParameters(
+                    player.getTrackSelectionParameters().buildUpon()
+                            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                            .build());
+            selectedQualityId = "auto";
+            return;
+        }
+
+        int targetHeight;
+        try {
+            targetHeight = Integer.parseInt(qualityId);
+        } catch (NumberFormatException e) {
+            return;
+        }
+
+        Tracks tracks = player.getCurrentTracks();
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() != C.TRACK_TYPE_VIDEO) continue;
+            for (int i = 0; i < group.length; i++) {
+                if (!group.isTrackSupported(i)) continue;
+                Format format = group.getTrackFormat(i);
+                if (format.height == targetHeight) {
+                    TrackGroup trackGroup = group.getMediaTrackGroup();
+                    player.setTrackSelectionParameters(
+                            player.getTrackSelectionParameters().buildUpon()
+                                    .setOverrideForType(new TrackSelectionOverride(trackGroup, i))
+                                    .build());
+                    selectedQualityId = qualityId;
+                    return;
+                }
+            }
+        }
     }
 
     @Override
