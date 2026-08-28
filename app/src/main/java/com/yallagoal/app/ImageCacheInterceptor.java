@@ -99,6 +99,16 @@ final class ImageCacheInterceptor {
 
     private final AtomicBoolean trimInProgress = new AtomicBoolean(false);
 
+    // يتحكم في تفعيل الـ logging المطوَّل (راجع log() بالأسفل). عمداً لا نعتمد على
+    // com.yallagoal.app.BuildConfig هنا: تلك الفئة لا تُولَّد تلقائياً إلا إذا كانت
+    // buildFeatures.buildConfig مُفعَّلة صراحة بـ build.gradle (معطّلة افتراضياً منذ Android
+    // Gradle Plugin 8.0)، وهذا المشروع لا يُفعِّلها حالياً. بدلاً من فرض تعديل build.gradle
+    // لمجرد سطر تسجيل واحد، نستعلم مباشرة عن علم "قابل للتصحيح" (Debuggable) الحقيقي لهذه
+    // الحزمة المُثبَّتة فعلياً عبر ApplicationInfo — وهو انعكاس دقيق تماماً لنفس معنى
+    // BuildConfig.DEBUG (كلاهما يُشتق أصلاً من نوع البناء debug/release)، بدون أي اعتمادية
+    // جديدة أو تعديل على إعدادات البناء.
+    private final boolean verboseLoggingEnabled;
+
     // منع تحميل نفس الصورة عدة مرات بالتوازي (Single-flight): أول طلب لصورة غير مخزّنة يصبح
     // "القائد" وينفّذ الجلب الفعلي، وأي طلب آخر لنفس الصورة أثناء ذلك ينتظر نتيجته بدل بدء
     // اتصال شبكي جديد خاص به — راجع fetchWithDeduplication().
@@ -109,6 +119,8 @@ final class ImageCacheInterceptor {
         if (!cacheDir.exists()) {
             boolean ignored = cacheDir.mkdirs();
         }
+
+        verboseLoggingEnabled = isDebuggable(context);
 
         memoryCache = new LruCache<String, MemoryEntry>(calculateMemoryCacheBytes(context)) {
             @Override
@@ -607,8 +619,16 @@ final class ImageCacheInterceptor {
     }
 
     private void log(String tag, String url) {
-        if (BuildConfig.DEBUG) {
+        if (verboseLoggingEnabled) {
             Log.d(TAG, tag + ": " + url);
+        }
+    }
+
+    private static boolean isDebuggable(Context context) {
+        try {
+            return (context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+        } catch (Exception e) {
+            return false;
         }
     }
 
