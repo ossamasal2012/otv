@@ -194,7 +194,21 @@ public class MainActivity extends AppCompatActivity {
 
             @Override
             public void onPermissionRequest(final android.webkit.PermissionRequest request) {
-                runOnUiThread(request::deny);
+                // بعض قنوات iframe تعرض شاشة سوداء لأن مصدرها يشغّل الفيديو عبر EME/DRM
+                // (Widevine) ويطلب إذن "الوسائط المحمية" — رفضه دائماً (كما كان سابقاً) يمنع
+                // فك تشفير الصورة نهائياً فتظهر شاشة سوداء رغم أن الصوت أو واجهة المشغّل قد
+                // تعمل. نمنح هذا الإذن تحديداً فقط: لا يكشف أي بيانات حساسة ولا علاقة له
+                // بالكاميرا أو المايكروفون، ونواصل رفض أي طلب آخر (كاميرا/مايكروفون/MIDI) كما
+                // كان تماماً.
+                runOnUiThread(() -> {
+                    for (String resource : request.getResources()) {
+                        if (android.webkit.PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID.equals(resource)) {
+                            request.grant(new String[]{android.webkit.PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID});
+                            return;
+                        }
+                    }
+                    request.deny();
+                });
             }
         });
 
