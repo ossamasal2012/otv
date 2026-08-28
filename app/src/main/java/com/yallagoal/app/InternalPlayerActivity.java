@@ -14,6 +14,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
@@ -22,6 +23,7 @@ import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -32,6 +34,12 @@ import java.util.Locale;
  * مورد جديد يحتاج إضافته يدوياً بمساره الصحيح بمشروع قائم عرضة للنسيان عند الدمج، بينما ملف
  * Java واحد ذاتي الاكتفاء لا يعتمد على وجود أي شيء خارجه — نفس المبدأ المُتّبع سابقاً في
  * UpdateManager لحوار التقدّم.
+ *
+ * تعمل عناصر التحكّم (تقديم/ترجيع 10 ثوانٍ + شريط التقدّم) بنفس الشكل تماماً في وضعي الفيديو
+ * والبث المباشر على حدٍّ سواء؛ الفرق الوحيد هو أن السَّعي (Seek) والمدة الكلية يعتمدان على ما
+ * يُبلّغ عنه المحرّك فعلياً: فيديو عادي = مدة ثابتة معروفة دائماً، بث مباشر بنافذة قابلة للسَّعي
+ * (شائع بكثير من روابط m3u8 الحيّة) = سَعي حقيقي يعمل ضمن تلك النافذة، بث مباشر بلا نافذة إطلاقاً
+ * = شريط التقدّم يبقى ظاهراً كما طُلب لكن دون قيمة مضلِّلة (لا نُلفّق تقدّماً وهمياً).
  */
 public class InternalPlayerActivity extends AppCompatActivity {
 
@@ -71,12 +79,17 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private TextView currentTimeText;
     private TextView durationText;
     private SeekBar seekBar;
+    private TextView resizeModeBtn;
+
+    private FrameLayout qualityPanel;
+    private LinearLayout qualityListContainer;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean userSeeking = false;
     private long knownDurationMs = 0L;
     private boolean controlsVisible = true;
     private int tickCounter = 0;
+    private PlaybackEngine.ResizeMode currentResizeMode = PlaybackEngine.ResizeMode.FIT;
 
     private final Runnable hideControlsRunnable = new Runnable() {
         @Override
@@ -111,7 +124,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
                     knownDurationMs = durationMs;
                     hideLoading();
                     hideError();
-                    if (!isLive && durationMs > 0) durationText.setText(formatTime(durationMs));
+                    if (durationMs > 0) durationText.setText(formatTime(durationMs));
                     resetAutoHideTimer();
                 }
             });
@@ -159,6 +172,18 @@ public class InternalPlayerActivity extends AppCompatActivity {
                 }
             });
         }
+
+        @Override
+        public void onTracksChanged() {
+            mainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (isQualityPanelVisible()) {
+                        refreshQualityPanelContent();
+                    }
+                }
+            });
+        }
     };
 
     @Override
@@ -184,14 +209,18 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
         titleText.setText(title != null ? title : "");
         liveBadge.setVisibility(isLive ? View.VISIBLE : View.GONE);
-        bottomBar.setVisibility(isLive ? View.GONE : View.VISIBLE);
-        rewindBtn.setVisibility(isLive ? View.GONE : View.VISIBLE);
-        forwardBtn.setVisibility(isLive ? View.GONE : View.VISIBLE);
+
+        // عناصر تقديم/ترجيع 10 ثوانٍ وشريط التقدّم تظهر دائماً بكلا الوضعين (فيديو أو بث مباشر) —
+        // راجع التوثيق أعلى الكلاس لتفاصيل كيفية تعاملها مع بث مباشر بلا مدة معروفة بأمان.
+        bottomBar.setVisibility(View.VISIBLE);
+        rewindBtn.setVisibility(View.VISIBLE);
+        forwardBtn.setVisibility(View.VISIBLE);
 
         engine = "vlc".equals(engineName) ? new VlcPlaybackEngine() : new ExoPlaybackEngine();
         engine.initialize(getApplicationContext());
         engine.attachTo(videoContainer);
         engine.setListener(engineListener);
+        engine.setResizeMode(currentResizeMode);
 
         startPlayback();
     }
@@ -224,6 +253,10 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
         controlsOverlay = buildControlsOverlay();
         root.addView(controlsOverlay, matchParent());
+
+        qualityPanel = buildQualityPanel();
+        qualityPanel.setVisibility(View.GONE);
+        root.addView(qualityPanel, matchParent());
 
         return root;
     }
@@ -307,7 +340,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private FrameLayout buildControlsOverlay() {
         FrameLayout overlay = new FrameLayout(this);
 
-        // ----- الشريط العلوي: رجوع + العنوان + شارة مباشر -----
+        // ----- الشريط العلوي: رجوع + العنوان + شارة مباشر + وضع الملء + زر الإعدادات (الدقة) -----
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -348,7 +381,33 @@ public class InternalPlayerActivity extends AppCompatActivity {
         liveBadge.setBackground(roundedDrawable(0xFFDC2626, 999));
         liveBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
         liveBadge.setVisibility(View.GONE);
-        topBar.addView(liveBadge, new LinearLayout.LayoutParams(
+        LinearLayout.LayoutParams liveBadgeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        liveBadgeParams.rightMargin = dp(8);
+        topBar.addView(liveBadge, liveBadgeParams);
+
+        resizeModeBtn = buildTopBarIconButton("\u2922"); // ⤢ رمز عام لوضع الملء/التكبير
+        resizeModeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                cycleResizeMode();
+                resetAutoHideTimer();
+            }
+        });
+        LinearLayout.LayoutParams resizeParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        resizeParams.rightMargin = dp(8);
+        topBar.addView(resizeModeBtn, resizeParams);
+        updateResizeModeButtonLabel();
+
+        TextView settingsBtn = buildTopBarIconButton("\u2699"); // ⚙
+        settingsBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showQualityPanel();
+            }
+        });
+        topBar.addView(settingsBtn, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         FrameLayout.LayoutParams topBarParams = new FrameLayout.LayoutParams(
@@ -361,7 +420,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
         centerRow.setOrientation(LinearLayout.HORIZONTAL);
         centerRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        rewindBtn = buildCircleTextButton("-10", 58, 15);
+        rewindBtn = buildCircleTextButton("-10", 15);
         rewindBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -389,7 +448,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
         ppp.rightMargin = dp(22);
         centerRow.addView(playPauseBtn, ppp);
 
-        forwardBtn = buildCircleTextButton("+10", 58, 15);
+        forwardBtn = buildCircleTextButton("+10", 15);
         forwardBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -470,8 +529,183 @@ public class InternalPlayerActivity extends AppCompatActivity {
         return overlay;
     }
 
+    /**
+     * قائمة إعدادات الدقة — تظهر فوق كل شيء عند الضغط على زر الإعدادات (⚙): زر رجوع أعلى شيء
+     * يُخفيها فقط (لا يُغلق المشغل)، تحته "تلقائي" مثبّتاً أولاً دائماً، وتحته الدقات المتاحة
+     * فعلياً للفيديو/القناة الحالية.
+     */
+    private FrameLayout buildQualityPanel() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0xEE0B1220);
+        overlay.setClickable(true); // يمتص أي لمسة بدل تمريرها لعناصر التحكّم أو الفيديو خلفه
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout headerRow = new LinearLayout(this);
+        headerRow.setOrientation(LinearLayout.HORIZONTAL);
+        headerRow.setGravity(Gravity.CENTER_VERTICAL);
+        headerRow.setPadding(dp(6), dp(14), dp(16), dp(10));
+
+        TextView backBtn = new TextView(this);
+        backBtn.setText("\u2190"); // ← يُخفي قائمة الإعدادات فقط ويعيد عناصر التحكّم العادية
+        backBtn.setTextColor(Color.WHITE);
+        backBtn.setTextSize(22);
+        backBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
+        backBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hideQualityPanel();
+            }
+        });
+        headerRow.addView(backBtn, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView title = new TextView(this);
+        title.setText("جودة التشغيل");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        titleParams.leftMargin = dp(8);
+        headerRow.addView(title, titleParams);
+
+        col.addView(headerRow, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        ScrollView scroll = new ScrollView(this);
+        qualityListContainer = new LinearLayout(this);
+        qualityListContainer.setOrientation(LinearLayout.VERTICAL);
+        qualityListContainer.setPadding(dp(10), dp(4), dp(10), dp(16));
+        scroll.addView(qualityListContainer, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
+        col.addView(scroll, scrollParams);
+
+        overlay.addView(col, matchParent());
+        return overlay;
+    }
+
+    private void refreshQualityPanelContent() {
+        if (qualityListContainer == null || engine == null) return;
+        qualityListContainer.removeAllViews();
+
+        String selected = engine.getSelectedQualityId();
+        if (selected == null || selected.isEmpty()) selected = "auto";
+
+        addQualityRow("auto", "تلقائي", "auto".equals(selected));
+
+        List<PlaybackEngine.QualityOption> options = engine.getAvailableQualities();
+        if (options != null) {
+            for (PlaybackEngine.QualityOption opt : options) {
+                if (opt == null || opt.id == null || opt.id.isEmpty()) continue;
+                addQualityRow(opt.id, opt.label, opt.id.equals(selected));
+            }
+        }
+    }
+
+    private void addQualityRow(final String id, String label, boolean isSelected) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(13), dp(14), dp(13));
+        row.setBackground(roundedDrawable(isSelected ? 0x3310B981 : 0x14FFFFFF, 10));
+
+        TextView label1 = new TextView(this);
+        label1.setText(label != null && !label.isEmpty() ? label : id);
+        label1.setTextColor(isSelected ? COLOR_ACCENT : Color.WHITE);
+        label1.setTypeface(isSelected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+        label1.setTextSize(14);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        row.addView(label1, labelParams);
+
+        if (isSelected) {
+            TextView check = new TextView(this);
+            check.setText("\u2713");
+            check.setTextColor(COLOR_ACCENT);
+            check.setTextSize(16);
+            row.addView(check, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (engine != null) engine.selectQuality(id);
+                hideQualityPanel();
+            }
+        });
+
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rowParams.bottomMargin = dp(8);
+        qualityListContainer.addView(row, rowParams);
+    }
+
+    private void showQualityPanel() {
+        refreshQualityPanelContent();
+        qualityPanel.setVisibility(View.VISIBLE);
+        cancelAutoHideTimer();
+    }
+
+    private void hideQualityPanel() {
+        qualityPanel.setVisibility(View.GONE);
+        resetAutoHideTimer();
+    }
+
+    private boolean isQualityPanelVisible() {
+        return qualityPanel != null && qualityPanel.getVisibility() == View.VISIBLE;
+    }
+
+    private void cycleResizeMode() {
+        if (currentResizeMode == PlaybackEngine.ResizeMode.FIT) {
+            currentResizeMode = PlaybackEngine.ResizeMode.FILL;
+        } else if (currentResizeMode == PlaybackEngine.ResizeMode.FILL) {
+            currentResizeMode = PlaybackEngine.ResizeMode.ZOOM;
+        } else {
+            currentResizeMode = PlaybackEngine.ResizeMode.FIT;
+        }
+        if (engine != null) engine.setResizeMode(currentResizeMode);
+        updateResizeModeButtonLabel();
+    }
+
+    private void updateResizeModeButtonLabel() {
+        if (resizeModeBtn == null) return;
+        String suffix;
+        switch (currentResizeMode) {
+            case FILL:
+                suffix = " ملء";
+                break;
+            case ZOOM:
+                suffix = " تكبير";
+                break;
+            case FIT:
+            default:
+                suffix = " احتواء";
+                break;
+        }
+        resizeModeBtn.setText("\u2922" + suffix);
+    }
+
+    /** زر صغير بنص/رمز داخل الشريط العلوي — يُستخدم لوضع الملء وزر الإعدادات معاً لتناسق بصري موحّد. */
+    private TextView buildTopBarIconButton(String initialText) {
+        TextView btn = new TextView(this);
+        btn.setText(initialText);
+        btn.setTextColor(Color.WHITE);
+        btn.setTextSize(12);
+        btn.setTypeface(Typeface.DEFAULT_BOLD);
+        btn.setPadding(dp(10), dp(7), dp(10), dp(7));
+        btn.setBackground(roundedDrawable(0x33FFFFFF, 8));
+        btn.setGravity(Gravity.CENTER);
+        return btn;
+    }
+
     /** زر دائري بسيط بنص فقط (بدون أي رمز/صورة) — يُستخدم للترجيع/التقديم. */
-    private View buildCircleTextButton(String label, int sizeDp, float textSizeSp) {
+    private View buildCircleTextButton(String label, float textSizeSp) {
         FrameLayout btn = new FrameLayout(this);
         btn.setBackground(circleDrawable(0x33FFFFFF));
 
@@ -626,6 +860,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
     }
 
     private void toggleControls() {
+        if (isQualityPanelVisible()) return; // اللمسة خلف قائمة الإعدادات المفتوحة تُتجاهل هنا (الطبقة تمتصها أصلاً)
         if (controlsVisible) {
             hideControls();
         } else {
@@ -668,6 +903,10 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (isQualityPanelVisible()) {
+            hideQualityPanel();
+            return;
+        }
         finishAndSave();
     }
 
