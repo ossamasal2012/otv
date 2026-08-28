@@ -1483,10 +1483,11 @@
             { id: 'vlc', name: 'VLC' },
         ];
 
+        // أُبقي على Just Player فقط كمشغّل خارجي (وحُذف خيار "أي مشغل آخر" الذي كان يعرض قائمة
+        // اختيار عامة من النظام) — أي اختيار محفوظ سابقاً لدى المستخدم لخيار آخر يُستبدل تلقائياً
+        // بـJust Player بفضل فحص getExternalPlayerApp() أدناه (stillValid) دون أي كود إضافي.
         const EXTERNAL_PLAYERS = [
             { id: 'just', name: 'Just Player', pkg: 'com.brouken.player', recommended: true },
-            { id: 'vlc', name: 'VLC', pkg: 'org.videolan.vlc' },
-            { id: 'any', name: 'أي مشغل خارجي آخر', pkg: '' },
         ];
 
         function getPlayerMode() {
@@ -3586,15 +3587,36 @@
                 const iframe = document.createElement('iframe');
                 iframe.id = "iPlayer";
                 iframe.setAttribute('allowfullscreen', 'true');
-                iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms');
-                iframe.setAttribute('referrerpolicy', 'no-referrer');
+                // allow: تفويض صريح لصلاحيات التشغيل التلقائي/الوسائط المشفّرة (DRM)/ملء الشاشة
+                // للمحتوى العابر للنطاق — بدونه يرفض متصفح Chromium (WebView) تشغيل الفيديو تلقائياً
+                // داخل iframe من نطاق مختلف بغضّ النظر عن إعدادات WebView نفسها، فيظهر إطار أسود
+                // ثابت (الفيديو موجود لكن لا يُسمح له بالتشغيل/فك التشفير). هذا هو السبب الأغلب
+                // لمشكلة "الشاشة السوداء" المُبلَّغ عنها.
+                iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
+                // sandbox أوسع قليلاً من قبل: أضفنا allow-popups (بعض صفحات القنوات تفتح نافذة
+                // إعلان أولاً كجزء طبيعي من تشغيلها ولا تُكمل التنفيذ إن مُنعت بصمت)،
+                // allow-popups-to-escape-sandbox، allow-presentation، وallow-top-navigation-by-user-activation
+                // (فقط بلمسة مستخدم فعلية، وليس تلقائياً) لتوافق أفضل مع صفحات iframe الخارجية —
+                // بينما نُبقي allow-top-navigation غير المقيّد خارج القائمة عمداً حتى لا تستطيع أي
+                // قناة الاستيلاء على تنقّل WebView الرئيسي للتطبيق كاملاً.
+                iframe.setAttribute('sandbox',
+                    'allow-scripts allow-same-origin allow-forms allow-popups ' +
+                    'allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation');
+                // لا نفرض إخفاء الترويسة نهائياً (no-referrer) بعد الآن: بعض مصادر القنوات تتحقق من
+                // الـReferer وتُظهر إطاراً أسود بدل الفيديو الفعلي إن وصل فارغاً بالكامل. نترك
+                // المتصفح يستخدم سياسته الافتراضية (تعادل عملياً عدم إرسال أي Referer أصلاً بما أن
+                // صفحتنا نفسها محمَّلة من file:// لا من https://، فلا تراجع خصوصية فعلي هنا).
                 iframe.style.position = 'fixed';
                 iframe.style.top = '0';
                 iframe.style.left = '0';
                 iframe.style.width = '100%';
                 iframe.style.height = '100%';
                 iframe.style.border = '0';
-                iframe.style.zIndex = '70';
+                // z-index أعلى من overlay-screen (100 — انظر placeholderScreen/errorScreen) عمداً:
+                // لو تعطّل لأي سبب اكتمال تحميل iframe.onload أو انتهاء المؤقّت الاحتياطي بالأسفل،
+                // يبقى iframe مرئياً دائماً فوق شاشة التحميل المعتمة بدل أن يحجبها إلى الأبد شاشة
+                // سوداء عالقة لا تختفي أبداً.
+                iframe.style.zIndex = '150';
                 iframe.style.backgroundColor = '#000';
                 iframe.src = finalUrl;
 
