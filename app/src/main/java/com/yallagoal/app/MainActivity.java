@@ -2,6 +2,7 @@ package com.yallagoal.app;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.net.http.SslError;
@@ -23,6 +24,7 @@ import android.webkit.WebViewClient;
 import androidx.webkit.WebViewCompat;
 import android.widget.FrameLayout;
 
+import java.io.File;
 import java.util.UUID;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -45,6 +47,11 @@ public class MainActivity extends AppCompatActivity {
     private int originalOrientation;
 
     private static final String LOCAL_URL = "file:///android_asset/index.html";
+
+    // الرابط الفعلي الذي حُمِّل فعلاً (LOCAL_URL الأصلي، أو ملف override محلي من تحديث ذكي
+    // سابق — راجع UpdateManager.resolveWebOverrideIndexFile) — يُستخدم بدل LOCAL_URL مباشرة
+    // بمقارنة onPageFinished بالأسفل حتى يعمل حقن رمز المصادقة بشكل صحيح في كلتا الحالتين.
+    private String loadedUrl = LOCAL_URL;
 
     // يدفع عدد المستخدمين/النشطين مباشرةً للواجهة (WebView) فور تغيّرهما، بدون أي polling.
     private UserStatsManager.StatsListener statsListener;
@@ -161,7 +168,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (LOCAL_URL.equals(url)) {
+                if (loadedUrl.equals(url)) {
                     view.evaluateJavascript(
                             "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false }); checkAuth(); if (window.initUserStats) { initUserStats(); }", null);
                 }
@@ -221,7 +228,12 @@ public class MainActivity extends AppCompatActivity {
 
         webView.addJavascriptInterface(new WebAppInterface(this, castManager, bridgeToken), "AndroidPlayer");
 
-        webView.loadUrl(LOCAL_URL);
+        // إن وُجد تحديث ذكي سابق صالح لملف index.html (راجع UpdateManager.resolveWebOverrideIndexFile
+        // لتفاصيل فحص "التقادم" الذاتي) نحمّله بدل الأصل المرفق بحزمة التطبيق — وإلا نحمّل الأصل
+        // كالمعتاد تماماً بلا أي تغيير بالسلوك.
+        File overrideIndex = UpdateManager.resolveWebOverrideIndexFile(getApplicationContext());
+        loadedUrl = overrideIndex != null ? ("file://" + overrideIndex.getAbsolutePath()) : LOCAL_URL;
+        webView.loadUrl(loadedUrl);
 
         requestNotificationPermissionIfNeeded();
 
@@ -318,6 +330,26 @@ public class MainActivity extends AppCompatActivity {
         customView = null;
         setRequestedOrientation(originalOrientation);
         hideSystemBars();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // يغطي كل مسارات الدخول للتطبيق (أيقونة عادية، لمس الإشعار، أو العودة من الخلفية) بمكان
+        // واحد فقط: إن كانت خدمة UpdateDownloadService قد أنهت تنزيل تحديث كامل وتحقّقت منه
+        // بنجاح، يُثبَّت تلقائياً الآن دون أي ضغطة إضافية من المستخدم.
+        UpdateManager.checkAndInstallIfReady(this);
+    }
+
+    /**
+     * تُستدعى من UpdateManager فور نجاح تحديث ذكي بينما التطبيق مفتوح — تُعيد تحميل الصفحة فوراً
+     * من نسخة الـ override الجديدة بدل انتظار إعادة فتح التطبيق لاحقاً لرؤية الأثر.
+     */
+    void reloadWebViewForSmartUpdate() {
+        if (webView == null) return;
+        File overrideIndex = UpdateManager.resolveWebOverrideIndexFile(getApplicationContext());
+        loadedUrl = overrideIndex != null ? ("file://" + overrideIndex.getAbsolutePath()) : LOCAL_URL;
+        webView.loadUrl(loadedUrl);
     }
 
     @Override
