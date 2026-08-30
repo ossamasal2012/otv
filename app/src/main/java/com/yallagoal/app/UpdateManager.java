@@ -4,13 +4,11 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.net.ConnectivityManager;
-import android.net.Network;
-import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -25,43 +23,37 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
-import java.net.SocketTimeoutException;
 import java.net.URL;
-import java.net.UnknownHostException;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
-import java.util.concurrent.TimeUnit;
-
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
 
 /**
- * نظام تحديث OTA حقيقي ومتكامل.
+ * نظام تحديث OTA بوضعين قابلين للاختيار من الإعدادات:
  *
- * يعتمد على نفس آلية version.json المستضافة على أحدث إصدار على GitHub (لم تتغير)، لكنه يستبدل
- * التنزيل القديم عبر DownloadManager (الذي لا يوفر تقدماً دقيقاً بالبايت ولا تحقق سلامة) بتنزيل
- * مباشر عبر OkHttp (نفس مكتبة الشبكة المستخدمة أصلاً في UserStatsManager) مع:
- *   - قراءة التيار (Stream) يدوياً بايتاً بايت لحساب downloadedBytes/totalBytes حقيقيين.
- *   - حساب SHA-256 أثناء التنزيل نفسه (بدون قراءة إضافية للملف) والتحقق منه مقابل القيمة الموثوقة
- *     الموجودة في version.json (حقل "sha256" الاختياري).
- *   - منع التثبيت نهائياً إن فشل أي تحقق (الحجم، الهاش، رقم الإصدار).
- *   - حوار تقدّم مبني برمجياً بالكامل (بدون أي ملف Layout خارجي) يعمل على UI Thread فقط بينما
- *     التنزيل يعمل على Thread منفصل تماماً.
+ *  - "ذكي" (المُفضَّل والافتراضي): يقتصر التنزيل على ملفات واجهة الويب (index.html وما شابهها
+ *    مستقبلاً) التي تغيّرت فعلياً منذ آخر إصدار — حجم تنزيل أصغر بكثير. متاح فقط عندما يُصرِّح
+ *    الإصدار البعيد نفسه (عبر version.json) أن هذا الإصدار "ويب فقط" (لا تغييرات بكود
+ *    Java/Kotlin المُترجَم، الذي لا يمكن تحديثه إطلاقاً إلا عبر تثبيت APK كامل — قيد تقني لا
+ *    يمكن تجاوزه أبداً)؛ إن لم يكن متاحاً، يتراجع تلقائياً وبصمت لوضع التحديث الكامل.
+ *  - "كامل": تثبيت APK جديد بالكامل (الآلية الأصلية، دون تغيير بمنطقها).
+ *
+ * التنزيل الفعلي (لأي من الوضعين) لم يعد يحدث هنا إطلاقاً — بل بمعرفة UpdateDownloadService
+ * (خدمة Foreground حقيقية تستمر بالعمل حتى لو أُغلق التطبيق كلياً، وتُظهر تقدّمها بشريط
+ * الإشعارات). هذا الملف الآن مسؤول فقط عن: فحص version.json، عرض حوارات "تحديث متوفر"/
+ * "تعذر التحديث"، بدء الخدمة، ومتابعة تقدّمها اللحظي عبر UpdateProgressBus بينما التطبيق
+ * بالمقدمة (حوار التقدّم البرمجي نفسه بلا أي تغيير بشكله).
  */
 public class UpdateManager {
 
@@ -74,16 +66,32 @@ public class UpdateManager {
     private static final String UPDATE_FILE_NAME = "update.apk";
     private static final String UPDATE_TEMP_FILE_NAME = "update.apk.part";
 
-    private Activity activity;
+    // ==================== تفضيلات وعلامات مشتركة مع UpdateDownloadService وMainActivity ====================
 
-    // عميل HTTP واحد يُعاد استخدامه لكل من فحص version.json وتنزيل ملف التحديث.
-    // readTimeout هنا هو مهلة بين كل حزمة بيانات وأخرى (وليس مهلة إجمالية للتنزيل) — لذلك
-    // تنزيل كبير وبطيء لكنه "حي" ومستمر لن يُقطع، بينما اتصال متجمد فعلاً سيُكتشف ويُصنَّف كخطأ.
-    private final OkHttpClient httpClient = new OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .build();
+    static final String PREFS_NAME = "yg_update_prefs";
+    static final String PREF_UPDATE_MODE = "update_mode";
+    static final String PREF_SMART_VERSION_CODE = "smart_update_version_code";
+    static final String PREF_READY_APK_VERSION_CODE = "ready_apk_version_code";
+    static final String PREF_READY_APK_SHA256 = "ready_apk_sha256";
+
+    static final String MODE_SMART = "smart";
+    static final String MODE_FULL = "full";
+
+    /** التفضيل الحالي المحفوظ ("smart" أو "full") — الافتراضي "smart" كما طلب المستخدم. */
+    static String getUpdatePreference(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(PREF_UPDATE_MODE, MODE_SMART);
+    }
+
+    /** تُستدعى من WebAppInterface عند تغيير المستخدم لطريقة التحديث بشاشة الإعدادات (JS). */
+    static void setUpdatePreference(Context context, String mode) {
+        String normalized = MODE_FULL.equals(mode) ? MODE_FULL : MODE_SMART;
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(PREF_UPDATE_MODE, normalized)
+                .apply();
+    }
+
+    private Activity activity;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -94,9 +102,10 @@ public class UpdateManager {
     private String pendingSha256 = "";
     private int pendingVersionCode = 0;
     private boolean pendingForce = true;
+    private boolean pendingWebOnlyUpdate = false;
+    private String pendingAssetsManifestJson = "";
 
     private volatile boolean isDownloading = false;
-    private volatile boolean downloadCancelled = false;
 
     // عناصر حوار التقدّم
     private AlertDialog progressDialog;
@@ -104,6 +113,32 @@ public class UpdateManager {
     private TextView progressPercentText;
     private TextView progressSizeText;
     private ProgressBar progressBar;
+
+    private final UpdateProgressBus.Listener progressListener = new UpdateProgressBus.Listener() {
+        @Override
+        public void onProgress(long downloadedBytes, long totalBytes, String statusText) {
+            updateProgressUI(downloadedBytes, totalBytes,
+                    (statusText != null && !statusText.isEmpty()) ? statusText : "جاري تحميل التحديث...");
+        }
+
+        @Override
+        public void onCompleted(boolean success, String message, boolean readyToInstall) {
+            isDownloading = false;
+            UpdateProgressBus.setListener(null);
+            mainHandler.post(() -> {
+                dismissProgressDialog();
+                if (!success) {
+                    showErrorDialog(message);
+                    return;
+                }
+                if (readyToInstall) {
+                    installApk(activity, getDestFile());
+                } else {
+                    showSmartUpdateSuccessDialog(message);
+                }
+            });
+        }
+    };
 
     public void checkForUpdate(Activity activity) {
         this.activity = activity;
@@ -133,6 +168,13 @@ public class UpdateManager {
                 String sha256 = json.optString("sha256", "");
                 boolean force = json.optBoolean("force_update", true);
 
+                // حقلان اختياريان جديدان لدعم "التحديث الذكي" — غيابهما (أي إصدار version.json
+                // قديم لم يُحدَّث بعد لدعم هذه الميزة) يعني ببساطة عدم توفّر الوضع الذكي لهذا
+                // الإصدار تحديداً، فيتراجع الوضع تلقائياً وبصمت لتحديث كامل — توافق كامل للخلف.
+                boolean webOnly = json.optBoolean("web_only_update", false);
+                JSONArray manifestArr = json.optJSONArray("assets_manifest");
+                String manifestJson = manifestArr != null ? manifestArr.toString() : "";
+
                 int localVersionCode = getLocalVersionCode();
 
                 // نفس شرط منع الـ Downgrade الأصلي: لا تحديث إطلاقاً إن لم يكن الإصدار البعيد أحدث فعلياً
@@ -143,6 +185,8 @@ public class UpdateManager {
                     pendingSha256 = sha256;
                     pendingVersionCode = remoteVersionCode;
                     pendingForce = force;
+                    pendingWebOnlyUpdate = webOnly;
+                    pendingAssetsManifestJson = manifestJson;
                     showDialogOnUiThread();
                 }
             } catch (Exception e) {
@@ -153,9 +197,12 @@ public class UpdateManager {
     }
 
     private int getLocalVersionCode() {
+        return getLocalVersionCode(activity);
+    }
+
+    private static int getLocalVersionCode(Context context) {
         try {
-            PackageInfo pInfo = activity.getPackageManager()
-                    .getPackageInfo(activity.getPackageName(), 0);
+            PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 return (int) pInfo.getLongVersionCode();
             } else {
@@ -266,6 +313,18 @@ public class UpdateManager {
         row.addView(progressSizeText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         root.addView(row, rowParams);
+
+        // إشارة صغيرة لتوضيح أي وضع تحديث يعمل حالياً — شفافية للمستخدم بلا إغراقه بالتفاصيل
+        boolean useSmart = MODE_SMART.equals(getUpdatePreference(activity)) && isSmartModeAvailable();
+        TextView modeHint = new TextView(activity);
+        modeHint.setText(useSmart ? "تحديث ذكي — حجم تنزيل أصغر" : "تحديث كامل");
+        modeHint.setTextColor(Color.parseColor("#64748B"));
+        modeHint.setTextSize(11);
+        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        hintParams.topMargin = dp(14);
+        root.addView(modeHint, hintParams);
+
         return root;
     }
 
@@ -282,7 +341,9 @@ public class UpdateManager {
         progressDialog = builder.create();
         progressDialog.setCanceledOnTouchOutside(false);
         // التنزيل عملية إلزامية بمجرد بدئها لتفادي ملفات نصف مكتملة وتشابك محاولات متعددة —
-        // زر "إعادة المحاولة" في حوار الخطأ هو الطريق الوحيد للتكرار، ولا زر رجوع هنا.
+        // زر "إعادة المحاولة" في حوار الخطأ هو الطريق الوحيد للتكرار، ولا زر رجوع هنا. كما أن
+        // التنزيل نفسه يستمر بخدمة Foreground بالخلفية حتى لو أغلق المستخدم هذا الحوار بالكامل
+        // (بالخروج من التطبيق)، فلا خوف من فقدان التقدّم.
         progressDialog.setOnKeyListener((d, keyCode, event) -> keyCode == KeyEvent.KEYCODE_BACK);
     }
 
@@ -306,7 +367,7 @@ public class UpdateManager {
     }
 
     /**
-     * يحدّث واجهة التقدّم بأرقام حقيقية فقط. totalBytes = -1 تعني أن Content-Length غير متوفر،
+     * يحدّث واجهة التقدّم بأرقام حقيقية فقط. totalBytes <= 0 تعني أن الحجم الكلي غير معروف بعد،
      * وفي هذه الحالة لا تُخترع أي نسبة مئوية: يتحول الشريط لوضع Indeterminate (تقدّم غير محدد
      * بصرياً، وهذا صادق وليس تمثيلاً وهمياً) وتُعرض فقط كمية البيانات المُنزَّلة فعلياً.
      */
@@ -324,7 +385,6 @@ public class UpdateManager {
                 progressSizeText.setText(String.format(Locale.US, "%s / %s",
                         formatMegabytes(downloadedBytes), formatMegabytes(totalBytes)));
             } else {
-                // Content-Length غير متوفر: لا نسبة مئوية وهمية، فقط مؤشر تقدّم غير محدد + الحجم المُنزَّل
                 progressBar.setIndeterminate(true);
                 progressPercentText.setText("");
                 progressSizeText.setText(downloadedBytes > 0 ? formatMegabytes(downloadedBytes) : "");
@@ -337,12 +397,42 @@ public class UpdateManager {
         return String.format(Locale.US, "%.0f MB", mb);
     }
 
-    // ==================== بدء التنزيل ====================
+    // ==================== بدء التنزيل (عبر UpdateDownloadService) ====================
+
+    private boolean isSmartModeAvailable() {
+        return pendingWebOnlyUpdate && pendingAssetsManifestJson != null && !pendingAssetsManifestJson.isEmpty();
+    }
 
     private void beginDownloadFlow() {
-        if (isDownloading) return;
+        if (isDownloading || !isActivityUsable()) return;
+        isDownloading = true;
         showProgressDialog();
-        startDownload();
+
+        boolean useSmartMode = MODE_SMART.equals(getUpdatePreference(activity)) && isSmartModeAvailable();
+
+        UpdateProgressBus.setListener(progressListener);
+
+        Intent serviceIntent = new Intent(activity, UpdateDownloadService.class);
+        serviceIntent.putExtra(UpdateDownloadService.EXTRA_VERSION_CODE, pendingVersionCode);
+        serviceIntent.putExtra(UpdateDownloadService.EXTRA_VERSION_NAME, pendingVersionName);
+
+        if (useSmartMode) {
+            serviceIntent.putExtra(UpdateDownloadService.EXTRA_MODE, UpdateDownloadService.MODE_SMART);
+            serviceIntent.putExtra(UpdateDownloadService.EXTRA_MANIFEST_JSON, pendingAssetsManifestJson);
+        } else {
+            serviceIntent.putExtra(UpdateDownloadService.EXTRA_MODE, UpdateDownloadService.MODE_FULL);
+            serviceIntent.putExtra(UpdateDownloadService.EXTRA_DOWNLOAD_URL, pendingDownloadUrl);
+            serviceIntent.putExtra(UpdateDownloadService.EXTRA_SHA256, pendingSha256);
+        }
+
+        try {
+            ContextCompat.startForegroundService(activity, serviceIntent);
+        } catch (Exception e) {
+            isDownloading = false;
+            UpdateProgressBus.setListener(null);
+            dismissProgressDialog();
+            showErrorDialog("تعذر بدء التحديث. حاول مرة أخرى.");
+        }
     }
 
     private File getDestFile() {
@@ -362,234 +452,7 @@ public class UpdateManager {
         }
     }
 
-    private boolean isNetworkAvailable() {
-        try {
-            ConnectivityManager cm = (ConnectivityManager) activity.getSystemService(Context.CONNECTIVITY_SERVICE);
-            if (cm == null) return true; // لا نمنع المحاولة إن تعذّر الاستعلام عن حالة الشبكة نفسها
-            Network network = cm.getActiveNetwork();
-            if (network == null) return false;
-            NetworkCapabilities caps = cm.getNetworkCapabilities(network);
-            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
-        } catch (Exception e) {
-            return true;
-        }
-    }
-
-    private void startDownload() {
-        isDownloading = true;
-        downloadCancelled = false;
-
-        new Thread(() -> {
-            try {
-                if (!isNetworkAvailable()) {
-                    finishWithError("لا يوجد اتصال بالإنترنت. تحقق من الشبكة وحاول مجدداً.");
-                    return;
-                }
-
-                // مسار سريع: إن كان لدينا بالفعل ملفاً محملاً ومُتحقَّقاً مسبقاً من محاولة سابقة
-                // (مثلاً المستخدم رجع من إعدادات "السماح من هذا المصدر" بدل الشبكة) لا داعي لإعادة
-                // التنزيل بالكامل من جديد — فقط أعد التحقق منه ثم ثبّته مباشرة.
-                File existingVerified = getDestFile();
-                if (existingVerified.exists() && !pendingSha256.isEmpty()
-                        && verifyExistingFile(existingVerified)) {
-                    updateProgressUI(existingVerified.length(), existingVerified.length(),
-                            "تم العثور على تحديث محمَّل مسبقاً، جاري التحقق...");
-                    proceedToInstall(existingVerified);
-                    return;
-                }
-
-                downloadAndVerify();
-            } catch (Exception e) {
-                finishWithError(classifyError(e));
-            }
-        }).start();
-    }
-
-    private boolean verifyExistingFile(File file) {
-        try {
-            String actualHash = computeSha256(file);
-            return actualHash != null && actualHash.equalsIgnoreCase(pendingSha256.trim());
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private String computeSha256(File file) throws IOException, NoSuchAlgorithmException {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = new FileInputStream(file)) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
-        }
-        return bytesToHex(digest.digest());
-    }
-
-    private void downloadAndVerify() throws IOException, NoSuchAlgorithmException {
-        File tempFile = getTempFile();
-        File destFile = getDestFile();
-
-        if (tempFile.exists()) tempFile.delete();
-
-        String cacheBustedUrl = pendingDownloadUrl
-                + (pendingDownloadUrl.contains("?") ? "&" : "?")
-                + "cb=" + System.currentTimeMillis();
-
-        Request request = new Request.Builder().url(cacheBustedUrl).build();
-
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        long downloadedBytes = 0;
-        long totalBytes = -1;
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                finishWithError("فشل الاتصال بالسيرفر (HTTP " + response.code() + "). حاول مرة أخرى.");
-                return;
-            }
-
-            ResponseBody body = response.body();
-            if (body == null) {
-                finishWithError("استجابة فارغة من السيرفر. حاول مرة أخرى.");
-                return;
-            }
-
-            totalBytes = body.contentLength(); // -1 إن كان Content-Length غير متوفر من السيرفر
-
-            try (InputStream in = body.byteStream();
-                 OutputStream out = new FileOutputStream(tempFile)) {
-
-                byte[] buffer = new byte[8192];
-                int bytesRead;
-                long lastUiUpdateMs = 0;
-                final long fTotalBytes = totalBytes;
-
-                while ((bytesRead = in.read(buffer)) != -1) {
-                    if (downloadCancelled) {
-                        finishWithError("تم إلغاء التنزيل.");
-                        return;
-                    }
-
-                    out.write(buffer, 0, bytesRead);
-                    digest.update(buffer, 0, bytesRead);
-                    downloadedBytes += bytesRead;
-
-                    long now = System.currentTimeMillis();
-                    boolean isComplete = fTotalBytes > 0 && downloadedBytes >= fTotalBytes;
-                    if (now - lastUiUpdateMs > 150 || isComplete) {
-                        lastUiUpdateMs = now;
-                        final long fDownloaded = downloadedBytes;
-                        updateProgressUI(fDownloaded, fTotalBytes, "جاري تحميل التحديث...");
-                    }
-                }
-                out.flush();
-            }
-        } catch (SocketTimeoutException e) {
-            finishWithError("انتهت مهلة الاتصال بالسيرفر (اتصال ضعيف أو متقطع). حاول مرة أخرى.");
-            return;
-        } catch (UnknownHostException e) {
-            finishWithError("تعذر الوصول للسيرفر. تحقق من اتصال الإنترنت.");
-            return;
-        } catch (IOException e) {
-            finishWithError(classifyError(e));
-            return;
-        }
-
-        // ===== التحقق من اكتمال الملف (لا يُعتبر وصول 100% وحده دليلاً كافياً) =====
-        if (downloadedBytes <= 0 || tempFile.length() <= 0) {
-            deleteQuietly(tempFile);
-            finishWithError("فشل تنزيل ملف التحديث (ملف فارغ). حاول مرة أخرى.");
-            return;
-        }
-        if (totalBytes > 0 && tempFile.length() != totalBytes) {
-            deleteQuietly(tempFile);
-            finishWithError("الملف المُنزَّل غير مكتمل (الحجم لا يطابق الحجم المتوقع). حاول مرة أخرى.");
-            return;
-        }
-
-        updateProgressUI(downloadedBytes, totalBytes, "جاري التحقق من سلامة الملف...");
-
-        // ===== التحقق من سلامة الملف عبر SHA-256 (إن توفرت قيمة موثوقة من version.json) =====
-        if (pendingSha256 != null && !pendingSha256.trim().isEmpty()) {
-            String actualHash = bytesToHex(digest.digest());
-            if (!actualHash.equalsIgnoreCase(pendingSha256.trim())) {
-                // عزل/حذف الملف التالف فوراً — يُمنع تثبيته نهائياً
-                deleteQuietly(tempFile);
-                finishWithError("فشل التحقق من سلامة ملف التحديث. تم حذف الملف التالف تلقائياً.");
-                return;
-            }
-        }
-
-        // ===== إعادة التحقق من رقم الإصدار مباشرة قبل التثبيت (حماية إضافية ضد الـ Downgrade) =====
-        int localVersionCode = getLocalVersionCode();
-        if (pendingVersionCode <= localVersionCode) {
-            deleteQuietly(tempFile);
-            finishWithError("تم إلغاء التثبيت: الإصدار المُنزَّل ليس أحدث من الإصدار الحالي فعلياً.");
-            return;
-        }
-
-        // جميع الفحوصات نجحت: انقل الملف المؤقت إلى مساره النهائي فقط الآن
-        deleteQuietly(destFile);
-        boolean moved = tempFile.renameTo(destFile);
-        if (!moved) {
-            deleteQuietly(tempFile);
-            finishWithError("تعذر حفظ ملف التحديث على الجهاز. تحقق من مساحة التخزين المتاحة.");
-            return;
-        }
-
-        proceedToInstall(destFile);
-    }
-
-    private void proceedToInstall(File apkFile) {
-        isDownloading = false;
-        mainHandler.post(() -> {
-            dismissProgressDialog();
-            installApk(apkFile);
-        });
-    }
-
-    private void deleteQuietly(File file) {
-        try {
-            if (file != null && file.exists()) file.delete();
-        } catch (Exception ignored) {
-        }
-    }
-
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder(bytes.length * 2);
-        for (byte b : bytes) {
-            sb.append(String.format(Locale.US, "%02x", b));
-        }
-        return sb.toString();
-    }
-
-    /**
-     * يصنّف الاستثناءات الشائعة أثناء التنزيل إلى رسائل عربية واضحة ومفهومة للمستخدم،
-     * بدل عرض تفاصيل تقنية خام (وفق جميع سيناريوهات الأعطال المطلوب التعامل معها باحترافية).
-     */
-    private String classifyError(Exception e) {
-        if (e instanceof UnknownHostException) {
-            return "تعذر الوصول للسيرفر. تحقق من اتصال الإنترنت.";
-        }
-        if (e instanceof SocketTimeoutException) {
-            return "انتهت مهلة الاتصال (اتصال ضعيف أو متقطع). حاول مرة أخرى.";
-        }
-        if (e instanceof NoSuchAlgorithmException) {
-            return "تعذر التحقق من سلامة الملف على هذا الجهاز.";
-        }
-        String msg = e.getMessage();
-        return "تعذر إكمال التحديث" + (msg != null && !msg.isEmpty() ? " (" + msg + ")" : "") + ". حاول مرة أخرى.";
-    }
-
     // ==================== معالجة الفشل + إعادة المحاولة ====================
-
-    private void finishWithError(String message) {
-        isDownloading = false;
-        mainHandler.post(() -> {
-            dismissProgressDialog();
-            showErrorDialog(message);
-        });
-    }
 
     private void showErrorDialog(String message) {
         if (!isActivityUsable()) return;
@@ -614,23 +477,38 @@ public class UpdateManager {
         dialog.show();
     }
 
-    // ==================== التثبيت ====================
-
-    private void installApk(File file) {
+    private void showSmartUpdateSuccessDialog(String message) {
         if (!isActivityUsable()) return;
-        if (!file.exists()) {
-            showErrorDialog("ملف التحديث غير موجود. حاول مرة أخرى.");
+        new AlertDialog.Builder(activity)
+                .setTitle("تم التحديث")
+                .setMessage((message != null ? message : "تم تحديث محتوى التطبيق.") + "\n\nسيتم تطبيق التحديث الآن.")
+                .setCancelable(true)
+                .setPositiveButton("حسناً", (dialog, which) -> {
+                    dialog.dismiss();
+                    if (activity instanceof MainActivity) {
+                        ((MainActivity) activity).reloadWebViewForSmartUpdate();
+                    }
+                })
+                .show();
+    }
+
+    // ==================== التثبيت (تُستدعى من التدفّق الحيّ، ومن MainActivity عند العودة للتطبيق) ====================
+
+    static void installApk(Activity activity, File file) {
+        if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+        if (file == null || !file.exists()) {
+            Toast.makeText(activity, "ملف التحديث غير موجود. حاول مرة أخرى.", Toast.LENGTH_LONG).show();
             return;
         }
 
         // بعض الأجهزة تمنع التثبيت بصمت لو صلاحية "تثبيت تطبيقات غير معروفة" غير مفعّلة
         // لتطبيقنا تحديداً. بدل ما يفشل التحديث بدون أي رسالة، نتحقق أولاً ونوجّه المستخدم
         // مباشرة لشاشة الإعدادات الصحيحة لتفعيلها. الملف يبقى محفوظاً ومُتحقَّقاً على القرص،
-        // وعند العودة والضغط على "تحديث الآن" مجدداً سيُستخدم مباشرة دون إعادة تنزيل (راجع startDownload).
+        // وعند العودة للتطبيق سيُثبَّت تلقائياً (راجع checkAndInstallIfReady بالأسفل).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
             Toast.makeText(activity,
-                    "يرجى تفعيل \"السماح من هذا المصدر\" لإكمال التحديث، ثم اضغط تحديث الآن مرة أخرى",
+                    "يرجى تفعيل \"السماح من هذا المصدر\" لإكمال التحديث، ثم عد للتطبيق",
                     Toast.LENGTH_LONG).show();
             Intent settingsIntent = new Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -653,8 +531,97 @@ public class UpdateManager {
             installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
             activity.startActivity(installIntent);
         } catch (Exception e) {
-            // فشل تثبيت واحد يجب ألا يكسر التطبيق الأساسي إطلاقاً — نعرض خطأ واضحاً بدل الانهيار
-            showErrorDialog("تعذر بدء عملية التثبيت. حاول مرة أخرى.");
+            // فشل تثبيت واحد يجب ألا يكسر التطبيق الأساسي إطلاقاً — نعرض رسالة واضحة بدل الانهيار
+            Toast.makeText(activity, "تعذر بدء عملية التثبيت. حاول مرة أخرى.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /**
+     * تُستدعى من MainActivity.onResume(): إذا كانت خدمة UpdateDownloadService قد أنهت تنزيل
+     * تحديث كامل بنجاح وتحقّقت منه بينما كان التطبيق بالخلفية أو مغلقاً تماماً، تُثبِّته تلقائياً
+     * فور عودة المستخدم — بلا حاجة لأي ضغطة إضافية، تماماً كما طُلب.
+     */
+    static void checkAndInstallIfReady(Activity activity) {
+        try {
+            if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+            SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            int readyVersionCode = prefs.getInt(PREF_READY_APK_VERSION_CODE, 0);
+            if (readyVersionCode <= 0) return;
+
+            int localVersionCode = getLocalVersionCode(activity);
+            if (readyVersionCode <= localVersionCode) {
+                // تم التثبيت فعلاً (أو تحديث الجهاز بطريقة أخرى) — العلامة القديمة لم تعد ذات معنى
+                prefs.edit().remove(PREF_READY_APK_VERSION_CODE).remove(PREF_READY_APK_SHA256).apply();
+                return;
+            }
+
+            File apkFile = new File(activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), UPDATE_FILE_NAME);
+            if (!apkFile.exists()) return;
+
+            String expectedSha256 = prefs.getString(PREF_READY_APK_SHA256, "");
+            if (expectedSha256 != null && !expectedSha256.isEmpty()) {
+                String actual = computeSha256Quietly(apkFile);
+                if (actual == null || !actual.equalsIgnoreCase(expectedSha256.trim())) return;
+            }
+
+            installApk(activity, apkFile);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * يُستدعى من MainActivity قبل تحميل الصفحة الرئيسية: هل توجد نسخة override محلية صالحة
+     * (من تحديث ذكي سابق) لملف index.html يجب استخدامها بدل الأصل المرفق بحزمة التطبيق؟
+     * يتضمّن فحص "تقادم" ذاتي: لو صار الإصدار المثبَّت فعلياً (تحديث كامل جديد، أو حتى إعادة
+     * تثبيت يدوي) أحدث من (أو يساوي) آخر تحديث ذكي مُسجَّل، تُحذف نسخة الـ override القديمة
+     * تلقائياً ويُعاد استخدام الأصل المرفق مباشرة (الذي بات مضموناً أحدث أو مساوياً لها).
+     */
+    static File resolveWebOverrideIndexFile(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            int smartVersion = prefs.getInt(PREF_SMART_VERSION_CODE, 0);
+            if (smartVersion <= 0) return null;
+
+            int realVersionCode = getLocalVersionCode(context);
+            File overrideDir = new File(context.getFilesDir(), "web_override");
+
+            if (realVersionCode >= smartVersion) {
+                deleteRecursivelyStatic(overrideDir);
+                prefs.edit().remove(PREF_SMART_VERSION_CODE).apply();
+                return null;
+            }
+
+            File indexFile = new File(overrideDir, "index.html");
+            return indexFile.exists() ? indexFile : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void deleteRecursivelyStatic(File dir) {
+        if (dir == null || !dir.exists()) return;
+        File[] children = dir.listFiles();
+        if (children != null) {
+            for (File child : children) {
+                if (child.isDirectory()) deleteRecursivelyStatic(child);
+                else child.delete();
+            }
+        }
+        dir.delete();
+    }
+
+    private static String computeSha256Quietly(File file) {
+        try (InputStream in = new FileInputStream(file)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
+            byte[] hash = digest.digest();
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) sb.append(String.format(Locale.US, "%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
         }
     }
 }
