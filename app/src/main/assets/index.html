@@ -1309,6 +1309,9 @@
                 <p class="settings-section-title">اختر المشغل الخارجي</p>
                 <div id="externalPlayerList"></div>
             </div>
+
+            <p class="settings-section-title">طريقة التحديث</p>
+            <div id="updateModeList"></div>
         </div>
     </div>
 
@@ -1490,6 +1493,36 @@
             { id: 'just', name: 'Just Player', pkg: 'com.brouken.player', recommended: true },
         ];
 
+        // طريقة تحديث التطبيق: "ذكي" يقتصر على تنزيل ملفات واجهة الويب التي تغيّرت فعلياً منذ
+        // آخر إصدار (حجم أصغر بكثير)، و"كامل" يُثبِّت نسخة APK جديدة كاملة كما كان دائماً. القيمة
+        // هنا JS-side فقط للعرض؛ الجهة الفعلية المُقرِّرة والمُنفِّذة هي UpdateManager بكود Java
+        // (راجع setUpdateMode أدناه لكيفية مزامنة الاختيار لها فوراً).
+        const UPDATE_MODE_KEY = 'yalla_update_mode';
+        const UPDATE_MODES = [
+            { id: 'smart', name: 'تحديث ذكي (حجم أصغر)', recommended: true },
+            { id: 'full', name: 'تحديث كامل' },
+        ];
+
+        function getUpdateMode() {
+            const saved = localStorage.getItem(UPDATE_MODE_KEY);
+            return (saved === 'smart' || saved === 'full') ? saved : 'smart';
+        }
+
+        function setUpdateMode(id) {
+            localStorage.setItem(UPDATE_MODE_KEY, id);
+            // نُزامن الاختيار فوراً لمخزن تفضيلات Android نفسه (وليس فقط localStorage الخاص
+            // بـWebView) لأن UpdateManager بكود Java يقرأه مباشرة عند فحص/بدء أي تحديث لاحقاً،
+            // بلا حاجة لأي استعلام غير متزامن تجاه JavaScript بتلك اللحظة.
+            if (window.AndroidPlayer && window.AndroidPlayer.setUpdatePreference && window.__YG_TOKEN__) {
+                try { window.AndroidPlayer.setUpdatePreference(window.__YG_TOKEN__, id); } catch (e) {}
+            }
+            renderUpdateModeList();
+        }
+
+        function renderUpdateModeList() {
+            renderSimpleChoiceList('updateModeList', UPDATE_MODES, getUpdateMode(), 'updateMode', setUpdateMode);
+        }
+
         function getPlayerMode() {
             const saved = localStorage.getItem(PLAYER_MODE_KEY);
             return (saved === 'internal' || saved === 'external') ? saved : 'internal';
@@ -1654,6 +1687,7 @@
 
         function openSettings() {
             renderPlayerSettingsSections();
+            renderUpdateModeList();
             document.getElementById('settingsScreen').classList.remove('hidden');
         }
 
@@ -3526,6 +3560,55 @@
             } catch (e) { /* تجاهل */ }
         }
 
+        /**
+         * يكتشف أي شكل شائع لرابط يوتيوب (صفحة مشاهدة عادية، رابط youtu.be مختصر، Shorts،
+         * Live، أو حتى رابط embed جاهز أصلاً) ويستخرج معرّف الفيديو منه، ثم يُعيد رابط embed
+         * القياسي الوحيد الذي يعمل فعلياً داخل iframe (يوتيوب يرفض تضمين صفحة /watch العادية
+         * عبر X-Frame-Options بغضّ النظر عن أي إعداد بجهة تطبيقنا — هذا سبب رئيسي محتمل لعدم
+         * عمل بعض قنوات iframe إن كانت تخزّن رابط يوتيوب عادياً بدل رابط embed). يُعيد null إن
+         * لم يكن الرابط رابط يوتيوب إطلاقاً، فتبقى بقية القنوات غير المرتبطة بيوتيوب كما هي
+         * تماماً دون أي تأثير عليها.
+         */
+        function toYouTubeEmbedUrl(rawUrl) {
+            if (!rawUrl || typeof rawUrl !== 'string') return null;
+            let u;
+            try {
+                u = new URL(rawUrl);
+            } catch (e) {
+                return null;
+            }
+
+            const host = u.hostname.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
+            const isYouTubeHost = host === 'youtube.com' || host === 'youtube-nocookie.com' || host === 'youtu.be';
+            if (!isYouTubeHost) return null;
+
+            let videoId = null;
+            const parts = u.pathname.split('/').filter(Boolean);
+
+            if (host === 'youtu.be') {
+                videoId = parts[0] || null;
+            } else if (u.pathname === '/watch') {
+                videoId = u.searchParams.get('v');
+            } else if (parts[0] === 'embed' || parts[0] === 'live' || parts[0] === 'shorts') {
+                videoId = parts[1] || null;
+            }
+
+            if (!videoId) return null;
+            videoId = videoId.split('?')[0].split('&')[0];
+            if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return null; // شكل معرّف غير معقول — على الأرجح ليس فيديو يوتيوب فعلياً
+
+            let startSeconds = null;
+            const tParam = u.searchParams.get('t') || u.searchParams.get('start');
+            if (tParam) {
+                const m = String(tParam).match(/(\d+)/);
+                if (m) startSeconds = parseInt(m[1], 10);
+            }
+
+            let embedUrl = 'https://www.youtube.com/embed/' + videoId + '?autoplay=1&playsinline=1&rel=0';
+            if (startSeconds) embedUrl += '&start=' + startSeconds;
+            return embedUrl;
+        }
+
         async function playChannel(url, type, name, el, isRetry = false, isProxyAttempt = false, apiSourceUrl = null, channelCtx = null) {
             lastPlayedChannel = { url, type, name, el, channelCtx };
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
@@ -3584,6 +3667,15 @@
             }
 
             if (type === 'i') {
+                // إن كان الرابط أي شكل من روابط يوتيوب (صفحة مشاهدة عادية/مختصرة/Shorts/Live)
+                // نحوّله لرابط embed القياسي الوحيد القابل للتضمين فعلياً — أي قناة أخرى غير
+                // متعلقة بيوتيوب تمر دون أي تغيير على الإطلاق.
+                const youTubeEmbedUrl = toYouTubeEmbedUrl(finalUrl);
+                if (youTubeEmbedUrl) {
+                    console.log('🎬 رابط يوتيوب مكتشَف — تحويله لصيغة embed:', youTubeEmbedUrl);
+                    finalUrl = youTubeEmbedUrl;
+                }
+
                 const iframe = document.createElement('iframe');
                 iframe.id = "iPlayer";
                 iframe.setAttribute('allowfullscreen', 'true');
@@ -3591,8 +3683,12 @@
                 // للمحتوى العابر للنطاق — بدونه يرفض متصفح Chromium (WebView) تشغيل الفيديو تلقائياً
                 // داخل iframe من نطاق مختلف بغضّ النظر عن إعدادات WebView نفسها، فيظهر إطار أسود
                 // ثابت (الفيديو موجود لكن لا يُسمح له بالتشغيل/فك التشفير). هذا هو السبب الأغلب
-                // لمشكلة "الشاشة السوداء" المُبلَّغ عنها.
-                iframe.setAttribute('allow', 'autoplay; encrypted-media; fullscreen; picture-in-picture');
+                // لمشكلة "الشاشة السوداء" المُبلَّغ عنها. القيمة هنا هي اتحاد صلاحياتنا الأصلية مع
+                // نفس الصلاحيات التي يطلبها كود embed الرسمي من يوتيوب (accelerometer/clipboard-write/
+                // gyroscope/web-share) حتى تعمل فيديوهات يوتيوب المُضمَّنة (360°/VR وغيرها) بلا مشاكل.
+                iframe.setAttribute('allow',
+                    'accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; ' +
+                    'gyroscope; picture-in-picture; web-share');
                 // sandbox أوسع قليلاً من قبل: أضفنا allow-popups (بعض صفحات القنوات تفتح نافذة
                 // إعلان أولاً كجزء طبيعي من تشغيلها ولا تُكمل التنفيذ إن مُنعت بصمت)،
                 // allow-popups-to-escape-sandbox، allow-presentation، وallow-top-navigation-by-user-activation
