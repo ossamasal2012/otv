@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- لخدمة تنزيل التحديثات (UpdateDownloadService) التي تستمر بالعمل حتى خارج التطبيق —
+         FOREGROUND_SERVICE_DATA_SYNC إلزامية تحديداً على أندرويد 14 (API 34) فأعلى عند
+         استخدام foregroundServiceType="dataSync" بالخدمة، وإلا يرفض النظام تشغيلها. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:name=".YallaGoalApplication"
@@ -24,6 +29,7 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|smallestScreenSize|uiMode"
+            android:launchMode="singleTop"
             android:theme="@style/AppTheme.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -58,6 +64,15 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- خدمة Foreground الوحيدة المسؤولة فعلياً عن تنزيل التحديثات (كاملة أو ذكية) —
+             تستمر بالعمل حتى خارج التطبيق طالما إشعارها الدائم ظاهر. راجع UpdateDownloadService
+             وUpdateManager لتفاصيل الوضعين. dataSync هو النوع الصحيح لعملية تنزيل/مزامنة ملفات
+             حسب تصنيف أندرويد 14 (API 34) الإلزامي لأنواع خدمات Foreground. -->
+        <service
+            android:name=".UpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
