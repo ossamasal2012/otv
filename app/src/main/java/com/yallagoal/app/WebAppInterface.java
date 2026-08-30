@@ -307,19 +307,22 @@ public class WebAppInterface {
      * يوتيوب المثبت إن وجد، وإلا المتصفح الافتراضي. نقبل فقط روابط http/https حماية إضافية
      * ضد أي مخطط رابط (scheme) غير متوقع قد يصل من بيانات سيرفر خارجي.
      */
+    /** تُستدعى من شاشة الإعدادات (JS) عند تحميلها لعرض الاختيار الحالي (smart/full) بشكل صحيح. */
     @JavascriptInterface
-    public void openExternalUrl(String token, String url) {
-        if (!isTokenValid(token) || !isUnlocked()) return;
-        if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
-        if (!url.startsWith("http://") && !url.startsWith("https://")) return;
+    public String getUpdatePreference(String token) {
+        if (!isTokenValid(token)) return UpdateManager.MODE_SMART;
+        return UpdateManager.getUpdatePreference(context);
+    }
 
-        Activity activity = (Activity) context;
-        activity.runOnUiThread(() -> {
-            try {
-                context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-            } catch (ActivityNotFoundException e) {
-                Toast.makeText(context, "تعذر فتح الرابط.", Toast.LENGTH_SHORT).show();
-            }
-        });
+    /**
+     * تُستدعى من شاشة الإعدادات (JS) عند تغيير المستخدم لطريقة التحديث المفضّلة — تُحفَظ فوراً
+     * بمخزن تفضيلات Android نفسه (وليس فقط localStorage الخاص بـWebView) لأن UpdateManager
+     * يقرأها لاحقاً من كود Java مباشرة عند فحص/بدء أي تحديث، بلا حاجة لأي استعلام غير متزامن
+     * تجاه JavaScript في تلك اللحظة.
+     */
+    @JavascriptInterface
+    public void setUpdatePreference(String token, String mode) {
+        if (!isTokenValid(token)) return;
+        UpdateManager.setUpdatePreference(context, mode);
     }
 }
