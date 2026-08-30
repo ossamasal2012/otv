@@ -8,8 +8,8 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 49
-        versionName "4.9"
+        versionCode 50
+        versionName "5.0"
 
         // LibVLC تحديداً تضيف مكتبات native ضخمة الحجم لكل معمارية معالج؛ نقتصر على المعماريتين
         // الشائعتين فعلياً على كل هواتف/أجهزة أندرويد الحقيقية تقريباً (armeabi-v7a/arm64-v8a)
