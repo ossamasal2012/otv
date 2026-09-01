@@ -598,6 +598,21 @@ public class UpdateManager {
         }
     }
 
+    /**
+     * تُستدعى من MainActivity عند فشل "فحص السلامة" لصفحة override (تحديث ذكي سابق) — تمسح
+     * نسخة الـoverride كاملة وعلامتها فوراً، فيعود التطبيق للأصل المرفق بالحزمة بأمان تام
+     * بأي تشغيل قادم (أو فوراً، إذ يُعيد MainActivity تحميل الصفحة مباشرة بعد هذا الاستدعاء).
+     */
+    static void clearWebOverride(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            File overrideDir = new File(context.getFilesDir(), "web_override");
+            deleteRecursivelyStatic(overrideDir);
+            prefs.edit().remove(PREF_SMART_VERSION_CODE).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
     private static void deleteRecursivelyStatic(File dir) {
         if (dir == null || !dir.exists()) return;
         File[] children = dir.listFiles();
