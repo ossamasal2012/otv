@@ -9,6 +9,7 @@ import android.webkit.WebResourceResponse;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -77,9 +78,21 @@ final class ImageCacheInterceptor {
     private static final int MAX_MEMORY_ENTRY_BYTES = 3 * 1024 * 1024;
 
     // أعلى/أدنى حجم منطقي لذاكرة LRU الإجمالية بغضّ النظر عن ذاكرة الجهاز — راجع
-    // calculateMemoryCacheBytes(): تُشتق من ثُمن الذاكرة المتاحة للتطبيق ثم تُقيَّد بهذين الحدّين.
+    // calculateMemoryCacheBytes(): تُشتق من نسبة من الذاكرة المتاحة للتطبيق ثم تُقيَّد بهذين
+    // الحدّين. رُفع الحدّ الأعلى من 40 إلى 64 ميجا: قوائم أفلام/مسلسلات/قنوات ضخمة (مئات إلى آلاف
+    // العناصر بجلسة تصفّح واحدة) كانت تُفرّغ الذاكرة القديمة بسرعة أكبر من اللازم (Cache Thrashing)
+    // فتُضطر لإعادة القراءة من القرص لصور شوهدت للتو أثناء تمرير سريع بنفس الجلسة — حدّ أعلى أوسع
+    // يقلّل هذا التفريغ المبكر بشكل ملموس على الأجهزة متوسطة الذاكرة فأعلى دون مخاطرة فعلية (الحد
+    // الأدنى المضمون يبقى معقولاً حتى على الأجهزة الضعيفة جداً، وLruCache نفسها تتولى الإخلاء
+    // التلقائي الآمن إن اقتربت الذاكرة الكلية من الامتلاء).
     private static final int MIN_MEMORY_CACHE_BYTES = 4 * 1024 * 1024;
-    private static final int MAX_MEMORY_CACHE_BYTES = 40 * 1024 * 1024;
+    private static final int MAX_MEMORY_CACHE_BYTES = 64 * 1024 * 1024;
+
+    // حجم الحاجز (Buffer) عند القراءة من ملفات الكاش على القرص — يُجمِّع القراءات الصغيرة
+    // المتكررة (التي قد يطلبها WebView بأجزاء صغيرة جداً أحياناً) في قراءات أكبر وأقل عدداً
+    // فعلياً من نظام الملفات، فيقل عدد استدعاءات النظام (syscalls) لكل صورة بشكل ملموس تراكمياً
+    // عبر عشرات الصور بقائمة واحدة.
+    private static final int DISK_READ_BUFFER_BYTES = 16 * 1024;
 
     // أقصى مدة ينتظرها طلب مُكرَّر (Follower) نتيجة طلب أصلي (Leader) قيد التنفيذ لنفس الصورة،
     // قبل أن يتراجع بأمان لسلوك WebView الافتراضي بدل الانتظار إلى الأبد.
@@ -131,12 +144,14 @@ final class ImageCacheInterceptor {
 
         // Client واحد مشترك يُعاد استخدامه لكل الصور طوال عمر النشاط — Connection Pool وKeep-Alive
         // وHTTP/2 (تلقائي عبر ALPN عند دعم السيرفر له) كلها فعّالة هنا بفضل مشاركة نفس الـ Client
-        // بدل إنشاء واحد جديد لكل صورة. maxRequestsPerHost أعلى من افتراضي OkHttp (5) لأن غالبية
-        // الصور تأتي من مضيف Xtream نفسه، فطلب متزامن أوسع لنفس المضيف يُسرّع القوائم الكبيرة.
-        ConnectionPool connectionPool = new ConnectionPool(12, 5, TimeUnit.MINUTES);
+        // بدل إنشاء واحد جديد لكل صورة. maxRequestsPerHost أعلى بكثير من افتراضي OkHttp (5) لأن
+        // غالبية الصور تأتي من مضيف Xtream نفسه، وأثناء تمرير سريع بقائمة كبيرة قد تصبح عشرات
+        // الصور مرئية دفعة واحدة تقريباً — عدد اتصالات متزامنة أوسع يقلّل انتظار كل صورة دورها،
+        // وهو نمط طبيعي يتحمّله أي سيرفر ويب عادي (مقارب لما يفعله متصفح حقيقي أصلاً).
+        ConnectionPool connectionPool = new ConnectionPool(20, 5, TimeUnit.MINUTES);
         Dispatcher dispatcher = new Dispatcher();
-        dispatcher.setMaxRequestsPerHost(10);
-        dispatcher.setMaxRequests(24);
+        dispatcher.setMaxRequestsPerHost(16);
+        dispatcher.setMaxRequests(32);
 
         httpClient = new OkHttpClient.Builder()
                 .connectTimeout(8, TimeUnit.SECONDS)
@@ -243,7 +258,13 @@ final class ImageCacheInterceptor {
                     if (name.endsWith(".bin")) {
                         String key = name.substring(0, name.length() - 4);
                         long size = f.length();
-                        diskIndex.put(key, new DiskIndexEntry(size, f.lastModified()));
+                        // نقرأ نوع الملف (MIME) مرة واحدة فقط هنا أثناء الفحص الأولي للمجلد
+                        // ونُخزّنه بالذاكرة — هذا يُغني كل عمليات Disk Hit اللاحقة عن قراءة ملف
+                        // .meta المنفصل من القرص في كل مرة (توفير عملية I/O كاملة لكل صورة).
+                        File metaFile = new File(cacheDir, key + ".meta");
+                        DiskMeta meta = metaFile.exists() ? DiskMeta.readQuietly(metaFile) : null;
+                        String mime = meta != null ? meta.mime : "image/*";
+                        diskIndex.put(key, new DiskIndexEntry(size, f.lastModified(), mime));
                         total += size;
                     }
                 }
@@ -258,19 +279,38 @@ final class ImageCacheInterceptor {
      * byte[] كامل بالذاكرة)، ويُرقّيها بالتوازي لذاكرة LRU أثناء قراءة WebView نفسها لها (نفس آلية
      * TeeInputStream المستخدمة لجلب الشبكة بالأسفل) — بلا أي حجب أو قراءة إضافية مضاعفة للملف.
      */
+    /**
+     * يخدم الصورة من القرص عبر Streaming حقيقي (FileInputStream مُخزَّن مؤقتاً يُمرَّر مباشرة
+     * لـWebView، وليس byte[] كامل بالذاكرة)، ويُرقّيها بالتوازي لذاكرة LRU أثناء قراءة WebView
+     * نفسها لها (نفس آلية TeeInputStream المستخدمة لجلب الشبكة بالأسفل) — بلا أي حجب.
+     *
+     * نوع الملف (MIME) يُقرأ من الفهرس بالذاكرة مباشرة (مُحمَّل مسبقاً بأول فحص للمجلد، أو
+     * مُخزَّن فور كل كتابة جديدة) بدل قراءة ملف .meta المنفصل من القرص في كل مرة — توفير عملية
+     * I/O كاملة لكل صورة تُخدَّم من القرص، وهي الحالة الأكثر تكراراً بعد الإصابة الأولى بالذاكرة.
+     */
     private WebResourceResponse tryServeFromDisk(final String key, String url) {
         File binFile = new File(cacheDir, key + ".bin");
         if (!binFile.exists()) return null;
         long size = binFile.length();
         if (size <= 0) return null;
 
-        File metaFile = new File(cacheDir, key + ".meta");
-        DiskMeta meta = metaFile.exists() ? DiskMeta.readQuietly(metaFile) : null;
-        final String mime = meta != null ? meta.mime : "image/*";
+        DiskIndexEntry indexEntry = diskIndex.get(key);
+        final String mime;
+        if (indexEntry != null && indexEntry.mime != null) {
+            mime = indexEntry.mime;
+            indexEntry.lastAccessMs = System.currentTimeMillis();
+        } else {
+            // مسار احتياطي نادر (عنصر غير مسجَّل بالفهرس بعد لأي سبب) — نقرأ .meta هنا فقط هذه
+            // المرة الواحدة، ونُخزّن النتيجة فوراً حتى لا تتكرر هذه القراءة لاحقاً لنفس المفتاح.
+            File metaFile = new File(cacheDir, key + ".meta");
+            DiskMeta meta = metaFile.exists() ? DiskMeta.readQuietly(metaFile) : null;
+            mime = meta != null ? meta.mime : "image/*";
+            registerDiskEntry(key, size, mime);
+        }
+        boolean ignoredTouch = binFile.setLastModified(System.currentTimeMillis()); // ترتيب LRU يعتمد أيضاً على mtime الملف نفسه
 
         try {
-            InputStream fileStream = new FileInputStream(binFile);
-            touchDiskEntry(key, binFile);
+            InputStream fileStream = new BufferedInputStream(new FileInputStream(binFile), DISK_READ_BUFFER_BYTES);
             log("DISK HIT", url);
 
             InputStream servedStream = fileStream;
@@ -290,18 +330,8 @@ final class ImageCacheInterceptor {
         }
     }
 
-    private void touchDiskEntry(String key, File file) {
-        DiskIndexEntry entry = diskIndex.get(key);
-        if (entry != null) {
-            entry.lastAccessMs = System.currentTimeMillis();
-        } else {
-            registerDiskEntry(key, file.length());
-        }
-        boolean ignored = file.setLastModified(System.currentTimeMillis()); // ترتيب LRU يعتمد أيضاً على mtime الملف نفسه
-    }
-
-    private void registerDiskEntry(String key, long sizeBytes) {
-        DiskIndexEntry previous = diskIndex.put(key, new DiskIndexEntry(sizeBytes, System.currentTimeMillis()));
+    private void registerDiskEntry(String key, long sizeBytes, String mime) {
+        DiskIndexEntry previous = diskIndex.put(key, new DiskIndexEntry(sizeBytes, System.currentTimeMillis(), mime));
         long delta = sizeBytes - (previous != null ? previous.sizeBytes : 0L);
         currentDiskBytes.addAndGet(delta);
     }
@@ -539,7 +569,7 @@ final class ImageCacheInterceptor {
                 return;
             }
             meta.writeQuietly(metaFile);
-            registerDiskEntry(key, binFile.length());
+            registerDiskEntry(key, binFile.length(), meta.mime);
             maybeTrimCacheAsync();
         } catch (Exception e) {
             boolean ignored = tmpFile.delete();
@@ -647,10 +677,12 @@ final class ImageCacheInterceptor {
     private static final class DiskIndexEntry {
         volatile long sizeBytes;
         volatile long lastAccessMs;
+        volatile String mime;
 
-        DiskIndexEntry(long sizeBytes, long lastAccessMs) {
+        DiskIndexEntry(long sizeBytes, long lastAccessMs, String mime) {
             this.sizeBytes = sizeBytes;
             this.lastAccessMs = lastAccessMs;
+            this.mime = mime;
         }
     }
 
