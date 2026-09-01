@@ -15,6 +15,59 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # لازم عمق كامل (وليس آخر Commit فقط) حتى تعمل مقارنة git diff بالأسفل ضد إصدار سابق
+          # قد يكون أبعد من Commit واحد — خصوصاً أن وسم الإصدار هنا "latest" متجدد (Rolling) وليس
+          # وسماً جديداً بكل إصدار، فلا يوجد "وسم سابق" تقليدي يمكن الاعتماد عليه للمقارنة.
+          fetch-depth: 0
+
+      # 🧠 نظام "التحديث الذكي" بالتطبيق يقتصر على تنزيل ملفات واجهة الويب (index.html) فقط حين
+      # يتغيّر محتواها، بدل تثبيت APK كامل من جديد — لكن كود Java/Kotlin المُترجَم لا يمكن أبداً
+      # تحديثه بهذه الطريقة (قيد تقني، وليس نقصاً بالتنفيذ). لذلك نحدد هنا تلقائياً وبأمان: هل
+      # هذا الإصدار "ويب فقط" فعلاً (لا تغييرات خارج app/src/main/assets، باستثناء رفع رقم
+      # الإصدار بـbuild.gradle نفسه الذي يجب أن يتغيّر بكل إصدار beliebig)؟ يقرأ الـCommit الذي
+      # بُني منه آخر إصدار "latest" منشور فعلياً (نُخزّنه كحقل source_commit بـversion.json نفسه
+      # منذ هذا التعديل) بدل الاعتماد على أي وسم إصدار تقليدي غير موجود أصلاً بهذا التدفّق.
+      - name: Fetch previous release's source commit
+        id: prev
+        run: |
+          PREV_JSON=$(curl -fsSL "https://github.com/${{ github.repository }}/releases/latest/download/version.json" 2>/dev/null || echo "")
+          PREV_SHA=""
+          if [ -n "$PREV_JSON" ]; then
+            PREV_SHA=$(echo "$PREV_JSON" | grep -oP '"source_commit"\s*:\s*"\K[a-f0-9]+' || echo "")
+          fi
+          echo "sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Determine if this release is web-only (safe for smart update)
+        id: webonly
+        run: |
+          PREV_SHA="${{ steps.prev.outputs.sha }}"
+          WEB_ONLY="false"
+          if [ -n "$PREV_SHA" ] && git cat-file -e "$PREV_SHA" 2>/dev/null; then
+            DISQUALIFY="false"
+            git diff --name-only "$PREV_SHA" HEAD > /tmp/yg_changed_files.txt
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              case "$f" in
+                app/src/main/assets/*)
+                  # ملفات واجهة الويب نفسها — هذا بالضبط ما يُفترض أن يتغيّر بتحديث ذكي
+                  ;;
+                app/build.gradle)
+                  # نسمح فقط لو اقتصر التغيير على أسطر versionCode/versionName (رفع رقم
+                  # الإصدار إلزامي بكل إصدار مهما كان نوعه) — أي سطر آخر بهذا الملف (اعتماديات،
+                  # صلاحيات، إعدادات بناء) يُسقط الأهلية فوراً.
+                  NONVER=$(git diff "$PREV_SHA" HEAD -- app/build.gradle | grep -E '^[+-]' | grep -v -E '^(\+\+\+|---)' | grep -v -E 'versionCode|versionName' || true)
+                  if [ -n "$NONVER" ]; then DISQUALIFY="true"; fi
+                  ;;
+                *)
+                  DISQUALIFY="true"
+                  ;;
+              esac
+            done < /tmp/yg_changed_files.txt
+            if [ "$DISQUALIFY" = "false" ]; then WEB_ONLY="true"; fi
+          fi
+          echo "value=$WEB_ONLY" >> "$GITHUB_OUTPUT"
+          echo "🔎 web_only_update = $WEB_ONLY (مقارنة بـ ${PREV_SHA:-'لا يوجد إصدار سابق'})"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -73,6 +126,17 @@ jobs:
           HASH=$(sha256sum app/build/outputs/apk/release/app-release.apk | awk '{print $1}')
           echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
 
+      # نفس فكرة checksum أعلاه لكن لملف واجهة الويب نفسه — يُستخدم من UpdateDownloadService
+      # بالتطبيق للتحقق من سلامة الملف بعد تنزيله بوضع "التحديث الذكي"، ولمقارنته بما هو مثبَّت
+      # حالياً على الجهاز لمعرفة إن كان يحتاج تنزيلاً أصلاً.
+      - name: Compute assets manifest (for smart update)
+        id: manifest
+        run: |
+          HASH=$(sha256sum app/src/main/assets/index.html | awk '{print $1}')
+          SIZE=$(stat -c%s app/src/main/assets/index.html)
+          MANIFEST="[{\"path\":\"index.html\",\"url\":\"https://github.com/${{ github.repository }}/releases/latest/download/index.html\",\"sha256\":\"$HASH\",\"size\":$SIZE}]"
+          echo "json=$MANIFEST" >> "$GITHUB_OUTPUT"
+
       - name: Generate version.json
         run: |
           cat > version.json << EOF
@@ -82,7 +146,10 @@ jobs:
             "force_update": true,
             "changelog": "يتوفر إصدار جديد من تطبيق يلا گول (الإصدار ${{ steps.version.outputs.name }}). يرجى التحديث للمتابعة.",
             "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk",
-            "sha256": "${{ steps.checksum.outputs.sha256 }}"
+            "sha256": "${{ steps.checksum.outputs.sha256 }}",
+            "web_only_update": ${{ steps.webonly.outputs.value }},
+            "assets_manifest": ${{ steps.manifest.outputs.json }},
+            "source_commit": "${{ github.sha }}"
           }
           EOF
 
@@ -96,3 +163,4 @@ jobs:
           files: |
             app/build/outputs/apk/release/app-release.apk
             version.json
+            app/src/main/assets/index.html
