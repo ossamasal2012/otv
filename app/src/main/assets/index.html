@@ -1968,13 +1968,13 @@
             const generateChannelHTML = (ch) => {
                 const isFav = favorites.includes(ch[0]);
                 return `
-                <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)"
+                <div onclick="playChannel('${escAttr(ch[1])}', '${escAttr(ch[3])}', '${escAttr(ch[0])}', this)"
                     class="channel-item bg-slate-900/30 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group hover:bg-slate-900/60 transition-all">
                     <div class="flex items-center gap-2">
                         <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-[.active-card]:opacity-100"></div>
                         <span class="text-[12px] font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
                     </div>
-                    <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                    <button onclick="toggleFavorite(event, '${escAttr(ch[0])}')" class="focus:outline-none p-1">
                         <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-[14px] transition-all hover:scale-110"></i>
                     </button>
                 </div>`;
@@ -3320,7 +3320,16 @@
         }
 
         function escAttr(str) {
-            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+            // يُستخدم لإدراج قيم ديناميكية داخل onclick="دالة('${escAttr(x)}')" بأمان: الفاصلة
+            // المائلة أولاً (قبل أي استبدال آخر يُدخل فواصل جديدة)، ثم & (قبل &quot; حتى لا
+            // يُعاد ترميزها هي نفسها بالخطوة التالية)، ثم علامة الاقتباس المزدوجة (تكسر حدود
+            // خاصية HTML نفسها لو تُركت بلا ترميز، بغضّ النظر عن نوع الاقتباس المُستخدَم بكود
+            // JS الداخلي)، وأخيراً الفاصلة العليا المفردة (تُنهي سلسلة JS النصية قبل أوانها).
+            return String(str)
+                .replace(/\\/g, '\\\\')
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, "\\'");
         }
 
         function searchChannels() { 
@@ -3562,13 +3571,22 @@
 
         /**
          * يكتشف أي شكل شائع لرابط يوتيوب (صفحة مشاهدة عادية، رابط youtu.be مختصر، Shorts،
-         * Live، أو حتى رابط embed جاهز أصلاً) ويستخرج معرّف الفيديو منه، ثم يُعيد رابط embed
-         * القياسي الوحيد الذي يعمل فعلياً داخل iframe (يوتيوب يرفض تضمين صفحة /watch العادية
-         * عبر X-Frame-Options بغضّ النظر عن أي إعداد بجهة تطبيقنا — هذا سبب رئيسي محتمل لعدم
-         * عمل بعض قنوات iframe إن كانت تخزّن رابط يوتيوب عادياً بدل رابط embed). يُعيد null إن
-         * لم يكن الرابط رابط يوتيوب إطلاقاً، فتبقى بقية القنوات غير المرتبطة بيوتيوب كما هي
-         * تماماً دون أي تأثير عليها.
+         * Live، أو حتى رابط embed جاهز أصلاً) ويستخرج معرّف الفيديو منه، ثم يُعيد رابطاً لصفحة
+         * وسيطة صغيرة على نطاق https:// حقيقي (Cloudflare Worker الخاص بالتطبيق نفسه، مسار
+         * /yt-embed — راجع cloudflare-worker/worker.js) تحتوي إطار يوتيوب الفعلي بداخلها.
+         *
+         * لماذا وسيطة وليس رابط يوتيوب مباشرة؟ يوتيوب يرفض التضمين مباشرة برسالة "خطأ 153 —
+         * خطأ في إعدادات مشغّل الفيديو" حين لا يصله Referer/Origin صالح، وهذا بالضبط وضع صفحتنا
+         * المُحمَّلة من file:// (لا تُرسل أي Referer إطلاقاً مهما ضُبطت خاصية iframe نفسها —
+         * قيد المتصفح على أصل file:// نفسه، وليس خطأ بكود التطبيق). تحميل رابط https:// حقيقي
+         * (صفحة الـWorker) أولاً كمصدر iPlayer نفسه يحل هذا جذرياً: يوتيوب يستقبل حينها Referer
+         * صحيحاً من نطاق https حقيقي، فيعمل التضمين طبيعياً.
+         *
+         * يُعيد null إن لم يكن الرابط رابط يوتيوب إطلاقاً، فتبقى بقية القنوات غير المرتبطة
+         * بيوتيوب كما هي تماماً دون أي تأثير عليها.
          */
+        const YT_EMBED_PROXY_BASE = 'https://yallagoal-active-users.ossamasal2012.workers.dev/yt-embed';
+
         function toYouTubeEmbedUrl(rawUrl) {
             if (!rawUrl || typeof rawUrl !== 'string') return null;
             let u;
@@ -3604,7 +3622,7 @@
                 if (m) startSeconds = parseInt(m[1], 10);
             }
 
-            let embedUrl = 'https://www.youtube.com/embed/' + videoId + '?autoplay=1&playsinline=1&rel=0';
+            let embedUrl = YT_EMBED_PROXY_BASE + '?id=' + encodeURIComponent(videoId);
             if (startSeconds) embedUrl += '&start=' + startSeconds;
             return embedUrl;
         }
