@@ -227,6 +227,39 @@ export default {
       return stub.fetch(new Request('https://internal/count'));
     }
 
+    // 🎬 يوتيوب يرفض تضمين فيديوهاته (خطأ 153 "خطأ في إعدادات مشغّل الفيديو") حين لا يصل معه
+    // Referer/Origin صالح — وهذا بالضبط وضع WebView الذي يُحمَّل من file:// (لا يُرسل أي Referer
+    // إطلاقاً). هذا المسار يُشغَّل كصفحة وسيطة على نطاق https:// حقيقي (نطاق هذا الـWorker
+    // نفسه) يحتوي فقط إطار يوتيوب الفعلي بداخله؛ فحين يفتح iPlayer بتطبيقنا هذا الرابط بدل رابط
+    // يوتيوب مباشرة، يصل ليوتيوب Referer صحيحاً من https://<هذا النطاق> فيعمل التضمين طبيعياً.
+    // عام بلا مصادقة عمداً (لا يلمس PRESENCE_ROOM أو أي بيانات مستخدم، فقط يُخرج صفحة HTML ثابتة
+    // حسب معرّف الفيديو المطلوب)، وآمن بطبيعته: لا يمكن استخدامه لتضمين أي شيء غير
+    // youtube.com/embed/<id> مهما كانت القيمة المُرسَلة.
+    if (url.pathname === '/yt-embed') {
+        const videoId = (url.searchParams.get('id') || '').trim();
+        if (!/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
+            return new Response('invalid video id', { status: 400 });
+        }
+        const startParam = parseInt(url.searchParams.get('start') || '', 10);
+        const startQuery = Number.isFinite(startParam) && startParam > 0 ? `&start=${startParam}` : '';
+        const embedSrc = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0${startQuery}`;
+
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8">` +
+            `<style>*{margin:0;padding:0}html,body{background:#000;overflow:hidden;width:100%;height:100%}` +
+            `iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>` +
+            `<iframe src="${embedSrc}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; ` +
+            `fullscreen; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" ` +
+            `allowfullscreen></iframe></body></html>`;
+
+        return new Response(html, {
+            status: 200,
+            headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Cache-Control': 'public, max-age=3600',
+            },
+        });
+    }
+
     return json({ error: 'not_found' }, 404);
   },
 };
