@@ -23,6 +23,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.webkit.WebViewCompat;
 import android.widget.FrameLayout;
+import android.widget.Toast;
 
 import java.io.File;
 import java.util.UUID;
@@ -168,10 +169,41 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (loadedUrl.equals(url)) {
-                    view.evaluateJavascript(
-                            "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false }); checkAuth(); if (window.initUserStats) { initUserStats(); }", null);
-                }
+                if (!loadedUrl.equals(url)) return;
+
+                // نلفّ حقن رمز المصادقة بـtry/catch يُعيد 'OK' عند النجاح أو 'ERR:...' عند
+                // الفشل، ونراقب النتيجة فعلياً (بدل تجاهلها كما كان) — هذا يمنحنا إشارة موثوقة
+                // على أن السكربت الأساسي بالصفحة نُفِّذ بلا أخطاء فادحة. مهم تحديداً لمحتوى
+                // Override من تحديث ذكي سابق: لو كان تالفاً أو به خطأ لأي سبب، نتراجع تلقائياً
+                // وفوراً للأصل المرفق بالحزمة بدل ترك المستخدم أمام شاشة معطوبة — لا حاجة أبداً
+                // لإعادة تثبيت التطبيق أو تدخّل يدوي.
+                final boolean isOverridePage = !LOCAL_URL.equals(loadedUrl);
+                String script = "(function(){ try {"
+                        + "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false });"
+                        + "checkAuth();"
+                        + "if (window.initUserStats) { initUserStats(); }"
+                        + "return 'OK';"
+                        + "} catch (e) { return 'ERR:' + (e && e.message ? e.message : String(e)); } })();";
+
+                view.evaluateJavascript(script, result -> {
+                    boolean healthy = "\"OK\"".equals(result);
+                    if (!healthy && isOverridePage) {
+                        rollBackBrokenSmartUpdate();
+                    }
+                });
+            }
+
+            private void rollBackBrokenSmartUpdate() {
+                UpdateManager.clearWebOverride(getApplicationContext());
+                loadedUrl = LOCAL_URL;
+                runOnUiThread(() -> {
+                    if (webView != null) {
+                        webView.loadUrl(LOCAL_URL);
+                    }
+                    Toast.makeText(MainActivity.this,
+                            "تم استرجاع النسخة الأصلية بسبب مشكلة بآخر تحديث للمحتوى.",
+                            Toast.LENGTH_LONG).show();
+                });
             }
         });
 
