@@ -603,7 +603,7 @@ public class UpdateManager {
      * نسخة الـoverride كاملة وعلامتها فوراً، فيعود التطبيق للأصل المرفق بالحزمة بأمان تام
      * بأي تشغيل قادم (أو فوراً، إذ يُعيد MainActivity تحميل الصفحة مباشرة بعد هذا الاستدعاء).
      */
-    static void clearWebOverride(Context context) {
+    public static void clearWebOverride(Context context) {
         try {
             SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             File overrideDir = new File(context.getFilesDir(), "web_override");
