@@ -71,6 +71,10 @@ public class UpdateManager {
     static final String PREFS_NAME = "yg_update_prefs";
     static final String PREF_UPDATE_MODE = "update_mode";
     static final String PREF_SMART_VERSION_CODE = "smart_update_version_code";
+    // نسخة الـ"تحديث الذكي" السابقة المحفوظة كـ backup حقيقي قبل تفعيل نسخة جديدة (راجع
+    // UpdateDownloadService.markSmartUpdateBackup وUpdateManager.rollBackToLastGoodVersion) —
+    // تتيح Rollback حقيقي لآخر نسخة كانت تعمل فعلاً، بدل القفز مباشرة للأصل المرفق بالحزمة.
+    static final String PREF_SMART_VERSION_CODE_BACKUP = "smart_update_version_code_backup";
     static final String PREF_READY_APK_VERSION_CODE = "ready_apk_version_code";
     static final String PREF_READY_APK_SHA256 = "ready_apk_sha256";
 
@@ -177,8 +181,29 @@ public class UpdateManager {
 
                 int localVersionCode = getLocalVersionCode();
 
-                // نفس شرط منع الـ Downgrade الأصلي: لا تحديث إطلاقاً إن لم يكن الإصدار البعيد أحدث فعلياً
-                if (remoteVersionCode > localVersionCode) {
+                // ===== إصلاح مشكلة "ظهور نفس التحديث مرة ثانية بعد نجاحه" من جذورها =====
+                // localVersionCode (من PackageManager) هو رقم الـAPK الحقيقي المثبَّت، ولا يتغيّر
+                // أبداً بتحديث ذكي (محتوى فقط) — قيد Android نفسه، وليس نقصاً بالتنفيذ. فلو قارنّا
+                // remoteVersionCode بـlocalVersionCode وحدها، تبقى المقارنة "أحدث" صحيحة إلى الأبد
+                // بعد أي تحديث ذكي ناجح — حتى لو كان المحتوى الفعلي على الجهاز مطابقاً تماماً لما
+                // يعلنه السيرفر — وهذا كان بالضبط السبب البرمجي المباشر للمشكلة.
+                //
+                // الحل: نحسب effectiveInstalledVersionCode الذي يضيف آخر تحديث ذكي تم تفعيله
+                // *وتحقّقت ملفاته الآن فعلياً* من نسخة الـAPK الخام. لا نثق بعلامة SharedPreferences
+                // (PREF_SMART_VERSION_CODE) بمجرّدها أبداً — راجع getVerifiedSmartVersionCode: تتحقق
+                // من SHA-256 لكل ملف فعلي على القرص مقابل هذا المانيفست البعيد نفسه قبل الوثوق بها.
+                int effectiveInstalledVersionCode = localVersionCode;
+                if (webOnly && !manifestJson.isEmpty()) {
+                    int verifiedSmartVersion = getVerifiedSmartVersionCode(manifestJson, remoteVersionCode);
+                    if (verifiedSmartVersion > effectiveInstalledVersionCode) {
+                        effectiveInstalledVersionCode = verifiedSmartVersion;
+                    }
+                }
+
+                // نفس شرط منع الـ Downgrade الأصلي، لكن مقارَناً الآن بالنسخة الفعّالة الحقيقية
+                // (الأعلى بين نسخة الـAPK ونسخة المحتوى الذكي المُتحقَّق منها فعلياً) بدل نسخة
+                // الـAPK الخام فقط.
+                if (remoteVersionCode > effectiveInstalledVersionCode) {
                     pendingVersionName = remoteVersionName;
                     pendingChangelog = changelog;
                     pendingDownloadUrl = downloadUrl;
@@ -208,6 +233,51 @@ public class UpdateManager {
             } else {
                 return pInfo.versionCode;
             }
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /**
+     * يتحقق مما إذا كانت آخر نسخة "تحديث ذكي" مُسجَّلة فعلياً (PREF_SMART_VERSION_CODE) تطابق
+     * تماماً نسخة المانيفست البعيد الحالي (remoteVersionCode) *و* أن ملفاتها الموجودة الآن على
+     * القرص (web_override/) تطابق SHA-256 كل ملف بهذا المانيفست بالضبط — بدل الوثوق بعلامة
+     * SharedPreferences مجرّدة (بالضبط كما طُلب: مصدر الحقيقة هو الملفات الفعلية + الهاش، وليس
+     * Flag بسيط). يُعيد رقم النسخة نفسه (> 0) فقط لو نجح كل تحقق بالكامل؛ وإلا يُعيد 0.
+     *
+     * ملاحظة مهمة: فشل التحقق هنا لا يمسح PREF_SMART_VERSION_CODE تلقائياً — فقط يجعلنا لا نثق
+     * بها *لهذه المقارنة تحديداً*. الحذف الفعلي لملفات override معطوبة مسؤولية MainActivity عند
+     * فشل تحميل الصفحة فعلياً بالـWebView (رولباك حقيقي)، حفاظاً على مبدأ "لا تُحذف نسخة قد تكون
+     * سليمة فعلاً بسبب فحص متشائم واحد هنا" (مثلاً أثناء انقطاع I/O عابر).
+     */
+    private int getVerifiedSmartVersionCode(String manifestJson, int remoteVersionCode) {
+        try {
+            SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            int smartVersion = prefs.getInt(PREF_SMART_VERSION_CODE, 0);
+            // نتحقق فقط عندما تساوي النسخة الذكية المسجَّلة نسخة المانيفست البعيد الحالي بالضبط:
+            // فقط عندها نملك هاشات موثوقة (من هذا المانيفست نفسه) لمقارنة الملفات الفعلية بها.
+            if (smartVersion <= 0 || smartVersion != remoteVersionCode) return 0;
+
+            File overrideDir = new File(activity.getFilesDir(), "web_override");
+            if (!overrideDir.isDirectory()) return 0;
+
+            JSONArray arr = new JSONArray(manifestJson);
+            if (arr.length() == 0) return 0;
+
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.getJSONObject(i);
+                String path = obj.optString("path", "");
+                String expectedSha256 = obj.optString("sha256", "");
+                if (path.isEmpty() || expectedSha256.isEmpty() || path.contains("..")) return 0;
+
+                File localFile = new File(overrideDir, path);
+                if (!localFile.isFile()) return 0;
+
+                String actual = computeSha256Quietly(localFile);
+                if (actual == null || !actual.equalsIgnoreCase(expectedSha256.trim())) return 0;
+            }
+
+            return smartVersion; // كل ملف تحقق بنجاح — يمكن الوثوق بهذه النسخة كمثبَّتة فعلياً
         } catch (Exception e) {
             return 0;
         }
@@ -610,6 +680,46 @@ public class UpdateManager {
             deleteRecursivelyStatic(overrideDir);
             prefs.edit().remove(PREF_SMART_VERSION_CODE).apply();
         } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * Rollback حقيقي (وليس مجرد Fallback): تُستدعى من MainActivity عند فشل "فحص السلامة" لصفحة
+     * override بعد تفعيل تحديث ذكي جديد مباشرة. تحاول أولاً استرجاع آخر نسخة محتوى كانت مُفعَّلة
+     * فعلياً *قبل* هذا التحديث الفاشل (web_override_backup — يحتفظ بها UpdateDownloadService
+     * تلقائياً قبل كل تفعيل جديد، راجع markSmartUpdateBackup هناك)، بدل القفز مباشرة للأصل
+     * المرفق بالحزمة. فقط لو لم توجد نسخة backup أصلاً (أو تعذّر استرجاعها بأمان) يُستخدم الأصل
+     * المرفق كملاذ أخير — بالضبط الفرق المطلوب بين "Rollback حقيقي" و"Fallback" فقط.
+     *
+     * @return true لو استُرجعت نسخة backup فعلية وأصبحت هي الـactive الجديدة، أو false لو تم
+     *         اللجوء مباشرة للأصل المرفق بالحزمة (وعندها مُسحت كل علامات التحديث الذكي).
+     */
+    public static boolean rollBackToLastGoodVersion(Context context) {
+        try {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            File overrideDir = new File(context.getFilesDir(), "web_override");
+            File backupDir = new File(context.getFilesDir(), "web_override_backup");
+
+            // النسخة الجديدة الفاشلة يجب ألا تبقى active بأي حال — تُحذف أولاً دائماً.
+            deleteRecursivelyStatic(overrideDir);
+
+            int backupVersion = prefs.getInt(PREF_SMART_VERSION_CODE_BACKUP, 0);
+            if (backupDir.isDirectory() && backupVersion > 0 && backupDir.renameTo(overrideDir)) {
+                prefs.edit()
+                        .putInt(PREF_SMART_VERSION_CODE, backupVersion)
+                        .remove(PREF_SMART_VERSION_CODE_BACKUP)
+                        .apply();
+                return true;
+            }
+
+            // لا توجد نسخة backup موثوقة (غير موجودة، أو بلا رقم إصدار مسجَّل، أو تعذّر نقلها) —
+            // لا نثق بأي بقايا محتملة، ونعود للأصل المرفق بالحزمة كملاذ أخير آمن.
+            deleteRecursivelyStatic(overrideDir);
+            deleteRecursivelyStatic(backupDir);
+            prefs.edit().remove(PREF_SMART_VERSION_CODE).remove(PREF_SMART_VERSION_CODE_BACKUP).apply();
+            return false;
+        } catch (Exception e) {
+            return false;
         }
     }
 
