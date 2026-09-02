@@ -406,10 +406,12 @@ public class UpdateDownloadService extends Service {
         }
 
         List<AssetEntry> needed = new ArrayList<>();
+        java.util.Set<String> neededPaths = new java.util.HashSet<>();
         for (AssetEntry entry : entries) {
             String currentHash = computeCurrentAssetHash(entry.path);
             if (currentHash == null || !currentHash.equalsIgnoreCase(entry.sha256)) {
                 needed.add(entry);
+                neededPaths.add(entry.path);
             }
         }
 
@@ -524,6 +526,29 @@ public class UpdateDownloadService extends Service {
             }
         }
 
+        // ==================== اكتمال tmpDir قبل التفعيل (تحديث جزئي بمانيفست متعدد الملفات) ====
+        // tmpDir يحتوي حتى الآن الملفات "المتغيّرة" فقط (needed). لو كان المانيفست يحوي ملفات
+        // إضافية لم تتغيّر (needed.size() < entries.size() — لا يحدث اليوم لأن المانيفست الحالي
+        // يحوي index.html فقط، لكن البنية تدعم أكثر من ملف مستقبلاً)، يجب نسخ كل ملف "غير متغيّر"
+        // بمحتواه الصحيح الحالي (override سابق إن وُجد، وإلا الأصل بالحزمة) إلى tmpDir أيضاً *قبل*
+        // التفعيل. بدون هذا، استبدال web_override بالكامل بـtmpDir (الذي يحوي الملفات المتغيّرة
+        // فقط) سيفقد أي ملف كان يُخدَّم سابقاً من مصدر آخر (override قديم أو الحزمة) فيصبح
+        // web_override الجديد ناقصاً — بالضبط نوع الخطأ الذي هذا الإصلاح كله مبني لتفادي تكراره.
+        if (needed.size() < entries.size()) {
+            for (AssetEntry entry : entries) {
+                if (neededPaths.contains(entry.path)) continue; // نُزِّل للتو أصلاً بالحلقة أعلاه
+                File outFile = resolveSafeChildFile(tmpDir, entry.path);
+                if (outFile == null) continue;
+                File parent = outFile.getParentFile();
+                if (parent != null && !parent.exists()) parent.mkdirs();
+                if (!copyCurrentAssetToFile(entry.path, outFile)) {
+                    deleteRecursively(tmpDir);
+                    finishWithError("تعذر تجهيز ملف (" + entry.path + ") لإكمال التحديث.");
+                    return;
+                }
+            }
+        }
+
         // كل الملفات نزلت وتحقّقت بنجاح — الآن فقط نستبدل النسخة الفعّالة دفعة واحدة، فلا تبقى
         // أبداً حالة وسيطة ناقصة (بعض الملفات جديدة وبعضها قديمة) يمكن أن تُخدَّم لـ WebView.
         //
@@ -578,6 +603,36 @@ public class UpdateDownloadService extends Service {
             return bytesToHex(digest.digest());
         } catch (Exception e) {
             return null; // غير موجود أصلاً بالحزمة (ملف جديد كلياً يُضيفه هذا التحديث) — اختلاف حقيقي يستوجب التنزيل
+        }
+    }
+
+    /**
+     * ينسخ المحتوى الحالي الصحيح لملف "لم يتغيّر" في هذا التحديث (نفس منطق حل المصدر بالضبط
+     * كـcomputeCurrentAssetHash أعلاه: نسخة override سابقة إن وُجدت، وإلا الأصل بالحزمة) إلى
+     * ملف وجهة داخل tmpDir — تُستخدم فقط لإكمال tmpDir قبل التفعيل عند تحديث جزئي بمانيفست
+     * متعدد الملفات (راجع التعليق بموقع الاستدعاء).
+     */
+    private boolean copyCurrentAssetToFile(String path, File outFile) {
+        File overrideFile = resolveSafeChildFile(getWebOverrideDir(), path);
+        try {
+            if (overrideFile != null && overrideFile.isFile()) {
+                try (InputStream in = new FileInputStream(overrideFile);
+                     OutputStream out = new FileOutputStream(outFile)) {
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+                }
+                return true;
+            }
+            try (InputStream in = getAssets().open(path);
+                 OutputStream out = new FileOutputStream(outFile)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
+            }
+            return true;
+        } catch (Exception e) {
+            return false;
         }
     }
 
