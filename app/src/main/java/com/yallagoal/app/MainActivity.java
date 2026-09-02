@@ -194,14 +194,22 @@ public class MainActivity extends AppCompatActivity {
             }
 
             private void rollBackBrokenSmartUpdate() {
-                UpdateManager.clearWebOverride(getApplicationContext());
-                loadedUrl = LOCAL_URL;
+                // Rollback حقيقي: يحاول أولاً استرجاع آخر نسخة محتوى كانت تعمل فعلاً قبل هذا
+                // التحديث الفاشل (web_override_backup)؛ فقط لو لم توجد نسخة backup صالحة يُستخدم
+                // الأصل المرفق بالحزمة كملاذ أخير. راجع UpdateManager.rollBackToLastGoodVersion.
+                boolean restoredBackup = UpdateManager.rollBackToLastGoodVersion(getApplicationContext());
+                File restoredIndex = restoredBackup
+                        ? UpdateManager.resolveWebOverrideIndexFile(getApplicationContext())
+                        : null;
+                loadedUrl = restoredIndex != null ? ("file://" + restoredIndex.getAbsolutePath()) : LOCAL_URL;
                 runOnUiThread(() -> {
                     if (webView != null) {
-                        webView.loadUrl(LOCAL_URL);
+                        webView.loadUrl(loadedUrl);
                     }
                     Toast.makeText(MainActivity.this,
-                            "تم استرجاع النسخة الأصلية بسبب مشكلة بآخر تحديث للمحتوى.",
+                            restoredIndex != null
+                                    ? "تم الرجوع تلقائياً لآخر نسخة محتوى كانت تعمل بنجاح."
+                                    : "تم استرجاع النسخة الأصلية بسبب مشكلة بآخر تحديث للمحتوى.",
                             Toast.LENGTH_LONG).show();
                 });
             }
