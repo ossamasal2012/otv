@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -87,6 +88,15 @@ public class UpdateDownloadService extends Service {
 
     private volatile boolean cancelled = false;
 
+    // ==================== حماية من التزامن (Concurrent Update Protection) ====================
+    // حارس ثابت (على مستوى العملية كاملة، وليس على مستوى نسخة UpdateManager التي تُعاد إنشاؤها
+    // بكل onCreate بـMainActivity) يمنع تشغيل عمليتي تنزيل (كامل أو ذكي) بنفس الوقت. بدون هذا،
+    // لو أُعيد إنشاء MainActivity (مثلاً: النظام أعاد تشغيل العملية بالخلفية ثم عاد المستخدم)
+    // بينما تنزيل سابق ما زال يعمل بالخلفية عبر هذه الخدمة، قد يُستدعى startForegroundService
+    // مرة ثانية فيُشغِّل Thread ثانٍ يكتب لنفس مجلد web_override_tmp بالتوازي مع الأول — تلف
+    // ملفات محقق. راجع onStartCommand بالأسفل.
+    private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -98,7 +108,19 @@ public class UpdateDownloadService extends Service {
         startForeground(NOTIF_ID, buildProgressNotification("جاري التحضير...", 0, 0, true));
 
         if (intent == null) {
-            stopSelf();
+            // لا نوقف الخدمة هنا لو كان هناك تنزيل حقيقي يعمل بالفعل (RUNNING=true) — هذا
+            // الاستدعاء بلا Intent صالح لا علاقة له بذلك التنزيل ويجب ألا يقطعه.
+            if (!RUNNING.get()) stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        if (!RUNNING.compareAndSet(false, true)) {
+            // ==================== حماية من التزامن ====================
+            // هناك بالفعل تنزيل (كامل أو ذكي) يعمل حالياً بمعرفة هذه الخدمة — نتجاهل هذا الطلب
+            // المكرر بالكامل: لا Thread ثانٍ، ولا إعادة ضبط لـUpdateProgressBus (كي لا نفقد تقدّم
+            // العملية الأصلية الحقيقية)، ولا أي استدعاء لـstopSelf/stopForeground (كي لا نقطع
+            // العملية الأصلية بالخطأ). التقدّم الحقيقي يستمر ويُبلَّغ عادي عبر UpdateProgressBus،
+            // وواجهة المستخدم (لو كانت مفتوحة) تبقى متزامنة معه بلا أي أثر لهذا الطلب الزائد.
             return START_NOT_STICKY;
         }
 
@@ -116,6 +138,7 @@ public class UpdateDownloadService extends Service {
             } catch (Exception e) {
                 finishWithError("تعذر إكمال التحديث. حاول مرة أخرى.");
             } finally {
+                RUNNING.set(false);
                 stopForeground(false);
                 stopSelf();
             }
@@ -130,6 +153,10 @@ public class UpdateDownloadService extends Service {
     @Override
     public void onDestroy() {
         cancelled = true;
+        // إعادة ضبط دفاعية: لو انتهت الخدمة بأي مسار غير متوقَّع دون أن يصل Thread التنزيل إلى
+        // كتلة finally الخاصة به (نادر)، لا نريد أن يبقى الحارس RUNNING=true للأبد ويمنع أي
+        // محاولة تحديث لاحقة بمعزل تام عن هذه الخدمة تحديداً.
+        RUNNING.set(false);
         super.onDestroy();
     }
 
@@ -236,6 +263,13 @@ public class UpdateDownloadService extends Service {
             finishWithError("رابط التحديث غير صالح.");
             return;
         }
+        // أمان: نرفض رابط تحميل APK إن لم يكن HTTPS، بغض النظر عمّا يعلنه السيرفر. هذا يخص قناة
+        // التحديث فقط ولا يمسّ android:usesCleartextTraffic العام للتطبيق (يبقى يعمل بشكل طبيعي
+        // لمصادر IPTV/HLS الحالية التي قد تحتاج HTTP).
+        if (!downloadUrl.startsWith("https://")) {
+            finishWithError("تم رفض رابط التحديث لأسباب أمنية (يجب أن يكون HTTPS).");
+            return;
+        }
 
         File tempFile = getApkTempFile();
         File destFile = getApkDestFile();
@@ -302,6 +336,9 @@ public class UpdateDownloadService extends Service {
                 out.flush();
             }
         } catch (IOException e) {
+            // كان الملف الجزئي التالف يبقى بدون حذف هنا سابقاً (يُنظَّف لاحقاً فقط عند بدء فحص
+            // تالٍ عبر cleanupStaleTempFile بـUpdateManager) — نحذفه فوراً الآن بدل ترك بقايا.
+            deleteQuietly(tempFile);
             finishWithError(classifyIoError(e));
             return;
         }
@@ -385,6 +422,20 @@ public class UpdateDownloadService extends Service {
         long totalBytes = 0L;
         for (AssetEntry e : needed) totalBytes += Math.max(0, e.size);
 
+        // ==================== فحص مسبق لمساحة التخزين (Disk Space Preflight) ====================
+        // هامش ×3 (وليس فقط حجم التنزيل بالضبط) لأن هناك لحظة قصيرة تتعايش فيها نسخة staging
+        // الجديدة (tmpDir) مع النسخة الفعّالة الحالية (activeDir) *و* نسخة backup منها (راجع
+        // منطق التفعيل بالأسفل) على القرص معاً قبل التنظيف النهائي. لا نلمس أي ملف حالي إطلاقاً
+        // هنا إن كانت المساحة غير كافية — فقط نوقف العملية برسالة واضحة (usableSpace()‎ تُعيد 0
+        // على بعض الأجهزة/الأنظمة القديمة جداً حين يتعذر تحديدها؛ في هذه الحالة النادرة لا نمنع
+        // التحديث بسبب معلومة غير متاحة، بل نكمل عادياً).
+        long estimatedNeeded = (totalBytes * 3) + (2L * 1024 * 1024);
+        long usableSpace = getFilesDir().getUsableSpace();
+        if (usableSpace > 0 && usableSpace < estimatedNeeded) {
+            finishWithError("مساحة التخزين غير كافية لإكمال تحديث المحتوى. حرر بعض المساحة وحاول مرة أخرى.");
+            return;
+        }
+
         File tmpDir = getWebOverrideTmpDir();
         deleteRecursively(tmpDir);
         if (!tmpDir.exists()) tmpDir.mkdirs();
@@ -405,6 +456,14 @@ public class UpdateDownloadService extends Service {
             }
             File parent = outFile.getParentFile();
             if (parent != null && !parent.exists()) parent.mkdirs();
+
+            // أمان: نرفض رابط أي ملف تحديث ذكي فردي إن لم يكن HTTPS — نفس مبدأ تحديث الـAPK
+            // بالضبط، ولا يمسّ إعداد Cleartext العام للتطبيق (مصادر IPTV تبقى كما هي).
+            if (!entry.url.startsWith("https://")) {
+                deleteRecursively(tmpDir);
+                finishWithError("تم رفض رابط ملف (" + entry.path + ") لأسباب أمنية (يجب أن يكون HTTPS).");
+                return;
+            }
 
             Request request = new Request.Builder().url(entry.url).build();
 
@@ -467,8 +526,32 @@ public class UpdateDownloadService extends Service {
 
         // كل الملفات نزلت وتحقّقت بنجاح — الآن فقط نستبدل النسخة الفعّالة دفعة واحدة، فلا تبقى
         // أبداً حالة وسيطة ناقصة (بعض الملفات جديدة وبعضها قديمة) يمكن أن تُخدَّم لـ WebView.
+        //
+        // Rollback حقيقي (وليس Fallback فقط): قبل حذف النسخة الفعّالة الحالية، نحتفظ بها أولاً
+        // كـ backup — إن تبيّن أن النسخة الجديدة معطوبة بعد التفعيل (فشل Health Check بـ
+        // MainActivity)، UpdateManager.rollBackToLastGoodVersion يستطيع استرجاعها كاملة بدل
+        // القفز مباشرة للأصل المرفق بالحزمة. راجع markSmartUpdateBackup بالأسفل.
         File activeDir = getWebOverrideDir();
-        deleteRecursively(activeDir);
+        File backupDir = getWebOverrideBackupDir();
+
+        if (activeDir.isDirectory()) {
+            deleteRecursively(backupDir);
+            if (activeDir.renameTo(backupDir)) {
+                int previousSmartVersion = getSharedPreferences(UpdateManager.PREFS_NAME, Context.MODE_PRIVATE)
+                        .getInt(UpdateManager.PREF_SMART_VERSION_CODE, 0);
+                markSmartUpdateBackup(previousSmartVersion);
+            } else {
+                // فشل نادر بنقل المجلد (مثلاً قيد نظام ملفات) — لا نوقف تفعيل النسخة الجديدة
+                // المُتحقَّق منها بالفعل بسببه؛ فقدان نسخة backup احتياطية أقل خطورة من فشل تحديث
+                // صحيح بالكامل. نحذفها بالطريقة القديمة كما كان الكود يفعل دائماً.
+                deleteRecursively(activeDir);
+                clearSmartUpdateBackup();
+            }
+        } else {
+            deleteRecursively(backupDir);
+            clearSmartUpdateBackup();
+        }
+
         boolean moved = tmpDir.renameTo(activeDir);
         if (!moved) {
             deleteRecursively(tmpDir);
@@ -561,6 +644,12 @@ public class UpdateDownloadService extends Service {
         return new File(getFilesDir(), "web_override_tmp");
     }
 
+    /** نسخة backup حقيقية من آخر web_override كان فعّالاً *قبل* آخر تفعيل تحديث ذكي — تُستخدم
+     *  فقط من UpdateManager.rollBackToLastGoodVersion عند فشل النسخة الجديدة بعد تفعيلها. */
+    File getWebOverrideBackupDir() {
+        return new File(getFilesDir(), "web_override_backup");
+    }
+
     private File getApkDestFile() {
         return new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), UPDATE_FILE_NAME);
     }
@@ -581,6 +670,25 @@ public class UpdateDownloadService extends Service {
     private void markSmartUpdateApplied(int versionCode) {
         getSharedPreferences(UpdateManager.PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putInt(UpdateManager.PREF_SMART_VERSION_CODE, versionCode)
+                .apply();
+    }
+
+    /** تُسجِّل رقم نسخة web_override_backup المحفوظة للتو (0 أو أقل = لا يوجد رقم موثوق، فتُمسح
+     *  العلامة بدل تسجيل قيمة غير موثوقة قد تُستخدم لاحقاً بالخطأ من rollBackToLastGoodVersion). */
+    private void markSmartUpdateBackup(int versionCode) {
+        SharedPreferences.Editor editor =
+                getSharedPreferences(UpdateManager.PREFS_NAME, Context.MODE_PRIVATE).edit();
+        if (versionCode > 0) {
+            editor.putInt(UpdateManager.PREF_SMART_VERSION_CODE_BACKUP, versionCode);
+        } else {
+            editor.remove(UpdateManager.PREF_SMART_VERSION_CODE_BACKUP);
+        }
+        editor.apply();
+    }
+
+    private void clearSmartUpdateBackup() {
+        getSharedPreferences(UpdateManager.PREFS_NAME, Context.MODE_PRIVATE).edit()
+                .remove(UpdateManager.PREF_SMART_VERSION_CODE_BACKUP)
                 .apply();
     }
 
