@@ -240,12 +240,20 @@ public class UpdateManager {
 
     /**
      * يتحقق مما إذا كانت آخر نسخة "تحديث ذكي" مُسجَّلة فعلياً (PREF_SMART_VERSION_CODE) تطابق
-     * تماماً نسخة المانيفست البعيد الحالي (remoteVersionCode) *و* أن ملفاتها الموجودة الآن على
-     * القرص (web_override/) تطابق SHA-256 كل ملف بهذا المانيفست بالضبط — بدل الوثوق بعلامة
-     * SharedPreferences مجرّدة (بالضبط كما طُلب: مصدر الحقيقة هو الملفات الفعلية + الهاش، وليس
-     * Flag بسيط). يُعيد رقم النسخة نفسه (> 0) فقط لو نجح كل تحقق بالكامل؛ وإلا يُعيد 0.
+     * تماماً نسخة المانيفست البعيد الحالي (remoteVersionCode) *و* أن المحتوى المُقدَّم فعلياً
+     * الآن لكل مسار بهذا المانيفست (نسخة override إن وُجدت، وإلا الأصل المرفق بالحزمة — بنفس
+     * منطق UpdateDownloadService.computeCurrentAssetHash بالضبط) يطابق SHA-256 المتوقَّع — بدل
+     * الوثوق بعلامة SharedPreferences مجرّدة. يُعيد رقم النسخة نفسه (> 0) فقط لو نجح كل تحقق؛
+     * وإلا يُعيد 0.
      *
-     * ملاحظة مهمة: فشل التحقق هنا لا يمسح PREF_SMART_VERSION_CODE تلقائياً — فقط يجعلنا لا نثق
+     * ملاحظة حاسمة (سبب إصلاح لاحق): لا يجوز اشتراط وجود مجلد web_override دائماً — فحين تكون
+     * كل ملفات المانيفست مطابقة أصلاً لما هو مُقدَّم حالياً (مثال: رفع versionCode فقط بلا تغيير
+     * محتوى فعلي)، UpdateDownloadService.runSmartUpdate لا ينشئ web_override إطلاقاً (لا حاجة
+     * لنسخة override ما دام الأصل بالحزمة مطابقاً تماماً) رغم تسجيله PREF_SMART_VERSION_CODE
+     * بنجاح — فالتحقق هنا يجب أن يتبع نفس منطق "override إن وُجد، وإلا الأصل بالحزمة" حرفياً،
+     * لا أن يرفض بمجرد غياب المجلد.
+     *
+     * ملاحظة أخرى: فشل التحقق هنا لا يمسح PREF_SMART_VERSION_CODE تلقائياً — فقط يجعلنا لا نثق
      * بها *لهذه المقارنة تحديداً*. الحذف الفعلي لملفات override معطوبة مسؤولية MainActivity عند
      * فشل تحميل الصفحة فعلياً بالـWebView (رولباك حقيقي)، حفاظاً على مبدأ "لا تُحذف نسخة قد تكون
      * سليمة فعلاً بسبب فحص متشائم واحد هنا" (مثلاً أثناء انقطاع I/O عابر).
@@ -255,14 +263,13 @@ public class UpdateManager {
             SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             int smartVersion = prefs.getInt(PREF_SMART_VERSION_CODE, 0);
             // نتحقق فقط عندما تساوي النسخة الذكية المسجَّلة نسخة المانيفست البعيد الحالي بالضبط:
-            // فقط عندها نملك هاشات موثوقة (من هذا المانيفست نفسه) لمقارنة الملفات الفعلية بها.
+            // فقط عندها نملك هاشات موثوقة (من هذا المانيفست نفسه) لمقارنة المحتوى الفعلي بها.
             if (smartVersion <= 0 || smartVersion != remoteVersionCode) return 0;
-
-            File overrideDir = new File(activity.getFilesDir(), "web_override");
-            if (!overrideDir.isDirectory()) return 0;
 
             JSONArray arr = new JSONArray(manifestJson);
             if (arr.length() == 0) return 0;
+
+            File overrideDir = new File(activity.getFilesDir(), "web_override");
 
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject obj = arr.getJSONObject(i);
@@ -270,16 +277,42 @@ public class UpdateManager {
                 String expectedSha256 = obj.optString("sha256", "");
                 if (path.isEmpty() || expectedSha256.isEmpty() || path.contains("..")) return 0;
 
-                File localFile = new File(overrideDir, path);
-                if (!localFile.isFile()) return 0;
-
-                String actual = computeSha256Quietly(localFile);
+                String actual = computeServedAssetHashQuietly(overrideDir, path);
                 if (actual == null || !actual.equalsIgnoreCase(expectedSha256.trim())) return 0;
             }
 
             return smartVersion; // كل ملف تحقق بنجاح — يمكن الوثوق بهذه النسخة كمثبَّتة فعلياً
         } catch (Exception e) {
             return 0;
+        }
+    }
+
+    /**
+     * هاش SHA-256 للمحتوى الذي يُقدَّم فعلياً الآن لهذا المسار: نسخة override أولاً إن وُجدت،
+     * وإلا الأصل المرفق داخل assets/ بالحزمة — بنفس منطق
+     * UpdateDownloadService.computeCurrentAssetHash تمامًا (نفس مصدر الحقيقة بالضبط، حتى لا
+     * يختلف تعريف "ما الذي يُقدَّم فعلياً؟" بين خدمة التنزيل ومنطق فحص التحديث).
+     */
+    private String computeServedAssetHashQuietly(File overrideDir, String path) {
+        File overrideFile = new File(overrideDir, path);
+        if (overrideFile.isFile()) {
+            return computeSha256Quietly(overrideFile);
+        }
+        try (InputStream in = activity.getAssets().open(path)) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+            byte[] hashBytes = digest.digest();
+            StringBuilder sb = new StringBuilder(hashBytes.length * 2);
+            for (byte b : hashBytes) {
+                sb.append(String.format(Locale.US, "%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return null;
         }
     }
 
