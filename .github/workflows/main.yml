@@ -28,6 +28,12 @@ jobs:
       # الإصدار بـbuild.gradle نفسه الذي يجب أن يتغيّر بكل إصدار beliebig)؟ يقرأ الـCommit الذي
       # بُني منه آخر إصدار "latest" منشور فعلياً (نُخزّنه كحقل source_commit بـversion.json نفسه
       # منذ هذا التعديل) بدل الاعتماد على أي وسم إصدار تقليدي غير موجود أصلاً بهذا التدفّق.
+      #
+      # java_only (جديد): إشارة إضافية منفصلة تمامًا عن web_only — تساوي "true" فقط لو كان *كل*
+      # سبب إسقاط الأهلية هو تغييرات داخل app/src/main/java/ حصرًا (بلا أي تغيير أخطر بنفس الوقت
+      # بـManifest/Gradle غير رقم الإصدار/Resources/إلخ). لا تُستخدم لتغيير القرار هنا إطلاقًا —
+      # فقط تُمرَّر لخطوة لاحقة (بعد بناء الـAPK) تقارن bytecode المُترجَم الفعلي لتحديد إن كانت
+      # تغييرات Java هذه تجميلية بحتة (تعليقات/تنسيق) لا تؤثر على الكود المُترجَم إطلاقًا.
       - name: Fetch previous release's source commit
         id: prev
         run: |
@@ -43,8 +49,11 @@ jobs:
         run: |
           PREV_SHA="${{ steps.prev.outputs.sha }}"
           WEB_ONLY="false"
+          JAVA_ONLY="false"
           if [ -n "$PREV_SHA" ] && git cat-file -e "$PREV_SHA" 2>/dev/null; then
             DISQUALIFY="false"
+            JAVA_TOUCHED="false"
+            NON_JAVA_DISQUALIFY="false"
             git diff --name-only "$PREV_SHA" HEAD > /tmp/yg_changed_files.txt
             while IFS= read -r f; do
               [ -z "$f" ] && continue
@@ -57,17 +66,28 @@ jobs:
                   # الإصدار إلزامي بكل إصدار مهما كان نوعه) — أي سطر آخر بهذا الملف (اعتماديات،
                   # صلاحيات، إعدادات بناء) يُسقط الأهلية فوراً.
                   NONVER=$(git diff "$PREV_SHA" HEAD -- app/build.gradle | grep -E '^[+-]' | grep -v -E '^(\+\+\+|---)' | grep -v -E 'versionCode|versionName' || true)
-                  if [ -n "$NONVER" ]; then DISQUALIFY="true"; fi
+                  if [ -n "$NONVER" ]; then DISQUALIFY="true"; NON_JAVA_DISQUALIFY="true"; fi
+                  ;;
+                app/src/main/java/*)
+                  # كود Java/Kotlin المُترجَم — يُسقط الأهلية هنا كما دائمًا (لا تغيير بالسلوك
+                  # الحالي)، لكن نُسجِّل أن السبب "Java فقط" لعرضه على خطوة مقارنة bytecode لاحقًا.
+                  DISQUALIFY="true"
+                  JAVA_TOUCHED="true"
                   ;;
                 *)
                   DISQUALIFY="true"
+                  NON_JAVA_DISQUALIFY="true"
                   ;;
               esac
             done < /tmp/yg_changed_files.txt
             if [ "$DISQUALIFY" = "false" ]; then WEB_ONLY="true"; fi
+            if [ "$JAVA_TOUCHED" = "true" ] && [ "$NON_JAVA_DISQUALIFY" = "false" ]; then
+              JAVA_ONLY="true"
+            fi
           fi
           echo "value=$WEB_ONLY" >> "$GITHUB_OUTPUT"
-          echo "🔎 web_only_update = $WEB_ONLY (مقارنة بـ ${PREV_SHA:-'لا يوجد إصدار سابق'})"
+          echo "java_only=$JAVA_ONLY" >> "$GITHUB_OUTPUT"
+          echo "🔎 web_only_update (بالمسارات فقط) = $WEB_ONLY، مرشّح لمقارنة bytecode = $JAVA_ONLY (مقارنة بـ ${PREV_SHA:-'لا يوجد إصدار سابق'})"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -137,6 +157,58 @@ jobs:
           MANIFEST="[{\"path\":\"index.html\",\"url\":\"https://github.com/${{ github.repository }}/releases/latest/download/index.html\",\"sha256\":\"$HASH\",\"size\":$SIZE}]"
           echo "json=$MANIFEST" >> "$GITHUB_OUTPUT"
 
+      # ==================== ترقية آمنة لتصنيف "ويب فقط" عبر مقارنة bytecode فعلي ====================
+      # المشكلة التي تحلّها هذه الخطوة: التصنيف أعلاه (خطوة webonly) يعتمد على *أسماء* الملفات
+      # المتغيّرة فقط — فأي تغيير نصي داخل ملف .java، ولو تعليقًا واحدًا لا يؤثر على الكود
+      # المُترجَم إطلاقًا، يُسقط الأهلية ويفرض تحديث APK كامل. لأن المُصرِّف يحذف التعليقات
+      # والمسافات قبل توليد bytecode أصلاً، تعليق-فقط لا "يوجد" إطلاقًا بالـ classes.dex الناتج.
+      #
+      # لذلك هنا: تُشغَّل فقط لو كان السبب الوحيد لإسقاط الأهلية هو ملفات Java حصرًا
+      # (java_only=true من الخطوة أعلاه) — أي لم يتغيّر أي شيء أخطر (Manifest/Resources/Gradle
+      # غير رقم الإصدار) بنفس الوقت. عندها فقط: نُنزِّل الـ APK *السابق* المنشور، نستخرج ملفات
+      # classes*.dex من كليهما (قد تتعدد لو استُخدم Multidex)، ونقارن SHA-256 لكل ملف بالاسم
+      # نفسه. تطابق تام لكل الملفات = الكود المُترجَم لم يتغيّر إطلاقًا رغم تغيّر نص المصدر
+      # (تعليق/تنسيق فقط) → آمن تمامًا لترقيته لتحديث ذكي. أي اختلاف، أو تعذّر التنزيل/الاستخراج،
+      # أو حتى عدد ملفات dex مختلف = نبقي القرار الأصلي (Core) كما هو دون أي تغيير — اتجاه الخطأ
+      # هنا آمن دائمًا بالتصميم: أسوأ ما يحدث عند أي شك هو الإبقاء على Core (نفس السلوك الحالي)،
+      # ولا يوجد مسار واحد يمكن أن يُرقّي تحديثًا يغيّر السلوك الفعلي إلى "ذكي" بالخطأ.
+      - name: Refine web-only classification using compiled bytecode
+        id: webonlyfinal
+        run: |
+          FINAL="${{ steps.webonly.outputs.value }}"
+          if [ "$FINAL" = "false" ] && [ "${{ steps.webonly.outputs.java_only }}" = "true" ]; then
+            PREV_APK_URL="https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk"
+            if curl -fsSL -o /tmp/prev-release.apk "$PREV_APK_URL" 2>/dev/null; then
+              rm -rf /tmp/dex_old /tmp/dex_new
+              mkdir -p /tmp/dex_old /tmp/dex_new
+              unzip -oq /tmp/prev-release.apk 'classes*.dex' -d /tmp/dex_old/ 2>/dev/null || true
+              unzip -oq app/build/outputs/apk/release/app-release.apk 'classes*.dex' -d /tmp/dex_new/ 2>/dev/null || true
+              OLD_LIST=$(cd /tmp/dex_old && find . -name 'classes*.dex' 2>/dev/null | sort || true)
+              NEW_LIST=$(cd /tmp/dex_new && find . -name 'classes*.dex' 2>/dev/null | sort || true)
+              if [ -n "$OLD_LIST" ] && [ "$OLD_LIST" = "$NEW_LIST" ]; then
+                IDENTICAL="true"
+                while IFS= read -r dexfile; do
+                  [ -z "$dexfile" ] && continue
+                  OLD_HASH=$(sha256sum "/tmp/dex_old/$dexfile" | awk '{print $1}')
+                  NEW_HASH=$(sha256sum "/tmp/dex_new/$dexfile" | awk '{print $1}')
+                  if [ "$OLD_HASH" != "$NEW_HASH" ]; then IDENTICAL="false"; fi
+                done <<< "$OLD_LIST"
+                if [ "$IDENTICAL" = "true" ]; then
+                  FINAL="true"
+                  echo "✅ classes*.dex مطابق تماماً للإصدار السابق رغم تغيّر ملفات Java نصياً (على الأرجح تعليقات/تنسيق فقط) — يُصنَّف تحديثاً ذكياً بأمان."
+                else
+                  echo "⚠️ الكود المُترجَم تغيّر فعلياً بين الإصدارين — يبقى تحديث Core كما هو متوقَّع."
+                fi
+              else
+                echo "⚠️ تعذّرت مقارنة موثوقة (عدد/أسماء ملفات dex مختلفة، أو الإصدار السابق بلا dex قابل للاستخراج) — يبقى التصنيف الأكثر أماناً (Core)."
+              fi
+            else
+              echo "⚠️ تعذّر تنزيل الإصدار السابق للمقارنة — يبقى التصنيف الأكثر أماناً (Core)."
+            fi
+          fi
+          echo "value=$FINAL" >> "$GITHUB_OUTPUT"
+          echo "🔎 web_only_update النهائي (بعد مقارنة bytecode إن انطبقت) = $FINAL"
+
       - name: Generate version.json
         run: |
           cat > version.json << EOF
@@ -147,7 +219,7 @@ jobs:
             "changelog": "يتوفر إصدار جديد من تطبيق يلا گول (الإصدار ${{ steps.version.outputs.name }}). يرجى التحديث للمتابعة.",
             "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk",
             "sha256": "${{ steps.checksum.outputs.sha256 }}",
-            "web_only_update": ${{ steps.webonly.outputs.value }},
+            "web_only_update": ${{ steps.webonlyfinal.outputs.value }},
             "assets_manifest": ${{ steps.manifest.outputs.json }},
             "source_commit": "${{ github.sha }}"
           }
