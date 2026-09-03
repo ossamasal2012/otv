@@ -27,8 +27,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * المشغّل الداخلي الجديد — واجهة واحدة موحّدة تعمل فوق أحد محرّكين قابلين للتبديل عبر
- * PlaybackEngine: ExoPlaybackEngine (AndroidX Media3، الافتراضي) أو VlcPlaybackEngine (LibVLC).
+ * المشغّل الداخلي الجديد — واجهة واحدة موحّدة تعمل فوق محرّك التشغيل ExoPlaybackEngine
+ * (AndroidX Media3) عبر طبقة تجريد PlaybackEngine.
  *
  * الواجهة بالكامل مبنية برمجياً هنا (بدون أي ملف layout أو drawable من res/) عمداً: أي ملف
  * مورد جديد يحتاج إضافته يدوياً بمساره الصحيح بمشروع قائم عرضة للنسيان عند الدمج، بينما ملف
@@ -47,7 +47,6 @@ public class InternalPlayerActivity extends AppCompatActivity {
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_IS_LIVE = "extra_is_live";
     public static final String EXTRA_RESUME_KEY = "extra_resume_key";
-    public static final String EXTRA_ENGINE = "extra_engine"; // "vlc" أو غير ذلك (بما فيها فارغ) = ExoPlayer
 
     private static final long CONTROLS_AUTO_HIDE_MS = 4000L;
     private static final long TICK_INTERVAL_MS = 500L;
@@ -200,7 +199,6 @@ public class InternalPlayerActivity extends AppCompatActivity {
         String title = getIntent().getStringExtra(EXTRA_TITLE);
         isLive = getIntent().getBooleanExtra(EXTRA_IS_LIVE, false);
         resumeKey = getIntent().getStringExtra(EXTRA_RESUME_KEY);
-        String engineName = getIntent().getStringExtra(EXTRA_ENGINE);
 
         if (contentUrl == null || contentUrl.isEmpty()) {
             finish();
@@ -216,7 +214,8 @@ public class InternalPlayerActivity extends AppCompatActivity {
         rewindBtn.setVisibility(View.VISIBLE);
         forwardBtn.setVisibility(View.VISIBLE);
 
-        engine = "vlc".equals(engineName) ? new VlcPlaybackEngine() : new ExoPlaybackEngine();
+        // المحرك الوحيد المتاح الآن — لا حاجة لأي فرع اختيار
+        engine = new ExoPlaybackEngine();
         engine.initialize(getApplicationContext());
         engine.attachTo(videoContainer);
         engine.setListener(engineListener);
