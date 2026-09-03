@@ -174,12 +174,11 @@ public class WebAppInterface {
      * تفتح المشغّل الداخلي الجديد (InternalPlayerActivity) بدل تطبيق خارجي — تُستدعى فقط
      * عندما يكون "المشغل الداخلي" هو خيار التشغيل المُفعَّل حالياً بإعدادات التطبيق (القرار
      * بالكامل من طرف JS، وتصل هنا القيم جاهزة). isLive/resumeKey يحددان معاً هل يُفعَّل
-     * استئناف نقطة التوقف (فيديوهات فقط) أم لا (بث مباشر). engine: "vlc" أو أي قيمة أخرى
-     * (بما فيها فارغة) = ExoPlayer (الافتراضي).
+     * استئناف نقطة التوقف (فيديوهات فقط) أم لا (بث مباشر).
      */
     @JavascriptInterface
     public void playInternal(String token, String url, String title, boolean isLive,
-                              String resumeKey, String engine) {
+                              String resumeKey) {
         if (!isTokenValid(token) || !isUnlocked()) return;
         if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
 
@@ -190,7 +189,6 @@ public class WebAppInterface {
             intent.putExtra(InternalPlayerActivity.EXTRA_TITLE, title != null ? title : "");
             intent.putExtra(InternalPlayerActivity.EXTRA_IS_LIVE, isLive);
             intent.putExtra(InternalPlayerActivity.EXTRA_RESUME_KEY, resumeKey != null ? resumeKey : "");
-            intent.putExtra(InternalPlayerActivity.EXTRA_ENGINE, engine != null ? engine : "");
             try {
                 context.startActivity(intent);
             } catch (Exception ignored) {
@@ -200,7 +198,7 @@ public class WebAppInterface {
     }
 
     /**
-     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (VLC أو Just Player مثلاً) مثبت على
+     * تستدعى من شاشة الإعدادات لمعرفة هل تطبيق معيّن (مثل Just Player) مثبت على
      * الجهاز، لإظهار زر "تثبيت" فقط عند الحاجة.
      */
     @JavascriptInterface
