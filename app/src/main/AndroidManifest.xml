@@ -37,7 +37,7 @@
             </intent-filter>
         </activity>
 
-        <!-- المشغل الداخلي الجديد (ExoPlayer/Media3 أو LibVLC) — يُفتح فقط من داخل التطبيق
+        <!-- المشغل الداخلي الجديد (ExoPlayer/Media3) — يُفتح فقط من داخل التطبيق
              نفسه عبر WebAppInterface.playInternal، ولا يُستدعى بأي Intent خارجي إطلاقاً. -->
         <activity
             android:name=".InternalPlayerActivity"
