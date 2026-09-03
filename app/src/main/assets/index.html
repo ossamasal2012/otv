@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>يلا گـول | Yalla Goal</title>
+    <title>يلا گـــول | Yalla Goal</title>
     <link rel="preconnect" href="https://raw.githubusercontent.com" crossorigin>
     <link rel="dns-prefetch" href="https://raw.githubusercontent.com">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -443,25 +443,6 @@
             text-transform: uppercase;
             letter-spacing: 1px;
             margin: 1.25rem 0 0.75rem;
-        }
-
-        .vlc-notice {
-            background: rgba(16, 185, 129, 0.08);
-            border: 1px solid rgba(16, 185, 129, 0.3);
-            border-radius: 0.75rem;
-            padding: 1rem;
-            margin-top: 0.75rem;
-            text-align: center;
-        }
-
-        .vlc-notice.hidden { display: none !important; }
-
-        .vlc-notice p {
-            font-size: 0.75rem;
-            color: #cbd5e1;
-            font-weight: 600;
-            margin: 0 0 0.75rem;
-            line-height: 1.6;
         }
 
         .install-btn {
@@ -1469,7 +1450,7 @@
 
         // ============================================================
         //  ⚙️ الإعدادات: نوع المشغل (داخلي جديد / خارجي) + محرك المشغل الداخلي
-        //  + اختيار تطبيق المشغل الخارجي (Just Player / VLC / أي مشغل آخر)
+        //  + اختيار تطبيق المشغل الخارجي (Just Player أو أي مشغل آخر يُضاف لاحقاً)
         //  + إعداد مستقل لكل مجلد (القرآن الكريم / قصائد حسينية)
         // ============================================================
         const PLAYER_MODE_KEY = 'yalla_player_mode';
@@ -1483,7 +1464,6 @@
 
         const INTERNAL_ENGINES = [
             { id: 'exo', name: 'ExoPlayer', recommended: true },
-            { id: 'vlc', name: 'VLC' },
         ];
 
         // أُبقي على Just Player فقط كمشغّل خارجي (وحُذف خيار "أي مشغل آخر" الذي كان يعرض قائمة
@@ -1533,8 +1513,9 @@
         }
 
         function getInternalEngine() {
-            const saved = localStorage.getItem(INTERNAL_ENGINE_KEY);
-            return (saved === 'exo' || saved === 'vlc') ? saved : 'exo';
+            // exo هو المحرّك الوحيد المتاح حالياً؛ الدالة مُبقاة لتغذية قائمة الإعدادات (عنصر
+            // واحد موصى به) فقط، ولم تعد قيمتها تُرسَل لأي كود Android (راجع playInternal أدناه).
+            return 'exo';
         }
         function setInternalEngine(id) {
             localStorage.setItem(INTERNAL_ENGINE_KEY, id);
@@ -3526,7 +3507,7 @@
 
         // مسار بث ثانٍ ومستقل تماماً عن castServerToTv/castToTv أعلاه — يستخدم تطبيق
         // "Web Video Caster" الخارجي (يدعم Google Cast + DLNA، تغطية أوسع لشاشات LG/سامسونج/إلخ)
-        // عبر نفس آلية playExternal الموجودة أصلاً لـ VLC، دون أي علاقة ببروتوكول Google Cast الخاص بنا.
+        // عبر نفس آلية playExternal العامة (فتح رابط بأي تطبيق خارجي عبر اسم الحزمة)، دون أي علاقة ببروتوكول Google Cast الخاص بنا.
         function castViaWebCaster(srv, channelName) {
             if (!srv || srv.type === 'i') {
                 alert('البث غير مدعوم لهذا النوع من القنوات');
@@ -3773,7 +3754,7 @@
                 if (getPlayerMode() === 'internal'
                     && window.AndroidPlayer && typeof window.AndroidPlayer.playInternal === 'function') {
                     window.AndroidPlayer.playInternal(
-                        window.__YG_TOKEN__, finalUrl, name || 'يلا گول', isLive, resumeKey, getInternalEngine());
+                        window.__YG_TOKEN__, finalUrl, name || 'يلا گول', isLive, resumeKey);
                 } else if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
                     window.AndroidPlayer.playExternal(window.__YG_TOKEN__, finalUrl, name || 'يلا گول', getExternalPlayerPackage());
                 } else {
