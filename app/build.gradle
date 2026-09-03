@@ -8,12 +8,12 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 59
-        versionName "5.9"
+        versionCode 60
+        versionName "6.0"
 
-        // LibVLC تحديداً تضيف مكتبات native ضخمة الحجم لكل معمارية معالج؛ نقتصر على المعماريتين
-        // الشائعتين فعلياً على كل هواتف/أجهزة أندرويد الحقيقية تقريباً (armeabi-v7a/arm64-v8a)
-        // بدل تضخيم حجم التطبيق بدعم x86/x86_64 غير المستخدم فعلياً إلا في بعض المحاكيات.
+        // نقتصر على المعماريتين الشائعتين فعلياً على كل هواتف/أجهزة أندرويد الحقيقية تقريباً
+        // (armeabi-v7a/arm64-v8a) بدل تضخيم حجم التطبيق بدعم x86/x86_64 غير المستخدم فعلياً إلا
+        // في بعض المحاكيات.
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
@@ -95,12 +95,6 @@ dependencies {
     implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'
     implementation 'androidx.media3:media3-ui:1.4.1'
     implementation 'androidx.media3:media3-datasource-okhttp:1.4.1'
-
-    // محرّك 2 (بديل): LibVLC for Android 3.7.0 — أحدث إصدار مستقر منشور رسمياً على Maven
-    // Central وقت هذا التعديل. إن فشل Gradle Sync تحديداً على هذا السطر بسبب صدور إصدار
-    // أحدث لاحقاً أو سحب هذا الإصدار، راجع/حدّث الرقم من:
-    // https://mvnrepository.com/artifact/org.videolan.android/libvlc-all
-    implementation 'org.videolan.android:libvlc-all:3.7.0'
 }
 
 configurations.all {
