@@ -25,7 +25,6 @@ import androidx.webkit.WebViewCompat;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
-import java.io.File;
 import java.util.UUID;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -49,9 +48,9 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String LOCAL_URL = "file:///android_asset/index.html";
 
-    // الرابط الفعلي الذي حُمِّل فعلاً (LOCAL_URL الأصلي، أو ملف override محلي من تحديث ذكي
-    // سابق — راجع UpdateManager.resolveWebOverrideIndexFile) — يُستخدم بدل LOCAL_URL مباشرة
-    // بمقارنة onPageFinished بالأسفل حتى يعمل حقن رمز المصادقة بشكل صحيح في كلتا الحالتين.
+    // الرابط الفعلي المُحمَّل بالـ WebView — دائماً LOCAL_URL الآن (لا يوجد أي مصدر بديل بعد
+    // حذف نظام التحديث الذكي بالكامل؛ التطبيق يُحدَّث فقط عبر تثبيت APK كامل جديد). المتغيّر
+    // مُبقًى (بدل استخدام LOCAL_URL مباشرة) فقط لمقارنته بـonPageFinished بالأسفل.
     private String loadedUrl = LOCAL_URL;
 
     // يدفع عدد المستخدمين/النشطين مباشرةً للواجهة (WebView) فور تغيّرهما، بدون أي polling.
@@ -171,13 +170,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 if (!loadedUrl.equals(url)) return;
 
-                // نلفّ حقن رمز المصادقة بـtry/catch يُعيد 'OK' عند النجاح أو 'ERR:...' عند
-                // الفشل، ونراقب النتيجة فعلياً (بدل تجاهلها كما كان) — هذا يمنحنا إشارة موثوقة
-                // على أن السكربت الأساسي بالصفحة نُفِّذ بلا أخطاء فادحة. مهم تحديداً لمحتوى
-                // Override من تحديث ذكي سابق: لو كان تالفاً أو به خطأ لأي سبب، نتراجع تلقائياً
-                // وفوراً للأصل المرفق بالحزمة بدل ترك المستخدم أمام شاشة معطوبة — لا حاجة أبداً
-                // لإعادة تثبيت التطبيق أو تدخّل يدوي.
-                final boolean isOverridePage = !LOCAL_URL.equals(loadedUrl);
+                // حقن رمز المصادقة (ضروري لعمل جسر AndroidPlayer) وتشغيل التهيئة الأساسية.
                 String script = "(function(){ try {"
                         + "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false });"
                         + "checkAuth();"
@@ -185,33 +178,7 @@ public class MainActivity extends AppCompatActivity {
                         + "return 'OK';"
                         + "} catch (e) { return 'ERR:' + (e && e.message ? e.message : String(e)); } })();";
 
-                view.evaluateJavascript(script, result -> {
-                    boolean healthy = "\"OK\"".equals(result);
-                    if (!healthy && isOverridePage) {
-                        rollBackBrokenSmartUpdate();
-                    }
-                });
-            }
-
-            private void rollBackBrokenSmartUpdate() {
-                // Rollback حقيقي: يحاول أولاً استرجاع آخر نسخة محتوى كانت تعمل فعلاً قبل هذا
-                // التحديث الفاشل (web_override_backup)؛ فقط لو لم توجد نسخة backup صالحة يُستخدم
-                // الأصل المرفق بالحزمة كملاذ أخير. راجع UpdateManager.rollBackToLastGoodVersion.
-                boolean restoredBackup = UpdateManager.rollBackToLastGoodVersion(getApplicationContext());
-                File restoredIndex = restoredBackup
-                        ? UpdateManager.resolveWebOverrideIndexFile(getApplicationContext())
-                        : null;
-                loadedUrl = restoredIndex != null ? ("file://" + restoredIndex.getAbsolutePath()) : LOCAL_URL;
-                runOnUiThread(() -> {
-                    if (webView != null) {
-                        webView.loadUrl(loadedUrl);
-                    }
-                    Toast.makeText(MainActivity.this,
-                            restoredIndex != null
-                                    ? "تم الرجوع تلقائياً لآخر نسخة محتوى كانت تعمل بنجاح."
-                                    : "تم استرجاع النسخة الأصلية بسبب مشكلة بآخر تحديث للمحتوى.",
-                            Toast.LENGTH_LONG).show();
-                });
+                view.evaluateJavascript(script, result -> { /* لا حاجة لأي إجراء إضافي بالنتيجة */ });
             }
         });
 
@@ -268,11 +235,6 @@ public class MainActivity extends AppCompatActivity {
 
         webView.addJavascriptInterface(new WebAppInterface(this, castManager, bridgeToken), "AndroidPlayer");
 
-        // إن وُجد تحديث ذكي سابق صالح لملف index.html (راجع UpdateManager.resolveWebOverrideIndexFile
-        // لتفاصيل فحص "التقادم" الذاتي) نحمّله بدل الأصل المرفق بحزمة التطبيق — وإلا نحمّل الأصل
-        // كالمعتاد تماماً بلا أي تغيير بالسلوك.
-        File overrideIndex = UpdateManager.resolveWebOverrideIndexFile(getApplicationContext());
-        loadedUrl = overrideIndex != null ? ("file://" + overrideIndex.getAbsolutePath()) : LOCAL_URL;
         webView.loadUrl(loadedUrl);
 
         requestNotificationPermissionIfNeeded();
@@ -379,17 +341,6 @@ public class MainActivity extends AppCompatActivity {
         // واحد فقط: إن كانت خدمة UpdateDownloadService قد أنهت تنزيل تحديث كامل وتحقّقت منه
         // بنجاح، يُثبَّت تلقائياً الآن دون أي ضغطة إضافية من المستخدم.
         UpdateManager.checkAndInstallIfReady(this);
-    }
-
-    /**
-     * تُستدعى من UpdateManager فور نجاح تحديث ذكي بينما التطبيق مفتوح — تُعيد تحميل الصفحة فوراً
-     * من نسخة الـ override الجديدة بدل انتظار إعادة فتح التطبيق لاحقاً لرؤية الأثر.
-     */
-    void reloadWebViewForSmartUpdate() {
-        if (webView == null) return;
-        File overrideIndex = UpdateManager.resolveWebOverrideIndexFile(getApplicationContext());
-        loadedUrl = overrideIndex != null ? ("file://" + overrideIndex.getAbsolutePath()) : LOCAL_URL;
-        webView.loadUrl(loadedUrl);
     }
 
     @Override
