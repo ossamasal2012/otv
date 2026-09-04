@@ -26,13 +26,11 @@ import android.widget.Toast;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -40,20 +38,16 @@ import java.security.MessageDigest;
 import java.util.Locale;
 
 /**
- * نظام تحديث OTA بوضعين قابلين للاختيار من الإعدادات:
+ * نظام تحديث OTA — تحديث كامل فقط: أي إصدار جديد (يُكتشف عبر رفع versionCode في
+ * app/build.gradle، والذي يُقارَن مباشرة برقم الإصدار الحقيقي المثبَّت على الجهاز عبر
+ * PackageManager) يعني تنزيل وتثبيت ملف APK كامل جديد. لا يوجد أي مسار "تحديث ذكي"/محتوى فقط
+ * بأي شكل — أُزيل بالكامل عمداً (راجع تقرير حذف نظام التحديث الذكي المرفق لتفاصيل السبب
+ * والقرار)، فلا وجود لأي مجلد override، ولا أي ملف يُستبدَل بمعزل عن الـAPK نفسه.
  *
- *  - "ذكي" (المُفضَّل والافتراضي): يقتصر التنزيل على ملفات واجهة الويب (index.html وما شابهها
- *    مستقبلاً) التي تغيّرت فعلياً منذ آخر إصدار — حجم تنزيل أصغر بكثير. متاح فقط عندما يُصرِّح
- *    الإصدار البعيد نفسه (عبر version.json) أن هذا الإصدار "ويب فقط" (لا تغييرات بكود
- *    Java/Kotlin المُترجَم، الذي لا يمكن تحديثه إطلاقاً إلا عبر تثبيت APK كامل — قيد تقني لا
- *    يمكن تجاوزه أبداً)؛ إن لم يكن متاحاً، يتراجع تلقائياً وبصمت لوضع التحديث الكامل.
- *  - "كامل": تثبيت APK جديد بالكامل (الآلية الأصلية، دون تغيير بمنطقها).
- *
- * التنزيل الفعلي (لأي من الوضعين) لم يعد يحدث هنا إطلاقاً — بل بمعرفة UpdateDownloadService
- * (خدمة Foreground حقيقية تستمر بالعمل حتى لو أُغلق التطبيق كلياً، وتُظهر تقدّمها بشريط
- * الإشعارات). هذا الملف الآن مسؤول فقط عن: فحص version.json، عرض حوارات "تحديث متوفر"/
- * "تعذر التحديث"، بدء الخدمة، ومتابعة تقدّمها اللحظي عبر UpdateProgressBus بينما التطبيق
- * بالمقدمة (حوار التقدّم البرمجي نفسه بلا أي تغيير بشكله).
+ * التنزيل الفعلي لا يحدث هنا إطلاقاً — بل بمعرفة UpdateDownloadService (خدمة Foreground حقيقية
+ * تستمر بالعمل حتى لو أُغلق التطبيق كلياً، وتُظهر تقدّمها بشريط الإشعارات). هذا الملف مسؤول فقط
+ * عن: فحص version.json، عرض حوارات "تحديث متوفر"/"تعذر التحديث"، بدء الخدمة، ومتابعة تقدّمها
+ * اللحظي عبر UpdateProgressBus بينما التطبيق بالمقدمة.
  */
 public class UpdateManager {
 
@@ -69,31 +63,8 @@ public class UpdateManager {
     // ==================== تفضيلات وعلامات مشتركة مع UpdateDownloadService وMainActivity ====================
 
     static final String PREFS_NAME = "yg_update_prefs";
-    static final String PREF_UPDATE_MODE = "update_mode";
-    static final String PREF_SMART_VERSION_CODE = "smart_update_version_code";
-    // نسخة الـ"تحديث الذكي" السابقة المحفوظة كـ backup حقيقي قبل تفعيل نسخة جديدة (راجع
-    // UpdateDownloadService.markSmartUpdateBackup وUpdateManager.rollBackToLastGoodVersion) —
-    // تتيح Rollback حقيقي لآخر نسخة كانت تعمل فعلاً، بدل القفز مباشرة للأصل المرفق بالحزمة.
-    static final String PREF_SMART_VERSION_CODE_BACKUP = "smart_update_version_code_backup";
     static final String PREF_READY_APK_VERSION_CODE = "ready_apk_version_code";
     static final String PREF_READY_APK_SHA256 = "ready_apk_sha256";
-
-    static final String MODE_SMART = "smart";
-    static final String MODE_FULL = "full";
-
-    /** التفضيل الحالي المحفوظ ("smart" أو "full") — الافتراضي "smart" كما طلب المستخدم. */
-    static String getUpdatePreference(Context context) {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(PREF_UPDATE_MODE, MODE_SMART);
-    }
-
-    /** تُستدعى من WebAppInterface عند تغيير المستخدم لطريقة التحديث بشاشة الإعدادات (JS). */
-    static void setUpdatePreference(Context context, String mode) {
-        String normalized = MODE_FULL.equals(mode) ? MODE_FULL : MODE_SMART;
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                .putString(PREF_UPDATE_MODE, normalized)
-                .apply();
-    }
 
     private Activity activity;
 
@@ -106,8 +77,6 @@ public class UpdateManager {
     private String pendingSha256 = "";
     private int pendingVersionCode = 0;
     private boolean pendingForce = true;
-    private boolean pendingWebOnlyUpdate = false;
-    private String pendingAssetsManifestJson = "";
 
     private volatile boolean isDownloading = false;
 
@@ -135,11 +104,9 @@ public class UpdateManager {
                     showErrorDialog(message);
                     return;
                 }
-                if (readyToInstall) {
-                    installApk(activity, getDestFile());
-                } else {
-                    showSmartUpdateSuccessDialog(message);
-                }
+                // تحديث كامل دائماً الآن: النجاح يعني APK جاهز ومُتحقَّق منه على القرص، فوراً
+                // للتثبيت (readyToInstall صحيح دوماً بهذا المسار — راجع UpdateDownloadService).
+                installApk(activity, getDestFile());
             });
         }
     };
@@ -172,46 +139,19 @@ public class UpdateManager {
                 String sha256 = json.optString("sha256", "");
                 boolean force = json.optBoolean("force_update", true);
 
-                // حقلان اختياريان جديدان لدعم "التحديث الذكي" — غيابهما (أي إصدار version.json
-                // قديم لم يُحدَّث بعد لدعم هذه الميزة) يعني ببساطة عدم توفّر الوضع الذكي لهذا
-                // الإصدار تحديداً، فيتراجع الوضع تلقائياً وبصمت لتحديث كامل — توافق كامل للخلف.
-                boolean webOnly = json.optBoolean("web_only_update", false);
-                JSONArray manifestArr = json.optJSONArray("assets_manifest");
-                String manifestJson = manifestArr != null ? manifestArr.toString() : "";
-
                 int localVersionCode = getLocalVersionCode();
 
-                // ===== إصلاح مشكلة "ظهور نفس التحديث مرة ثانية بعد نجاحه" من جذورها =====
-                // localVersionCode (من PackageManager) هو رقم الـAPK الحقيقي المثبَّت، ولا يتغيّر
-                // أبداً بتحديث ذكي (محتوى فقط) — قيد Android نفسه، وليس نقصاً بالتنفيذ. فلو قارنّا
-                // remoteVersionCode بـlocalVersionCode وحدها، تبقى المقارنة "أحدث" صحيحة إلى الأبد
-                // بعد أي تحديث ذكي ناجح — حتى لو كان المحتوى الفعلي على الجهاز مطابقاً تماماً لما
-                // يعلنه السيرفر — وهذا كان بالضبط السبب البرمجي المباشر للمشكلة.
-                //
-                // الحل: نحسب effectiveInstalledVersionCode الذي يضيف آخر تحديث ذكي تم تفعيله
-                // *وتحقّقت ملفاته الآن فعلياً* من نسخة الـAPK الخام. لا نثق بعلامة SharedPreferences
-                // (PREF_SMART_VERSION_CODE) بمجرّدها أبداً — راجع getVerifiedSmartVersionCode: تتحقق
-                // من SHA-256 لكل ملف فعلي على القرص مقابل هذا المانيفست البعيد نفسه قبل الوثوق بها.
-                int effectiveInstalledVersionCode = localVersionCode;
-                if (webOnly && !manifestJson.isEmpty()) {
-                    int verifiedSmartVersion = getVerifiedSmartVersionCode(manifestJson, remoteVersionCode);
-                    if (verifiedSmartVersion > effectiveInstalledVersionCode) {
-                        effectiveInstalledVersionCode = verifiedSmartVersion;
-                    }
-                }
-
-                // نفس شرط منع الـ Downgrade الأصلي، لكن مقارَناً الآن بالنسخة الفعّالة الحقيقية
-                // (الأعلى بين نسخة الـAPK ونسخة المحتوى الذكي المُتحقَّق منها فعلياً) بدل نسخة
-                // الـAPK الخام فقط.
-                if (remoteVersionCode > effectiveInstalledVersionCode) {
+                // منع الـ Downgrade: لا تحديث إطلاقاً إن لم يكن الإصدار البعيد أحدث فعلياً من
+                // النسخة الحقيقية المثبَّتة على الجهاز (PackageManager) — مقارنة مباشرة وموثوقة
+                // تماماً بما أن التحديث الوحيد الممكن الآن هو تثبيت APK فعلي، الذي يغيّر هذا
+                // الرقم نفسه فور نجاحه، فلا وجود لأي حالة قد تُظهر نفس التحديث مرتين.
+                if (remoteVersionCode > localVersionCode) {
                     pendingVersionName = remoteVersionName;
                     pendingChangelog = changelog;
                     pendingDownloadUrl = downloadUrl;
                     pendingSha256 = sha256;
                     pendingVersionCode = remoteVersionCode;
                     pendingForce = force;
-                    pendingWebOnlyUpdate = webOnly;
-                    pendingAssetsManifestJson = manifestJson;
                     showDialogOnUiThread();
                 }
             } catch (Exception e) {
@@ -235,84 +175,6 @@ public class UpdateManager {
             }
         } catch (Exception e) {
             return 0;
-        }
-    }
-
-    /**
-     * يتحقق مما إذا كانت آخر نسخة "تحديث ذكي" مُسجَّلة فعلياً (PREF_SMART_VERSION_CODE) تطابق
-     * تماماً نسخة المانيفست البعيد الحالي (remoteVersionCode) *و* أن المحتوى المُقدَّم فعلياً
-     * الآن لكل مسار بهذا المانيفست (نسخة override إن وُجدت، وإلا الأصل المرفق بالحزمة — بنفس
-     * منطق UpdateDownloadService.computeCurrentAssetHash بالضبط) يطابق SHA-256 المتوقَّع — بدل
-     * الوثوق بعلامة SharedPreferences مجرّدة. يُعيد رقم النسخة نفسه (> 0) فقط لو نجح كل تحقق؛
-     * وإلا يُعيد 0.
-     *
-     * ملاحظة حاسمة (سبب إصلاح لاحق): لا يجوز اشتراط وجود مجلد web_override دائماً — فحين تكون
-     * كل ملفات المانيفست مطابقة أصلاً لما هو مُقدَّم حالياً (مثال: رفع versionCode فقط بلا تغيير
-     * محتوى فعلي)، UpdateDownloadService.runSmartUpdate لا ينشئ web_override إطلاقاً (لا حاجة
-     * لنسخة override ما دام الأصل بالحزمة مطابقاً تماماً) رغم تسجيله PREF_SMART_VERSION_CODE
-     * بنجاح — فالتحقق هنا يجب أن يتبع نفس منطق "override إن وُجد، وإلا الأصل بالحزمة" حرفياً،
-     * لا أن يرفض بمجرد غياب المجلد.
-     *
-     * ملاحظة أخرى: فشل التحقق هنا لا يمسح PREF_SMART_VERSION_CODE تلقائياً — فقط يجعلنا لا نثق
-     * بها *لهذه المقارنة تحديداً*. الحذف الفعلي لملفات override معطوبة مسؤولية MainActivity عند
-     * فشل تحميل الصفحة فعلياً بالـWebView (رولباك حقيقي)، حفاظاً على مبدأ "لا تُحذف نسخة قد تكون
-     * سليمة فعلاً بسبب فحص متشائم واحد هنا" (مثلاً أثناء انقطاع I/O عابر).
-     */
-    private int getVerifiedSmartVersionCode(String manifestJson, int remoteVersionCode) {
-        try {
-            SharedPreferences prefs = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            int smartVersion = prefs.getInt(PREF_SMART_VERSION_CODE, 0);
-            // نتحقق فقط عندما تساوي النسخة الذكية المسجَّلة نسخة المانيفست البعيد الحالي بالضبط:
-            // فقط عندها نملك هاشات موثوقة (من هذا المانيفست نفسه) لمقارنة المحتوى الفعلي بها.
-            if (smartVersion <= 0 || smartVersion != remoteVersionCode) return 0;
-
-            JSONArray arr = new JSONArray(manifestJson);
-            if (arr.length() == 0) return 0;
-
-            File overrideDir = new File(activity.getFilesDir(), "web_override");
-
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject obj = arr.getJSONObject(i);
-                String path = obj.optString("path", "");
-                String expectedSha256 = obj.optString("sha256", "");
-                if (path.isEmpty() || expectedSha256.isEmpty() || path.contains("..")) return 0;
-
-                String actual = computeServedAssetHashQuietly(overrideDir, path);
-                if (actual == null || !actual.equalsIgnoreCase(expectedSha256.trim())) return 0;
-            }
-
-            return smartVersion; // كل ملف تحقق بنجاح — يمكن الوثوق بهذه النسخة كمثبَّتة فعلياً
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    /**
-     * هاش SHA-256 للمحتوى الذي يُقدَّم فعلياً الآن لهذا المسار: نسخة override أولاً إن وُجدت،
-     * وإلا الأصل المرفق داخل assets/ بالحزمة — بنفس منطق
-     * UpdateDownloadService.computeCurrentAssetHash تمامًا (نفس مصدر الحقيقة بالضبط، حتى لا
-     * يختلف تعريف "ما الذي يُقدَّم فعلياً؟" بين خدمة التنزيل ومنطق فحص التحديث).
-     */
-    private String computeServedAssetHashQuietly(File overrideDir, String path) {
-        File overrideFile = new File(overrideDir, path);
-        if (overrideFile.isFile()) {
-            return computeSha256Quietly(overrideFile);
-        }
-        try (InputStream in = activity.getAssets().open(path)) {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                digest.update(buffer, 0, read);
-            }
-            byte[] hashBytes = digest.digest();
-            StringBuilder sb = new StringBuilder(hashBytes.length * 2);
-            for (byte b : hashBytes) {
-                sb.append(String.format(Locale.US, "%02x", b));
-            }
-            return sb.toString();
-        } catch (Exception e) {
-            return null;
         }
     }
 
@@ -417,17 +279,6 @@ public class UpdateManager {
 
         root.addView(row, rowParams);
 
-        // إشارة صغيرة لتوضيح أي وضع تحديث يعمل حالياً — شفافية للمستخدم بلا إغراقه بالتفاصيل
-        boolean useSmart = MODE_SMART.equals(getUpdatePreference(activity)) && isSmartModeAvailable();
-        TextView modeHint = new TextView(activity);
-        modeHint.setText(useSmart ? "تحديث ذكي — حجم تنزيل أصغر" : "تحديث كامل");
-        modeHint.setTextColor(Color.parseColor("#64748B"));
-        modeHint.setTextSize(11);
-        LinearLayout.LayoutParams hintParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        hintParams.topMargin = dp(14);
-        root.addView(modeHint, hintParams);
-
         return root;
     }
 
@@ -502,31 +353,18 @@ public class UpdateManager {
 
     // ==================== بدء التنزيل (عبر UpdateDownloadService) ====================
 
-    private boolean isSmartModeAvailable() {
-        return pendingWebOnlyUpdate && pendingAssetsManifestJson != null && !pendingAssetsManifestJson.isEmpty();
-    }
-
     private void beginDownloadFlow() {
         if (isDownloading || !isActivityUsable()) return;
         isDownloading = true;
         showProgressDialog();
-
-        boolean useSmartMode = MODE_SMART.equals(getUpdatePreference(activity)) && isSmartModeAvailable();
 
         UpdateProgressBus.setListener(progressListener);
 
         Intent serviceIntent = new Intent(activity, UpdateDownloadService.class);
         serviceIntent.putExtra(UpdateDownloadService.EXTRA_VERSION_CODE, pendingVersionCode);
         serviceIntent.putExtra(UpdateDownloadService.EXTRA_VERSION_NAME, pendingVersionName);
-
-        if (useSmartMode) {
-            serviceIntent.putExtra(UpdateDownloadService.EXTRA_MODE, UpdateDownloadService.MODE_SMART);
-            serviceIntent.putExtra(UpdateDownloadService.EXTRA_MANIFEST_JSON, pendingAssetsManifestJson);
-        } else {
-            serviceIntent.putExtra(UpdateDownloadService.EXTRA_MODE, UpdateDownloadService.MODE_FULL);
-            serviceIntent.putExtra(UpdateDownloadService.EXTRA_DOWNLOAD_URL, pendingDownloadUrl);
-            serviceIntent.putExtra(UpdateDownloadService.EXTRA_SHA256, pendingSha256);
-        }
+        serviceIntent.putExtra(UpdateDownloadService.EXTRA_DOWNLOAD_URL, pendingDownloadUrl);
+        serviceIntent.putExtra(UpdateDownloadService.EXTRA_SHA256, pendingSha256);
 
         try {
             ContextCompat.startForegroundService(activity, serviceIntent);
@@ -578,21 +416,6 @@ public class UpdateManager {
         }
 
         dialog.show();
-    }
-
-    private void showSmartUpdateSuccessDialog(String message) {
-        if (!isActivityUsable()) return;
-        new AlertDialog.Builder(activity)
-                .setTitle("تم التحديث")
-                .setMessage((message != null ? message : "تم تحديث محتوى التطبيق.") + "\n\nسيتم تطبيق التحديث الآن.")
-                .setCancelable(true)
-                .setPositiveButton("حسناً", (dialog, which) -> {
-                    dialog.dismiss();
-                    if (activity instanceof MainActivity) {
-                        ((MainActivity) activity).reloadWebViewForSmartUpdate();
-                    }
-                })
-                .show();
     }
 
     // ==================== التثبيت (تُستدعى من التدفّق الحيّ، ومن MainActivity عند العودة للتطبيق) ====================
@@ -670,102 +493,6 @@ public class UpdateManager {
             installApk(activity, apkFile);
         } catch (Exception ignored) {
         }
-    }
-
-    /**
-     * يُستدعى من MainActivity قبل تحميل الصفحة الرئيسية: هل توجد نسخة override محلية صالحة
-     * (من تحديث ذكي سابق) لملف index.html يجب استخدامها بدل الأصل المرفق بحزمة التطبيق؟
-     * يتضمّن فحص "تقادم" ذاتي: لو صار الإصدار المثبَّت فعلياً (تحديث كامل جديد، أو حتى إعادة
-     * تثبيت يدوي) أحدث من (أو يساوي) آخر تحديث ذكي مُسجَّل، تُحذف نسخة الـ override القديمة
-     * تلقائياً ويُعاد استخدام الأصل المرفق مباشرة (الذي بات مضموناً أحدث أو مساوياً لها).
-     */
-    static File resolveWebOverrideIndexFile(Context context) {
-        try {
-            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            int smartVersion = prefs.getInt(PREF_SMART_VERSION_CODE, 0);
-            if (smartVersion <= 0) return null;
-
-            int realVersionCode = getLocalVersionCode(context);
-            File overrideDir = new File(context.getFilesDir(), "web_override");
-
-            if (realVersionCode >= smartVersion) {
-                deleteRecursivelyStatic(overrideDir);
-                prefs.edit().remove(PREF_SMART_VERSION_CODE).apply();
-                return null;
-            }
-
-            File indexFile = new File(overrideDir, "index.html");
-            return indexFile.exists() ? indexFile : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * تُستدعى من MainActivity عند فشل "فحص السلامة" لصفحة override (تحديث ذكي سابق) — تمسح
-     * نسخة الـoverride كاملة وعلامتها فوراً، فيعود التطبيق للأصل المرفق بالحزمة بأمان تام
-     * بأي تشغيل قادم (أو فوراً، إذ يُعيد MainActivity تحميل الصفحة مباشرة بعد هذا الاستدعاء).
-     */
-    public static void clearWebOverride(Context context) {
-        try {
-            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            File overrideDir = new File(context.getFilesDir(), "web_override");
-            deleteRecursivelyStatic(overrideDir);
-            prefs.edit().remove(PREF_SMART_VERSION_CODE).apply();
-        } catch (Exception ignored) {
-        }
-    }
-
-    /**
-     * Rollback حقيقي (وليس مجرد Fallback): تُستدعى من MainActivity عند فشل "فحص السلامة" لصفحة
-     * override بعد تفعيل تحديث ذكي جديد مباشرة. تحاول أولاً استرجاع آخر نسخة محتوى كانت مُفعَّلة
-     * فعلياً *قبل* هذا التحديث الفاشل (web_override_backup — يحتفظ بها UpdateDownloadService
-     * تلقائياً قبل كل تفعيل جديد، راجع markSmartUpdateBackup هناك)، بدل القفز مباشرة للأصل
-     * المرفق بالحزمة. فقط لو لم توجد نسخة backup أصلاً (أو تعذّر استرجاعها بأمان) يُستخدم الأصل
-     * المرفق كملاذ أخير — بالضبط الفرق المطلوب بين "Rollback حقيقي" و"Fallback" فقط.
-     *
-     * @return true لو استُرجعت نسخة backup فعلية وأصبحت هي الـactive الجديدة، أو false لو تم
-     *         اللجوء مباشرة للأصل المرفق بالحزمة (وعندها مُسحت كل علامات التحديث الذكي).
-     */
-    public static boolean rollBackToLastGoodVersion(Context context) {
-        try {
-            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            File overrideDir = new File(context.getFilesDir(), "web_override");
-            File backupDir = new File(context.getFilesDir(), "web_override_backup");
-
-            // النسخة الجديدة الفاشلة يجب ألا تبقى active بأي حال — تُحذف أولاً دائماً.
-            deleteRecursivelyStatic(overrideDir);
-
-            int backupVersion = prefs.getInt(PREF_SMART_VERSION_CODE_BACKUP, 0);
-            if (backupDir.isDirectory() && backupVersion > 0 && backupDir.renameTo(overrideDir)) {
-                prefs.edit()
-                        .putInt(PREF_SMART_VERSION_CODE, backupVersion)
-                        .remove(PREF_SMART_VERSION_CODE_BACKUP)
-                        .apply();
-                return true;
-            }
-
-            // لا توجد نسخة backup موثوقة (غير موجودة، أو بلا رقم إصدار مسجَّل، أو تعذّر نقلها) —
-            // لا نثق بأي بقايا محتملة، ونعود للأصل المرفق بالحزمة كملاذ أخير آمن.
-            deleteRecursivelyStatic(overrideDir);
-            deleteRecursivelyStatic(backupDir);
-            prefs.edit().remove(PREF_SMART_VERSION_CODE).remove(PREF_SMART_VERSION_CODE_BACKUP).apply();
-            return false;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private static void deleteRecursivelyStatic(File dir) {
-        if (dir == null || !dir.exists()) return;
-        File[] children = dir.listFiles();
-        if (children != null) {
-            for (File child : children) {
-                if (child.isDirectory()) deleteRecursivelyStatic(child);
-                else child.delete();
-            }
-        }
-        dir.delete();
     }
 
     private static String computeSha256Quietly(File file) {
