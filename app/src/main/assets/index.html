@@ -1290,9 +1290,6 @@
                 <p class="settings-section-title">اختر المشغل الخارجي</p>
                 <div id="externalPlayerList"></div>
             </div>
-
-            <p class="settings-section-title">طريقة التحديث</p>
-            <div id="updateModeList"></div>
         </div>
     </div>
 
@@ -1473,36 +1470,6 @@
             { id: 'just', name: 'Just Player', pkg: 'com.brouken.player', recommended: true },
         ];
 
-        // طريقة تحديث التطبيق: "ذكي" يقتصر على تنزيل ملفات واجهة الويب التي تغيّرت فعلياً منذ
-        // آخر إصدار (حجم أصغر بكثير)، و"كامل" يُثبِّت نسخة APK جديدة كاملة كما كان دائماً. القيمة
-        // هنا JS-side فقط للعرض؛ الجهة الفعلية المُقرِّرة والمُنفِّذة هي UpdateManager بكود Java
-        // (راجع setUpdateMode أدناه لكيفية مزامنة الاختيار لها فوراً).
-        const UPDATE_MODE_KEY = 'yalla_update_mode';
-        const UPDATE_MODES = [
-            { id: 'smart', name: 'تحديث ذكي (حجم أصغر)', recommended: true },
-            { id: 'full', name: 'تحديث كامل' },
-        ];
-
-        function getUpdateMode() {
-            const saved = localStorage.getItem(UPDATE_MODE_KEY);
-            return (saved === 'smart' || saved === 'full') ? saved : 'smart';
-        }
-
-        function setUpdateMode(id) {
-            localStorage.setItem(UPDATE_MODE_KEY, id);
-            // نُزامن الاختيار فوراً لمخزن تفضيلات Android نفسه (وليس فقط localStorage الخاص
-            // بـWebView) لأن UpdateManager بكود Java يقرأه مباشرة عند فحص/بدء أي تحديث لاحقاً،
-            // بلا حاجة لأي استعلام غير متزامن تجاه JavaScript بتلك اللحظة.
-            if (window.AndroidPlayer && window.AndroidPlayer.setUpdatePreference && window.__YG_TOKEN__) {
-                try { window.AndroidPlayer.setUpdatePreference(window.__YG_TOKEN__, id); } catch (e) {}
-            }
-            renderUpdateModeList();
-        }
-
-        function renderUpdateModeList() {
-            renderSimpleChoiceList('updateModeList', UPDATE_MODES, getUpdateMode(), 'updateMode', setUpdateMode);
-        }
-
         function getPlayerMode() {
             const saved = localStorage.getItem(PLAYER_MODE_KEY);
             return (saved === 'internal' || saved === 'external') ? saved : 'internal';
@@ -1668,7 +1635,6 @@
 
         function openSettings() {
             renderPlayerSettingsSections();
-            renderUpdateModeList();
             document.getElementById('settingsScreen').classList.remove('hidden');
         }
 
