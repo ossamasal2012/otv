@@ -44,6 +44,9 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle assembleRelease --no-daemon --stacktrace
 
+      - name: Rename release APK to YallaGoal.apk
+        run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/YallaGoal.apk
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -54,7 +57,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: YallaGoal-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/YallaGoal.apk
 
       - name: Extract version info
         id: version
@@ -70,7 +73,7 @@ jobs:
       - name: Compute release APK SHA-256
         id: checksum
         run: |
-          HASH=$(sha256sum app/build/outputs/apk/release/app-release.apk | awk '{print $1}')
+          HASH=$(sha256sum app/build/outputs/apk/release/YallaGoal.apk | awk '{print $1}')
           echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
 
       - name: Generate version.json
@@ -81,7 +84,7 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "force_update": true,
             "changelog": "يتوفر إصدار جديد من تطبيق يلا گول (الإصدار ${{ steps.version.outputs.name }}). يرجى التحديث للمتابعة.",
-            "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/app-release.apk",
+            "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/YallaGoal.apk",
             "sha256": "${{ steps.checksum.outputs.sha256 }}"
           }
           EOF
@@ -94,5 +97,5 @@ jobs:
           body: "بناء تلقائي - الإصدار ${{ steps.version.outputs.name }}"
           make_latest: true
           files: |
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/YallaGoal.apk
             version.json
