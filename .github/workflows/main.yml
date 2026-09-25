@@ -32,11 +32,47 @@ jobs:
         with:
           gradle-version: 8.7
 
+      # ==========================================================================================
+      # 🔒 حماية واجهة التطبيق (index.html) — راجع README_SECURITY.md
+      #  الـ APK هو ملف ZIP؛ بدون هذه الخطوات كان أي شخص يفتحه ويقرأ assets/index.html كاملاً.
+      #  ما يحدث الآن: (1) تصغير الواجهة وحذف كل تعليقاتها، (2) تشفيرها بـ AES-256-GCM بمفتاح
+      #  مرتبط بشهادة توقيع التطبيق الرسمية، (3) حذف النسخة المقروءة من حزمة release، (4) فحص
+      #  نهائي يُفشل البناء إن وُجد أي أثر للنسخة المقروءة داخل الـ APK.
+      # ==========================================================================================
+      - name: Set up Node.js (for web asset protection)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install asset-protection tools (pinned versions)
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund \
+            --prefix "$RUNNER_TEMP/yg-tools" terser@5.51.2 clean-css@5.3.3
+          echo "NODE_PATH=$RUNNER_TEMP/yg-tools/node_modules" >> "$GITHUB_ENV"
+
+      - name: Minify web UI (strip comments, minify JS/CSS)
+        run: node scripts/protect-assets.js minify app/src/main/assets/index.html
+
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Decode release keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+
+      - name: Encrypt web UI into the release package (remove readable copy)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          node scripts/protect-assets.js encrypt \
+            --in app/src/main/assets/index.html \
+            --out app/src/main/assets/yg.dat \
+            --vault app/src/main/java/com/yallagoal/app/AssetVault.java \
+            --keystore app/release.keystore \
+            --alias "$KEY_ALIAS"
+          rm -f app/src/main/assets/index.html
+          echo "assets folder now contains:"
+          ls -la app/src/main/assets
 
       - name: Build release APK (signed)
         env:
@@ -44,7 +80,33 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease --no-daemon --stacktrace
+        run: |
+          if ! gradle assembleRelease --no-daemon --stacktrace; then
+            echo "::warning title=R8 fallback::assembleRelease failed with code obfuscation (R8). Retrying WITHOUT R8 so the build is not blocked. The UI encryption is still active. Please send the log of the first attempt to get the missing keep-rule added."
+            echo "### ⚠️ R8 fallback used — this release APK is NOT code-obfuscated" >> "$GITHUB_STEP_SUMMARY"
+            gradle assembleRelease --no-daemon --stacktrace -PygMinify=false
+          fi
+
+      - name: Verify release APK does not contain the readable UI
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          test -f "$APK" || { echo "::error::release APK not found"; exit 1; }
+          LIST=$(unzip -l "$APK")
+          echo "assets inside the release APK:"
+          grep 'assets/' <<< "$LIST" || true
+          if grep -q 'assets/index.html' <<< "$LIST"; then
+            echo "::error::assets/index.html (readable UI) is still inside the release APK — aborting."
+            exit 1
+          fi
+          if ! grep -q 'assets/yg.dat' <<< "$LIST"; then
+            echo "::error::assets/yg.dat (encrypted UI) is missing from the release APK — aborting."
+            exit 1
+          fi
+          echo "OK: the release APK holds only the encrypted UI."
+
+      - name: Remove release keystore from the runner
+        if: always()
+        run: rm -f app/release.keystore
 
       - name: Rename release APK to YallaGoal.apk
         run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/YallaGoal.apk
@@ -78,6 +140,9 @@ jobs:
           HASH=$(sha256sum app/build/outputs/apk/release/YallaGoal.apk | awk '{print $1}')
           echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
 
+      # 🔒 (اختياري) نشر الإصدارات في مستودع عام منفصل يحوي الـ APK فقط، ليبقى مستودع الكود الرئيسي
+      # خاصاً (Private). بدون ضبط المتغيّر RELEASES_REPO يُنشر في هذا المستودع كما كان تماماً.
+      # التفاصيل والخطوات: README_SECURITY.md ← "فصل مستودع الإصدارات".
       - name: Generate version.json
         run: |
           cat > version.json << EOF
@@ -86,7 +151,7 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "force_update": true,
             "changelog": "يتوفر إصدار جديد من تطبيق يلا گول (الإصدار ${{ steps.version.outputs.name }}). يرجى التحديث للمتابعة.",
-            "download_url": "https://github.com/${{ github.repository }}/releases/latest/download/YallaGoal.apk",
+            "download_url": "https://github.com/${{ vars.RELEASES_REPO || github.repository }}/releases/latest/download/YallaGoal.apk",
             "sha256": "${{ steps.checksum.outputs.sha256 }}"
           }
           EOF
@@ -94,6 +159,8 @@ jobs:
       - name: Publish rolling "latest" release (used by the in-app update checker)
         uses: softprops/action-gh-release@v2
         with:
+          repository: ${{ vars.RELEASES_REPO || github.repository }}
+          token: ${{ secrets.RELEASES_TOKEN || github.token }}
           tag_name: latest
           name: "Latest build (v${{ steps.version.outputs.name }})"
           body: "بناء تلقائي - الإصدار ${{ steps.version.outputs.name }}"
