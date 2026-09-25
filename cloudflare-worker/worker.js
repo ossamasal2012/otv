@@ -45,9 +45,21 @@ function isValidDeviceId(deviceId) {
       && /^[a-zA-Z0-9_-]+$/.test(deviceId);
 }
 
+// مقارنة زمن-ثابت (constant-time) بدل === العادية: === تتوقف عند أول بايت مختلف، فقد يستنتج
+// مهاجم يراقب زمن الاستجابة عبر آلاف المحاولات السر حرفاً حرفاً (هجوم توقيت/timing attack).
+// النمط هنا هو نفسه الموصى به رسمياً من Cloudflare (crypto.subtle.timingSafeEqual):
+// https://developers.cloudflare.com/workers/examples/protect-against-timing-attacks/
 function isAuthorized(request, env) {
+  if (!env.YG_SHARED_SECRET) return false;
   const provided = request.headers.get('X-YG-Secret') || '';
-  return Boolean(env.YG_SHARED_SECRET) && provided === env.YG_SHARED_SECRET;
+  const encoder = new TextEncoder();
+  const a = encoder.encode(provided);
+  const b = encoder.encode(env.YG_SHARED_SECRET);
+  // لا نُرجع مباشرةً عند اختلاف الطول (قد يسرّب طول السر عبر التوقيت) — نقارن a بنفسها بدلاً
+  // من ذلك (تُعطي true دوماً) ثم ننفي النتيجة، فتبقى كل الحالات بنفس شكل العملية تقريباً.
+  const sameLength = a.byteLength === b.byteLength;
+  const equal = sameLength ? crypto.subtle.timingSafeEqual(a, b) : !crypto.subtle.timingSafeEqual(a, a);
+  return equal;
 }
 
 function json(data, status = 200) {
