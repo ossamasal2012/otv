@@ -26,6 +26,8 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -52,6 +54,32 @@ public class MainActivity extends AppCompatActivity {
     // حذف نظام التحديث الذكي بالكامل؛ التطبيق يُحدَّث فقط عبر تثبيت APK كامل جديد). المتغيّر
     // مُبقًى (بدل استخدام LOCAL_URL مباشرة) فقط لمقارنته بـonPageFinished بالأسفل.
     private String loadedUrl = LOCAL_URL;
+
+    // true فقط بين استدعاء loadDataWithBaseURL (واجهة مشفّرة مفكوكة بالذاكرة) وأول onPageFinished
+    // بعده — شبكة أمان تضمن حقن رمز الجسر حتى لو أبلغ WebView عن رابط غير متوقع لهذه الصفحة.
+    private boolean awaitingVaultPage = false;
+
+    // شبكة أمان لـ localStorage: صفحة محمّلة من الذاكرة (loadDataWithBaseURL) قد ترفض بعض إصدارات
+    // WebView الوصول لـ localStorage؛ هذا السكربت يفحص ذلك أول ما تبدأ الصفحة، وإن فشل يستبدلها
+    // بتخزين مؤقت بالذاكرة كي لا يتعطّل التطبيق بالكامل (الحالة الطبيعية: لا يفعل أي شيء).
+    private static final String STORAGE_GUARD =
+            "<script>(function(){try{var k='__yg_t__';localStorage.setItem(k,'1');localStorage.removeItem(k);}"
+            + "catch(e){try{var m={};Object.defineProperty(window,'localStorage',{configurable:true,value:{"
+            + "getItem:function(k){return Object.prototype.hasOwnProperty.call(m,k)?m[k]:null},"
+            + "setItem:function(k,v){m[k]=String(v)},removeItem:function(k){delete m[k]},clear:function(){m={}},"
+            + "key:function(i){return Object.keys(m)[i]||null},"
+            + "get length(){return Object.keys(m).length}}});}catch(e2){}}})();</script>";
+
+    // تظهر بدل التطبيق إذا وُجدت واجهة مشفّرة داخل الحزمة وتعذّر فكّها (نسخة مُعاد توقيعها/معدّلة).
+    private static final String TAMPER_HTML =
+            "<!DOCTYPE html><html lang='ar' dir='rtl'><head><meta charset='utf-8'>"
+            + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            + "<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+            + "background:#0b1220;color:#e2e8f0;font-family:sans-serif;text-align:center;padding:24px;box-sizing:border-box}"
+            + "h1{font-size:20px;margin:0 0 12px;color:#f87171}p{font-size:15px;line-height:1.9;margin:0;color:#94a3b8}"
+            + "</style></head><body><div><h1>نسخة غير رسمية من التطبيق</h1>"
+            + "<p>تعذّر التحقق من سلامة هذه النسخة (قد تكون معدَّلة أو غير مكتملة).<br>"
+            + "يرجى حذفها وتثبيت النسخة الرسمية من المصدر الأصلي.</p></div></body></html>";
 
     // يدفع عدد المستخدمين/النشطين مباشرةً للواجهة (WebView) فور تغيّرهما، بدون أي polling.
     private UserStatsManager.StatsListener statsListener;
@@ -168,7 +196,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                if (!loadedUrl.equals(url)) return;
+                boolean isMainPage = loadedUrl.equals(url)
+                        || (awaitingVaultPage && url != null && url.startsWith("data:"));
+                if (!isMainPage) return;
+                awaitingVaultPage = false;
 
                 // حقن رمز المصادقة (ضروري لعمل جسر AndroidPlayer) وتشغيل التهيئة الأساسية.
                 String script = "(function(){ try {"
@@ -235,7 +266,10 @@ public class MainActivity extends AppCompatActivity {
 
         webView.addJavascriptInterface(new WebAppInterface(this, castManager, bridgeToken), "AndroidPlayer");
 
-        webView.loadUrl(loadedUrl);
+        if (!loadUi()) {
+            // نسخة معدَّلة/مُعاد توقيعها: نعرض رسالة فقط ولا نُكمل أي تهيئة (إشعارات/إحصائيات/تحديث).
+            return;
+        }
 
         requestNotificationPermissionIfNeeded();
 
@@ -244,6 +278,42 @@ public class MainActivity extends AppCompatActivity {
         new UpdateManager().checkForUpdate(this);
 
         startLiveStatsUpdates();
+    }
+
+    /**
+     * يحمّل واجهة التطبيق.
+     *  - البناء الرسمي: الواجهة مشفّرة داخل الحزمة (assets/yg.dat) وتُفكّ بالذاكرة فقط، فلا يوجد
+     *    index.html مقروء داخل الـ APK (راجع AssetVault.java و README_SECURITY.md).
+     *  - بناء التطوير المحلي (لا يوجد ملف مشفّر): تُحمَّل index.html العادية كما كان دائماً.
+     *
+     * @return false إذا كانت الحزمة تحوي واجهة مشفّرة تعذّر فكّها (توقيع مختلف أو تلاعب) — عندها
+     *         تُعرض رسالة "نسخة غير رسمية" ويُوقَف باقي التهيئة.
+     */
+    private boolean loadUi() {
+        if (!AssetVault.exists(this)) {
+            webView.loadUrl(loadedUrl);
+            return true;
+        }
+        try {
+            String html = injectAfterHead(AssetVault.decryptHtml(this), STORAGE_GUARD);
+            awaitingVaultPage = true;
+            // base = history = LOCAL_URL ⇒ نفس المصدر (file://) ونفس تخزين الصفحة السابق تماماً.
+            webView.loadDataWithBaseURL(LOCAL_URL, html, "text/html", "UTF-8", LOCAL_URL);
+            return true;
+        } catch (Exception e) {
+            awaitingVaultPage = false;
+            webView.loadDataWithBaseURL(null, TAMPER_HTML, "text/html", "UTF-8", null);
+            return false;
+        }
+    }
+
+    /** يدرج snippet مباشرةً بعد وسم {@code <head>} (وليس قبل DOCTYPE كي لا يدخل المتصفح وضع quirks). */
+    private static String injectAfterHead(String html, String snippet) {
+        Matcher m = Pattern.compile("<head[^>]*>", Pattern.CASE_INSENSITIVE).matcher(html);
+        if (m.find()) {
+            return html.substring(0, m.end()) + snippet + html.substring(m.end());
+        }
+        return html;
     }
 
     /**
