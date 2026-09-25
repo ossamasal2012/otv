@@ -975,6 +975,57 @@
             z-index: 2;
         }
 
+        /* ==============================================================
+           🟩 نظام عرض القنوات بالأيقونات (الإعدادات ← طريقة عرض القنوات)
+           بطاقة/شبكة Xtream نفسها (مربعة معقولة الحجم 92px، بلاسحولدر أبيض
+           موحّد عند فشل الشعار) — فقط تمييز اسم القناة + شارة السيرفرات
+           وزر المفضلة الخاصّين بهذه البطاقة تحديداً.
+           ============================================================== */
+        .channel-card-caption {
+            font-size: 0.74rem;
+            font-weight: 800;
+            color: #e2e8f0;
+            min-height: 2.05em;
+        }
+        .group:hover .channel-card-caption { color: #34d399; }
+
+        .channel-card-fav-btn {
+            position: absolute;
+            top: 6px;
+            inset-inline-start: 6px;
+            z-index: 3;
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 999px;
+            background: rgba(2, 6, 23, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            padding: 0;
+        }
+        .channel-card-fav-btn i { font-size: 11px; color: #cbd5e1; }
+        .channel-card-fav-btn i.fa-solid { color: #f59e0b; }
+
+        .channel-card-server-badge {
+            position: absolute;
+            top: 6px;
+            inset-inline-end: 6px;
+            z-index: 2;
+            background: rgba(2, 6, 23, 0.82);
+            border: 1px solid rgba(16, 185, 129, 0.5);
+            color: #34d399;
+            font-size: 0.6rem;
+            font-weight: 800;
+            padding: 2px 6px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            z-index: 2;
+        }
+
         /* ===== حالات تحميل هيكلية (Skeleton) لشبكات البطاقات ===== */
         .xtream-skeleton-media {
             position: relative;
@@ -1278,6 +1329,9 @@
                 </div>
             </div>
 
+            <p class="settings-section-title">طريقة عرض القنوات</p>
+            <div id="channelDisplayModeList"></div>
+
             <p class="settings-section-title">نوع التشغيل</p>
             <div id="playerModeList"></div>
 
@@ -1453,6 +1507,8 @@
         const PLAYER_MODE_KEY = 'yalla_player_mode';
         const INTERNAL_ENGINE_KEY = 'yalla_internal_engine';
         const EXTERNAL_PLAYER_APP_KEY = 'yalla_external_player_app';
+        // طريقة عرض القنوات (شاشة الإعدادات ← "طريقة عرض القنوات"): أيقونات مربعة أو نص فقط.
+        const CHANNEL_DISPLAY_MODE_KEY = 'yalla_channel_display_mode';
 
         const PLAYER_MODES = [
             { id: 'internal', name: 'المشغل الداخلي (جديد)', recommended: true },
@@ -1468,6 +1524,12 @@
         // بـJust Player بفضل فحص getExternalPlayerApp() أدناه (stillValid) دون أي كود إضافي.
         const EXTERNAL_PLAYERS = [
             { id: 'just', name: 'Just Player', pkg: 'com.brouken.player', recommended: true },
+        ];
+
+        // نظام الأيقونات هو الافتراضي (أول تشغيل للتطبيق بلا أي تفضيل محفوظ ⇒ 'icons' بالأسفل).
+        const CHANNEL_DISPLAY_MODES = [
+            { id: 'icons', name: 'نظام الأيقونات', recommended: true },
+            { id: 'text', name: 'نظام النص' },
         ];
 
         function getPlayerMode() {
@@ -1503,6 +1565,19 @@
         function getExternalPlayerPackage() {
             const app = EXTERNAL_PLAYERS.find(p => p.id === getExternalPlayerApp());
             return app ? app.pkg : '';
+        }
+
+        function getChannelDisplayMode() {
+            const saved = localStorage.getItem(CHANNEL_DISPLAY_MODE_KEY);
+            return (saved === 'icons' || saved === 'text') ? saved : 'icons';
+        }
+
+        function setChannelDisplayMode(id) {
+            localStorage.setItem(CHANNEL_DISPLAY_MODE_KEY, id);
+            renderChannelDisplayModeList();
+            // يُعيد رسم شاشة القنوات فوراً (حتى إن كانت شاشة الإعدادات مفتوحة فوقها) كي يرى
+            // المستخدم النظام الجديد مباشرة بمجرد إغلاق الإعدادات، بلا أي خطوة إضافية منه.
+            repaintCurrentScreen();
         }
 
         // عارض قوائم اختيار بسيطة بنمط بصري مطابق تماماً لقائمة المشغلات الخارجية (بدون منطق
@@ -1547,6 +1622,10 @@
 
         function renderInternalEngineList() {
             renderSimpleChoiceList('internalEngineList', INTERNAL_ENGINES, getInternalEngine(), 'internalEngine', setInternalEngine);
+        }
+
+        function renderChannelDisplayModeList() {
+            renderSimpleChoiceList('channelDisplayModeList', CHANNEL_DISPLAY_MODES, getChannelDisplayMode(), 'channelDisplayMode', setChannelDisplayMode);
         }
 
         // يُعيد رسم الأقسام الثلاثة معاً، ويُظهر قسم "محرك المشغل الداخلي" أو "اختر المشغل
@@ -1634,6 +1713,7 @@
         }
 
         function openSettings() {
+            renderChannelDisplayModeList();
             renderPlayerSettingsSections();
             document.getElementById('settingsScreen').classList.remove('hidden');
         }
@@ -1834,6 +1914,9 @@
                         return {
                             name: ch.n.trim(),
                             category: (ch.c || 'غير مصنف').toString().trim(),
+                            // اختياري تماماً: قناة بلا "logo" (أو برابط فارغ) تعرض بديلها التلقائي
+                            // (خلفية بيضاء + اسم القناة) في نظام عرض الأيقونات دون أي مشكلة.
+                            logo: (typeof ch.logo === 'string' && ch.logo.trim() !== '') ? ch.logo.trim() : '',
                             servers
                         };
                     })
@@ -1960,6 +2043,26 @@
                 </div>`;
             };
 
+            // بطاقة "نظام الأيقونات" (شاشة الإعدادات ← طريقة عرض القنوات) — تُعيد استخدام نفس
+            // شبكة/بطاقة Xtream (مربعة، حجم معقول 92px، ونفس الـ Placeholder الأبيض الموحّد عند
+            // فشل الشعار) حفاظاً على اتساق بصري تام مع بقية التطبيق. راجع xtreamMediaHtml أدناه.
+            const generateMainChannelIconCardHtml = (ch) => {
+                const isFav = favorites.includes(ch.name);
+                const idx = myChannels.indexOf(ch);
+                const serverBadge = ch.servers.length > 1
+                    ? `<span class="channel-card-server-badge"><i class="fa-solid fa-server"></i> ${ch.servers.length}</span>` : '';
+                const favBtn = `
+                    <button onclick="toggleFavorite(event, '${escAttr(ch.name)}')" class="channel-card-fav-btn" title="مفضلة">
+                        <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular'}"></i>
+                    </button>`;
+                const media = xtreamMediaHtml(ch.logo, ch.name, 'xtream-card-media--square', serverBadge + favBtn);
+                return `
+                <div onclick="openChannel(${idx}, this)" class="channel-item xtream-card channel-card group">
+                    ${media}
+                    <div class="xtream-card-caption channel-card-caption" title="${escAttr(ch.name)}">${escHtml(ch.name)}</div>
+                </div>`;
+            };
+
             if (currentTab === "quran") {
                 const filteredQuran = quranChannels.filter(c => normalizeArabic(c[0]).includes(normalizedQuery));
                 htmlContent += `
@@ -2054,7 +2157,13 @@
                 htmlContent += favFolders.map(ch => generateChannelHTML(ch)).join('');
             }
 
-            htmlContent += filteredMain.map(ch => generateMainChannelHTML(ch)).join('');
+            if (getChannelDisplayMode() === 'icons') {
+                htmlContent += filteredMain.length
+                    ? `<div class="xtream-grid xtream-grid--channels channel-icon-grid">${filteredMain.map(ch => generateMainChannelIconCardHtml(ch)).join('')}</div>`
+                    : '';
+            } else {
+                htmlContent += filteredMain.map(ch => generateMainChannelHTML(ch)).join('');
+            }
             box.innerHTML = htmlContent;
         }
 
