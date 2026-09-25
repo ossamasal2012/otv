@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 محول ملفات M3U8 إلى صيغة JSON لتطبيق يلا گول
-استخدم: python3 m3u8_to_json.py input.m3u8 output.json "اسم القناة" "التصنيف"
+استخدم: python3 m3u8_to_json.py input.m3u8 output.json "اسم القناة" "التصنيف" ["رابط الشعار"]
+(رابط الشعار اختياري تماماً)
 """
 
 import sys
@@ -42,7 +43,7 @@ def parse_m3u8(content, base_url=""):
     
     return channels
 
-def m3u8_to_yalla_json(m3u8_content, channel_name, category, base_url=""):
+def m3u8_to_yalla_json(m3u8_content, channel_name, category, logo="", base_url=""):
     """تحويل M3U8 إلى صيغة تطبيق يلا گول"""
     streams = parse_m3u8(m3u8_content, base_url)
     
@@ -64,26 +65,31 @@ def m3u8_to_yalla_json(m3u8_content, channel_name, category, base_url=""):
     
     return {
         "n": channel_name,
+        # اختياري بالكامل: رابط شعار القناة (نظام الأيقونات بالتطبيق). فارغ = يظهر بديل تلقائي
+        # (خلفية بيضاء + اسم القناة) بدل الشعار، بدون أي مشكلة في تشغيل القناة نفسها.
+        "logo": logo,
         "c": category,
         "s": servers
     }
 
 def main():
     if len(sys.argv) < 4:
-        print("الاستخدام: python3 m3u8_to_json.py <ملف_المدخل.m3u8> <ملف_المخرج.json> <اسم_القناة> <التصنيف>")
+        print("الاستخدام: python3 m3u8_to_json.py <ملف_المدخل.m3u8> <ملف_المخرج.json> <اسم_القناة> <التصنيف> [رابط_الشعار]")
         print("مثال: python3 m3u8_to_json.py alwan1.m3u8 output.json \"الوان سبورت 1\" \"رياضة إضافي\"")
+        print("مثال مع شعار: python3 m3u8_to_json.py alwan1.m3u8 output.json \"الوان سبورت 1\" \"رياضة إضافي\" \"https://example.com/logo.png\"")
         sys.exit(1)
     
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     channel_name = sys.argv[3]
     category = sys.argv[4] if len(sys.argv) > 4 else "عام"
+    logo = sys.argv[5] if len(sys.argv) > 5 else ""
     
     try:
         with open(input_file, 'r', encoding='utf-8') as f:
             m3u8_content = f.read()
         
-        result = m3u8_to_yalla_json(m3u8_content, channel_name, category)
+        result = m3u8_to_yalla_json(m3u8_content, channel_name, category, logo)
         
         if not result:
             print("❌ لم يتم العثور على أي روابط في الملف")
@@ -96,6 +102,7 @@ def main():
         print(f"✅ تم التحويل بنجاح!")
         print(f"📺 القناة: {channel_name}")
         print(f"📂 التصنيف: {category}")
+        print(f"🖼️  الشعار: {logo if logo else '(بدون شعار — سيظهر بديل تلقائي)'}")
         print(f"🔗 عدد السيرفرات: {len(result['s'])}")
         print(f"💾 الملف المحفوظ: {output_file}")
         print("\n📋 المحتوى:")
