@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+// true افتراضياً؛ يصبح false فقط عند تمرير -PygMinify=false (انظر buildTypes.release).
+def ygMinify = (project.findProperty('ygMinify') != 'false')
+
 android {
     namespace 'com.yallagoal.app'
     compileSdk 34
@@ -8,8 +11,8 @@ android {
         applicationId "com.yallagoal.app"
         minSdk 23
         targetSdk 34
-        versionCode 61
-        versionName "6.1"
+        versionCode 62
+        versionName "6.2"
 
         // نقتصر على المعماريتين الشائعتين فعلياً على كل هواتف/أجهزة أندرويد الحقيقية تقريباً
         // (armeabi-v7a/arm64-v8a) بدل تضخيم حجم التطبيق بدعم x86/x86_64 غير المستخدم فعلياً إلا
@@ -37,8 +40,14 @@ android {
             debuggable true
         }
         release {
-            minifyEnabled false
+            // 🔒 تصغير + تشويش الكود (R8): يُعيد تسمية كل كلاسات/دوال التطبيق إلى رموز بلا معنى ويحذف
+            // الكود غير المستخدم ورسائل السجل، فلا يجد من يفكّ الـ APK بأدوات مثل jadx/apktool شيفرة
+            // مقروءة. القواعد في app/proguard-rules.pro (أهمها إبقاء دوال جسر JavaScript).
+            // مفتاح طوارئ فقط: gradle assembleRelease -PygMinify=false يعطّل R8 مؤقتاً (يستخدمه
+            // الـ workflow تلقائياً كخطة بديلة إن فشل R8 لسبب غير متوقع، مع تحذير ظاهر).
+            minifyEnabled ygMinify
             shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
     }
