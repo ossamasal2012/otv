@@ -65,7 +65,48 @@ public final class UserStatsManager {
     // لا حاجة لإعادة نشر أي binding جديد، نفس الـ Worker والمعرّفات المستخدمة سابقاً).
     // ============================================================================
     private static final String ACTIVE_STATS_BASE_URL = "https://yallagoal-active-users.ossamasal2012.workers.dev";
-    private static final String ACTIVE_STATS_SHARED_SECRET = "CehBJ9onRc16htCkWyMBnCMbM5vFqQ2zHfn8qtWlUW0";
+
+    // ---- السر المشترك مع Cloudflare Worker (ترويسة X-YG-Secret) --------------------------------------
+    // لم يعد نصاً صريحاً داخل الحزمة: يُخزَّن موزَّعاً على ثلاث مصفوفات ويُعاد تركيبه لحظة الاستخدام
+    // فقط (sharedSecret()). هذا يُفشل البحث النصي/strings/أدوات المسح الآلي ويُلغي وجود السر كسلسلة
+    // جاهزة داخل classes.dex، لكنه لا يمنع مهندساً عكسياً متمرّساً تماماً (لا شيء يعمل على جهاز
+    // المستخدم يمكن أن يخفي سراً إخفاءً مطلقاً) — لذا يُنصح بتدوير السر دورياً؛ راجع README_SECURITY.md.
+    // القيمة الفعلية لم تتغيّر ⇒ لا حاجة لأي تعديل على الـ Worker الآن.
+    private static final int[] SA = {
+            0xf4, 0xd3, 0x1f, 0x99, 0x7f, 0xe6, 0x54, 0x88,
+            0x3b, 0x73, 0xe0, 0x56, 0xe6, 0x50, 0xa6, 0x6f,
+            0x57, 0xd2, 0x79, 0x23, 0xfa, 0xd1, 0xae, 0x8f,
+            0x49, 0x41, 0x2f, 0x7a, 0xb7, 0xf9, 0x0f, 0xf8,
+            0x5a, 0x4f, 0xb3, 0x43, 0x03, 0xcb, 0x5e, 0x0d,
+            0x38, 0xd5, 0x5e
+    };
+
+    private static final int[] SB = {
+            0x7b, 0xf5, 0x5c, 0x2b, 0x53, 0xae, 0xed, 0x12,
+            0x30, 0xe9, 0x4e, 0x32, 0x61, 0x07, 0xfd, 0x99,
+            0xa1, 0xcc, 0x71, 0xf4, 0x69, 0x6b, 0x7b, 0xc0,
+            0xa8, 0x74, 0x04, 0x68, 0xac, 0x38, 0x8a, 0x56,
+            0x4a, 0x6b, 0x19, 0xe6, 0x62, 0xe9, 0x8d, 0x5f,
+            0xe0, 0x51, 0xa0
+    };
+
+    private static final int[] SC = {
+            0x42, 0x5b, 0x45, 0x7a, 0x5e, 0xdb, 0x6d, 0x84,
+            0x38, 0x3b, 0xe1, 0x67, 0xff, 0xe4, 0x49, 0x6f,
+            0x8d, 0xd0, 0x9a, 0x2f, 0x0d, 0xfb, 0x97, 0x67,
+            0xe2, 0x94, 0x05, 0x2e, 0xa7, 0x64, 0x46, 0xea,
+            0x58, 0xc0, 0x7d, 0x28, 0x9b, 0x42, 0xfd, 0xc9,
+            0x55, 0x9b, 0x31
+    };
+
+    private static String sharedSecret() {
+        final int n = SA.length;
+        final byte[] out = new byte[n];
+        for (int i = 0; i < n; i++) {
+            out[i] = (byte) (SA[i] ^ SB[(i * 5 + 1) % n] ^ SC[i]);
+        }
+        return new String(out, StandardCharsets.UTF_8);
+    }
 
     // نبضة تطبيقية خفيفة كل 15 ثانية تبقي الخادم يعرف أن هذا الاتصال لا يزال حياً فعلاً —
     // أساس اكتشاف الانقطاع المفاجئ خلال وقت قصير ومضبوط (راجع alarm() بملف worker.js).
@@ -220,7 +261,7 @@ public final class UserStatsManager {
         try {
             request = new Request.Builder()
                     .url(wsUrl)
-                    .addHeader("X-YG-Secret", ACTIVE_STATS_SHARED_SECRET)
+                    .addHeader("X-YG-Secret", sharedSecret())
                     .build();
         } catch (Exception e) {
             Log.w(TAG, "رابط خادم الإحصائيات غير صالح: " + e.getMessage());
