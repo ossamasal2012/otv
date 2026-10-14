@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.net.http.SslError;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Message;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -88,8 +89,23 @@ public class MainActivity extends AppCompatActivity {
     // iframe بملء الشاشة — تجعل زر الرجوع يخرج من الـ iframe فقط بدل إغلاق التطبيق بالكامل.
     private volatile boolean isIframeOpen = false;
 
+    // مانع إعلانات قنوات iframe (انظر IframeAdBlocker): لا يعمل إلا أثناء جلسة قناة iframe.
+    private IframeAdBlocker adBlocker;
+
     public void setIframeOpen(boolean open) {
         isIframeOpen = open;
+        // مسار قديم لا يحمل رابط القناة: نفعّل الحماية الهيكلية فقط (بلا استثناء نفس-الموقع).
+        if (adBlocker != null) {
+            if (open) adBlocker.startSession(null); else adBlocker.endSession();
+        }
+    }
+
+    /** مثل setIframeOpen مع رابط صفحة القناة؛ يُستدعى من WebAppInterface.notifyIframeSession. */
+    public void onIframeSession(boolean open, String url) {
+        isIframeOpen = open;
+        if (adBlocker != null) {
+            if (open) adBlocker.startSession(url); else adBlocker.endSession();
+        }
     }
 
     // تُحدَّث من الصفحة (JS) عبر WebAppInterface.notifyNavDepth() كلما تغيّر عمق مكدس التنقّل
@@ -164,17 +180,49 @@ public class MainActivity extends AppCompatActivity {
         final String bridgeToken = UUID.randomUUID().toString();
 
         imageCacheInterceptor = new ImageCacheInterceptor(getApplicationContext());
+        adBlocker = new IframeAdBlocker(webView);
 
         webView.setWebViewClient(new WebViewClient() {
+            // API 23 فقط (لا يوجد WebResourceRequest): السلوك السابق كما هو، إلا أثناء جلسة قناة
+            // iframe فتُلغى وجهات نطاقات الإعلانات المعروفة.
             @Override
             @SuppressWarnings("deprecation")
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                if (adBlocker != null && adBlocker.shouldCancelNavigationLegacy(url)) return true;
                 view.loadUrl(url);
+                return true;
+            }
+
+            // API 24+: كان يُنفَّذ سابقاً view.loadUrl(url) لأي تنقّل مهما كان مصدره — فإن اختطف
+            // إعلان داخل iframe الصفحة العليا (أو نقر على المشغّل فتح تحويلاً) حُمّلت صفحة الإعلان
+            // مكان واجهة التطبيق بالكامل. الآن، أثناء جلسة قناة iframe فقط: تنقّل الإطار الرئيسي
+            // يُلغى (التطبيق لا يتنقّل بنفسه حينها)، وتنقّل الإطار الفرعي يكمل داخله إلا وجهات
+            // الإعلانات المعروفة. خارج الجلسة: السلوك السابق حرفياً.
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (adBlocker != null && adBlocker.isActive()) {
+                    if (request.isForMainFrame()) {
+                        if (adBlocker.shouldCancelMainFrameNavigation()) return true;
+                    } else {
+                        return adBlocker.shouldCancelSubframeNavigation(request.getUrl().toString());
+                    }
+                }
+                view.loadUrl(request.getUrl().toString());
                 return true;
             }
 
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                // مانع إعلانات iframe أولاً (يعمل فقط أثناء جلسة قناة iframe) وقبل كاش الصور حتى لا
+                // تُجلب صور الإعلانات المحجوبة وتُخزَّن في كاش التطبيق.
+                try {
+                    if (adBlocker != null) {
+                        WebResourceResponse blocked = adBlocker.maybeBlock(request);
+                        if (blocked != null) return blocked;
+                    }
+                } catch (Exception ignored) {
+                    // أي عطل بالمانع لا يجب أن يكسر تحميل أي مورد إطلاقاً.
+                }
                 try {
                     if (imageCacheInterceptor != null && imageCacheInterceptor.shouldHandle(request)) {
                         WebResourceResponse cached = imageCacheInterceptor.intercept(request);
@@ -201,6 +249,11 @@ public class MainActivity extends AppCompatActivity {
                 if (!isMainPage) return;
                 awaitingVaultPage = false;
 
+                // أُعيد تحميل صفحة التطبيق الرئيسية ⇒ لا يمكن أن يكون هناك iframe مفتوح الآن، فننهي أي
+                // جلسة مانع إعلانات عالقة (كي لا يبقى أي إعداد في WebView مُعدَّلاً بلا سبب).
+                isIframeOpen = false;
+                if (adBlocker != null) adBlocker.endSession();
+
                 // حقن رمز المصادقة (ضروري لعمل جسر AndroidPlayer) وتشغيل التهيئة الأساسية.
                 String script = "(function(){ try {"
                         + "Object.defineProperty(window, '__YG_TOKEN__', { value: '" + bridgeToken + "', writable: false, configurable: false });"
@@ -214,6 +267,14 @@ public class MainActivity extends AppCompatActivity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            // لا نفتح نافذة جديدة فعلية أبداً. أثناء جلسة قناة iframe تُبتلع النافذة المنبثقة
+            // (IframeAdBlocker.onCreateWindow)، وخارجها لا نصل إلى هنا أصلاً لأن دعم النوافذ
+            // المتعددة لا يُفعَّل إلا خلال الجلسة، فيبقى سلوك باقي التطبيق كما كان.
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                return adBlocker != null && adBlocker.onCreateWindow(view, resultMsg);
+            }
+
             @Override
             public void onShowCustomView(View view, CustomViewCallback callback) {
                 if (customView != null) {
@@ -419,6 +480,9 @@ public class MainActivity extends AppCompatActivity {
             try {
                 UserStatsManager.getInstance(this).removeListener(statsListener);
             } catch (Exception ignored) {}
+        }
+        if (adBlocker != null) {
+            adBlocker.shutdown();
         }
         if (webView != null) {
             webView.destroy();
