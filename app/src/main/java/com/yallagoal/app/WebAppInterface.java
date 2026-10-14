@@ -179,6 +179,22 @@ public class WebAppInterface {
     @JavascriptInterface
     public void playInternal(String token, String url, String title, boolean isLive,
                               String resumeKey) {
+        launchInternalPlayer(token, url, title, isLive, resumeKey, null);
+    }
+
+    /**
+     * مثل playInternal تماماً مع رابط API لتجديد رابط البث تلقائياً عند انتهاء صلاحيته (قنوات
+     * «الرابط المتجدد» فقط). اسم مستقل لا Overload لأن جسر JavascriptInterface لا يدعم تعدد
+     * الدوال بنفس الاسم؛ والصفحة تستدعيه فقط إن وُجد (انظر playChannel في index.html).
+     */
+    @JavascriptInterface
+    public void playInternalWithRefresh(String token, String url, String title, boolean isLive,
+                                         String resumeKey, String refreshApiUrl) {
+        launchInternalPlayer(token, url, title, isLive, resumeKey, refreshApiUrl);
+    }
+
+    private void launchInternalPlayer(String token, String url, String title, boolean isLive,
+                                      String resumeKey, String refreshApiUrl) {
         if (!isTokenValid(token) || !isUnlocked()) return;
         if (url == null || url.isEmpty() || !(context instanceof Activity)) return;
 
@@ -189,6 +205,9 @@ public class WebAppInterface {
             intent.putExtra(InternalPlayerActivity.EXTRA_TITLE, title != null ? title : "");
             intent.putExtra(InternalPlayerActivity.EXTRA_IS_LIVE, isLive);
             intent.putExtra(InternalPlayerActivity.EXTRA_RESUME_KEY, resumeKey != null ? resumeKey : "");
+            if (refreshApiUrl != null && (refreshApiUrl.startsWith("https://") || refreshApiUrl.startsWith("http://"))) {
+                intent.putExtra(InternalPlayerActivity.EXTRA_REFRESH_URL, refreshApiUrl);
+            }
             try {
                 context.startActivity(intent);
             } catch (Exception ignored) {
@@ -260,6 +279,20 @@ public class WebAppInterface {
         if (!isTokenValid(token)) return;
         if (context instanceof MainActivity) {
             ((MainActivity) context).setIframeOpen(isOpen);
+        }
+    }
+
+    /**
+     * نسخة أغنى من notifyIframeState: تُمرِّر أيضاً رابط صفحة قناة iframe، وهي ما يفعّل مانع
+     * الإعلانات المخصّص لقنوات iframe فقط (IframeAdBlocker) طوال مدة جلسة هذه القناة ويُعطّله عند
+     * إغلاقها. الصفحة تنادي هذه الدالة قبل إنشاء الـ iframe وعند إغلاقه، وتعود لـ notifyIframeState
+     * إن لم تكن هذه الدالة موجودة. الرمز السري يمنع صفحات iframe الخارجية من استدعائها.
+     */
+    @JavascriptInterface
+    public void notifyIframeSession(String token, boolean isOpen, String url) {
+        if (!isTokenValid(token)) return;
+        if (context instanceof MainActivity) {
+            ((MainActivity) context).onIframeSession(isOpen, url);
         }
     }
 
