@@ -3393,6 +3393,24 @@
              repaintCurrentScreen(); 
          }
 
+        /**
+         * يُبلغ أندرويد ببدء/انتهاء «جلسة قناة iframe». هذه الجلسة هي ما يفعّل مانع الإعلانات الأصلي
+         * (IframeAdBlocker) طوال مدة القناة ويعطّله عند إغلاقها — فلا يتأثر أي قسم آخر بالتطبيق.
+         * تفضّل الدالة الجديدة notifyIframeSession (تمرّر رابط القناة)، وتعود للقديمة notifyIframeState
+         * إن لم تكن موجودة. آمنة للاستدعاء خارج أندرويد (لا تفعل شيئاً).
+         */
+        function ygNotifyIframeSession(isOpen, url) {
+            try {
+                const bridge = window.AndroidPlayer;
+                if (!bridge || !window.__YG_TOKEN__) return;
+                if (typeof bridge.notifyIframeSession === 'function') {
+                    bridge.notifyIframeSession(window.__YG_TOKEN__, isOpen, url || '');
+                } else if (typeof bridge.notifyIframeState === 'function') {
+                    bridge.notifyIframeState(isOpen, window.__YG_TOKEN__);
+                }
+            } catch (e) { /* تجاهل — منصة غير أندرويد أو الجسر غير متوفر */ }
+        }
+
         function cleanup() {
             const oldIframe = document.getElementById('iPlayer');
             if (oldIframe) {
@@ -3412,12 +3430,7 @@
             // iframe مفتوح أصلاً.
             if (window.__ygIsIframeOpen) {
                 window.__ygIsIframeOpen = false;
-                try {
-                    if (window.AndroidPlayer && window.__YG_TOKEN__
-                        && typeof window.AndroidPlayer.notifyIframeState === 'function') {
-                        window.AndroidPlayer.notifyIframeState(false, window.__YG_TOKEN__);
-                    }
-                } catch (e) { /* تجاهل */ }
+                ygNotifyIframeSession(false, '');
             }
         }
 
@@ -3763,15 +3776,15 @@
                 iframe.setAttribute('allow',
                     'accelerometer; autoplay; clipboard-write; encrypted-media; fullscreen; ' +
                     'gyroscope; picture-in-picture; web-share');
-                // sandbox أوسع قليلاً من قبل: أضفنا allow-popups (بعض صفحات القنوات تفتح نافذة
-                // إعلان أولاً كجزء طبيعي من تشغيلها ولا تُكمل التنفيذ إن مُنعت بصمت)،
-                // allow-popups-to-escape-sandbox، allow-presentation، وallow-top-navigation-by-user-activation
-                // (فقط بلمسة مستخدم فعلية، وليس تلقائياً) لتوافق أفضل مع صفحات iframe الخارجية —
-                // بينما نُبقي allow-top-navigation غير المقيّد خارج القائمة عمداً حتى لا تستطيع أي
-                // قناة الاستيلاء على تنقّل WebView الرئيسي للتطبيق كاملاً.
+                // sandbox: نُبقي allow-popups عمداً — بعض صفحات القنوات تفتح نافذة إعلان أولاً كجزء
+                // طبيعي من تشغيلها ولا تُكمل التنفيذ إن مُنعت بصمت (window.open تُرجع null). النوافذ
+                // نفسها «تُبتلع» من الجانب الأصلي (IframeAdBlocker.onCreateWindow): الصفحة تنال
+                // نافذة وهمية ولا يظهر شيء للمستخدم. أما allow-top-navigation-by-user-activation
+                // فحُذف: كان يسمح بنقرة واحدة على المشغّل (غالباً طبقة إعلان شفافة) أن تنقل الصفحة
+                // العليا — أي واجهة التطبيق كاملةً — إلى صفحة إعلان. وحُذف allow-popups-to-escape-sandbox
+                // كي تبقى أي نافذة تفلت من الابتلاع مقيَّدة بنفس sandbox بدل أن تنال صلاحيات كاملة.
                 iframe.setAttribute('sandbox',
-                    'allow-scripts allow-same-origin allow-forms allow-popups ' +
-                    'allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation');
+                    'allow-scripts allow-same-origin allow-forms allow-popups allow-presentation');
                 // لا نفرض إخفاء الترويسة نهائياً (no-referrer) بعد الآن: بعض مصادر القنوات تتحقق من
                 // الـReferer وتُظهر إطاراً أسود بدل الفيديو الفعلي إن وصل فارغاً بالكامل. نترك
                 // المتصفح يستخدم سياسته الافتراضية (تعادل عملياً عدم إرسال أي Referer أصلاً بما أن
@@ -3801,19 +3814,16 @@
                     showLoadError('تعذر تحميل مصدر هذه القناة (iframe). حاول اختيار سيرفر آخر يدوياً.');
                 };
 
+                // نُبلغ أندرويد ببدء جلسة قناة iframe *قبل* إلحاق الإطار بالصفحة (لا بعده) حتى يكون
+                // مانع الإعلانات فعّالاً منذ أول طلب يصدر من الإطار.
+                window.__ygIsIframeOpen = true;
+                ygNotifyIframeSession(true, finalUrl);
+
                 document.getElementById('mainPlayerArea').appendChild(iframe);
                 currentIframeFallbackTimer = setTimeout(() => {
                     document.getElementById('placeholderScreen').classList.add('hidden');
                     currentIframeFallbackTimer = null;
                 }, 2000);
-
-                window.__ygIsIframeOpen = true;
-                try {
-                    if (window.AndroidPlayer && window.__YG_TOKEN__
-                        && typeof window.AndroidPlayer.notifyIframeState === 'function') {
-                        window.AndroidPlayer.notifyIframeState(true, window.__YG_TOKEN__);
-                    }
-                } catch (e) { /* تجاهل — منصة غير أندرويد أو الجسر غير متوفر */ }
 
             } else {
                 // 🎬 المشغل الداخلي الجديد (الافتراضي) أو تطبيق مشغل فيديو خارجي، بحسب اختيار
@@ -3828,8 +3838,19 @@
 
                 if (getPlayerMode() === 'internal'
                     && window.AndroidPlayer && typeof window.AndroidPlayer.playInternal === 'function') {
-                    window.AndroidPlayer.playInternal(
-                        window.__YG_TOKEN__, finalUrl, name || 'يلا گول', isLive, resumeKey);
+                    // قنوات الرابط المتجدد: نمرّر رابط الـ API للمشغّل الأصلي ليجلب رابطاً جديداً بنفسه
+                    // إن انتهت صلاحية التوكن أثناء المشاهدة (بدل أن يتوقف البث). لا نمرّره عند استخدام
+                    // البروكسي لأن المُجدِّد الأصلي يُرجع الرابط الخام لا المُمرَّر عبر البروكسي.
+                    const refreshApiUrl = (originalApiUrl
+                        && !(typeof CORS_PROXY_BASE !== 'undefined' && CORS_PROXY_BASE))
+                        ? originalApiUrl : null;
+                    if (refreshApiUrl && typeof window.AndroidPlayer.playInternalWithRefresh === 'function') {
+                        window.AndroidPlayer.playInternalWithRefresh(
+                            window.__YG_TOKEN__, finalUrl, name || 'يلا گول', isLive, resumeKey, refreshApiUrl);
+                    } else {
+                        window.AndroidPlayer.playInternal(
+                            window.__YG_TOKEN__, finalUrl, name || 'يلا گول', isLive, resumeKey);
+                    }
                 } else if (window.AndroidPlayer && typeof window.AndroidPlayer.playExternal === 'function') {
                     window.AndroidPlayer.playExternal(window.__YG_TOKEN__, finalUrl, name || 'يلا گول', getExternalPlayerPackage());
                 } else {
