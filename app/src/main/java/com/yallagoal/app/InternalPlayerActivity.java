@@ -47,6 +47,8 @@ public class InternalPlayerActivity extends AppCompatActivity {
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_IS_LIVE = "extra_is_live";
     public static final String EXTRA_RESUME_KEY = "extra_resume_key";
+    /** اختياري: رابط API يُجدِّد رابط البث عند انتهاء صلاحيته (قنوات الرابط المتجدد فقط). */
+    public static final String EXTRA_REFRESH_URL = "extra_refresh_url";
 
     private static final long CONTROLS_AUTO_HIDE_MS = 4000L;
     private static final long TICK_INTERVAL_MS = 500L;
@@ -64,6 +66,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
     private FrameLayout videoContainer;
     private FrameLayout loadingOverlay;
+    private TextView loadingStatusText;
     private FrameLayout errorOverlay;
     private TextView errorText;
     private FrameLayout controlsOverlay;
@@ -150,6 +153,16 @@ public class InternalPlayerActivity extends AppCompatActivity {
         }
 
         @Override
+        public void onRecovering(final String statusMessage) {
+            mainHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    showRecovering(statusMessage);
+                }
+            });
+        }
+
+        @Override
         public void onEnded() {
             mainHandler.post(new Runnable() {
                 @Override
@@ -221,6 +234,12 @@ public class InternalPlayerActivity extends AppCompatActivity {
         engine.setListener(engineListener);
         engine.setResizeMode(currentResizeMode);
 
+        // قنوات الرابط المتجدد: نمنح المحرّك مصدراً موثوقاً لجلب رابط جديد عند انتهاء صلاحية التوكن.
+        String refreshUrl = getIntent().getStringExtra(EXTRA_REFRESH_URL);
+        if (refreshUrl != null && !refreshUrl.isEmpty()) {
+            engine.setUrlRefresher(new ApiUrlRefresher(refreshUrl));
+        }
+
         startPlayback();
     }
 
@@ -269,6 +288,21 @@ public class InternalPlayerActivity extends AppCompatActivity {
         FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(dp(52), dp(52));
         sp.gravity = Gravity.CENTER;
         overlay.addView(spinner, sp);
+
+        // نص حالة يظهر فقط أثناء التعافي الآلي (مثل «جارٍ إعادة الاتصال (2/5)…») حتى لا ينتظر
+        // المستخدم أمام دائرة صامتة؛ مخفي افتراضياً ويُمسح مع إخفاء التحميل.
+        loadingStatusText = new TextView(this);
+        loadingStatusText.setTextColor(Color.WHITE);
+        loadingStatusText.setTextSize(14);
+        loadingStatusText.setGravity(Gravity.CENTER);
+        loadingStatusText.setShadowLayer(6f, 0f, 1f, Color.BLACK);
+        loadingStatusText.setPadding(dp(24), 0, dp(24), 0);
+        loadingStatusText.setVisibility(View.GONE);
+        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        tp.gravity = Gravity.CENTER;
+        tp.topMargin = dp(52) + dp(28);
+        overlay.addView(loadingStatusText, tp);
         return overlay;
     }
 
@@ -796,6 +830,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
     // ==================== منطق التشغيل ====================
 
     private void startPlayback() {
+        if (engine == null) return;
         showLoading();
         long startPos = 0L;
         if (!isLive && resumeKey != null && !resumeKey.isEmpty()) {
@@ -845,6 +880,20 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
     private void hideLoading() {
         loadingOverlay.setVisibility(View.GONE);
+        if (loadingStatusText != null) {
+            loadingStatusText.setVisibility(View.GONE);
+            loadingStatusText.setText("");
+        }
+    }
+
+    /** المحرّك يتعافى تلقائياً من فشل مؤقت: دائرة التحميل + نص يوضح ما يجري بدل رسالة خطأ. */
+    private void showRecovering(String statusMessage) {
+        hideError();
+        showLoading();
+        if (loadingStatusText != null && statusMessage != null && !statusMessage.isEmpty()) {
+            loadingStatusText.setText(statusMessage);
+            loadingStatusText.setVisibility(View.VISIBLE);
+        }
     }
 
     private void showError(String message) {
@@ -897,7 +946,18 @@ public class InternalPlayerActivity extends AppCompatActivity {
         if (engine != null) {
             savePositionNow(engine.getCurrentPosition());
         }
+        // نحرّر المشغّل واتصال البث الآن، لا بعد onDestroy: finish() لا تستدعي onDestroy فوراً (تتأخر
+        // حتى ينتهي انتقال الشاشة)، وخلال هذه الفترة كان الاتصال القديم مفتوحاً والصوت ما يزال
+        // يعمل بينما قد يضغط المستخدم قناة جديدة — فتصطدم بحدّ الاتصالات المتزامنة في حسابات Xtream.
+        releaseEngineNow();
         finish();
+    }
+
+    private void releaseEngineNow() {
+        if (engine != null) {
+            engine.release();
+            engine = null;
+        }
     }
 
     @Override
@@ -923,16 +983,17 @@ public class InternalPlayerActivity extends AppCompatActivity {
         if (engine != null) {
             savePositionNow(engine.getCurrentPosition());
         }
+        // أي إنهاء للنشاط (back، انتهاء الفيديو، زر رجوع الخطأ...) يحرّر المشغّل فوراً.
+        if (isFinishing()) {
+            releaseEngineNow();
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         mainHandler.removeCallbacksAndMessages(null);
-        if (engine != null) {
-            engine.release();
-            engine = null;
-        }
+        releaseEngineNow();
     }
 
     @Override
