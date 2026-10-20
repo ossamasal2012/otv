@@ -48,6 +48,12 @@ interface PlaybackEngine {
     /** بالميلي ثانية؛ صفر أو قيمة سالبة إن لم تكن معروفة (مثل البث المباشر بلا مدة ثابتة أو نافذة DVR). */
     long getDuration();
 
+    /** نهاية ما خُزِّن مؤقتاً (Buffer) بالميلي ثانية؛ صفر إن لم يكن معروفاً. يُستخدم لرسم شريط التخزين بالواجهة. */
+    long getBufferedPosition();
+
+    /** سرعة التشغيل (1.0 = عادية، 2.0 = ضعف السرعة). تُطبَّق فوراً وتبقى عبر إعادة المحاولة. */
+    void setPlaybackSpeed(float speed);
+
     void seekTo(long positionMs);
 
     /**
