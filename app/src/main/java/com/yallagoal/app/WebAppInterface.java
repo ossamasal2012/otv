@@ -257,6 +257,29 @@ public class WebAppInterface {
     }
 
     /**
+     * تستدعى لفتح رابط ويب (http/https فقط) في متصفح الجهاز الحقيقي — زر «احصل على الرمز» بشاشة
+     * الدخول (يعمل قبل فتح القفل لذلك لا نشترط isUnlocked هنا) وزر «مشاهدة الإعلان» بتفاصيل الأفلام.
+     * الرمز المميّز (token) يمنع أي iframe أو صفحة خارجية من استدعائها، وتُرفض كل المخططات غير http/https.
+     */
+    @JavascriptInterface
+    public void openExternalUrl(String token, String url) {
+        if (!isTokenValid(token)) return;
+        if (url == null || !(context instanceof Activity)) return;
+        final String safe = url.trim();
+        String lower = safe.toLowerCase(java.util.Locale.ROOT);
+        if (!(lower.startsWith("https://") || lower.startsWith("http://"))) return;
+
+        Activity activity = (Activity) context;
+        activity.runOnUiThread(() -> {
+            try {
+                context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(safe)));
+            } catch (ActivityNotFoundException e) {
+                Toast.makeText(context, "تعذر فتح الرابط.", Toast.LENGTH_LONG).show();
+            }
+        });
+    }
+
+    /**
      * تستدعى من الصفحة عند تحميلها لأخذ قراءة فورية لآخر أرقام معروفة (إجمالي المستخدمين
      * والمستخدمين النشطين الآن) قبل وصول أي تحديث حيّ لاحق عبر window.__ygOnStatsUpdate.
      * لا تتطلب فتح القفل (PIN) لأنها بيانات إجمالية عامة غير حساسة لأي مستخدم بعينه.
