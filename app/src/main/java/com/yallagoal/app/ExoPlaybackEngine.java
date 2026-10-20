@@ -223,6 +223,16 @@ final class ExoPlaybackEngine implements PlaybackEngine {
     }
 
     @Override
+    public long getBufferedPosition() {
+        return player != null ? Math.max(0L, player.getBufferedPosition()) : 0L;
+    }
+
+    @Override
+    public void setPlaybackSpeed(float speed) {
+        if (player != null) player.setPlaybackSpeed(speed);
+    }
+
+    @Override
     public void seekTo(long positionMs) {
         if (player != null) player.seekTo(Math.max(0L, positionMs));
     }
