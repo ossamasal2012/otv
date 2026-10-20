@@ -4,9 +4,9 @@
     <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowContentOverlay">@null</item>
-        <item name="android:statusBarColor">#020617</item>
-        <item name="android:navigationBarColor">#020617</item>
-        <item name="android:windowBackground">#020617</item>
+        <item name="android:statusBarColor">#050A1B</item>
+        <item name="android:navigationBarColor">#050A1B</item>
+        <item name="android:windowBackground">#050A1B</item>
     </style>
 
     <style name="AppTheme.Fullscreen" parent="AppTheme">
