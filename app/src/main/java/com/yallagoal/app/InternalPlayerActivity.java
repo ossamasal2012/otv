@@ -1,24 +1,34 @@
 package com.yallagoal.app;
 
-import android.content.res.ColorStateList;
+import android.annotation.SuppressLint;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.AudioManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+import android.text.TextUtils;
+import android.view.GestureDetector;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowManager;
-import android.widget.Button;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -27,19 +37,21 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * المشغّل الداخلي الجديد — واجهة واحدة موحّدة تعمل فوق محرّك التشغيل ExoPlaybackEngine
+ * المشغّل الداخلي — واجهة بهوية ليلا گول ("ليلة المباراة") فوق محرّك التشغيل ExoPlaybackEngine
  * (AndroidX Media3) عبر طبقة تجريد PlaybackEngine.
  *
- * الواجهة بالكامل مبنية برمجياً هنا (بدون أي ملف layout أو drawable من res/) عمداً: أي ملف
- * مورد جديد يحتاج إضافته يدوياً بمساره الصحيح بمشروع قائم عرضة للنسيان عند الدمج، بينما ملف
- * Java واحد ذاتي الاكتفاء لا يعتمد على وجود أي شيء خارجه — نفس المبدأ المُتّبع سابقاً في
- * UpdateManager لحوار التقدّم.
+ * الواجهة بالكامل مبنية برمجياً (لا layout ولا drawable من res/): أزرار زجاجية فوق الفيديو،
+ * أيقونات متجهية ترسمها {@link YgIconView}، شريط تقدّم مخصّص {@link YgSeekView}، والخطوط من assets/fonts.
  *
- * تعمل عناصر التحكّم (تقديم/ترجيع 10 ثوانٍ + شريط التقدّم) بنفس الشكل تماماً في وضعي الفيديو
- * والبث المباشر على حدٍّ سواء؛ الفرق الوحيد هو أن السَّعي (Seek) والمدة الكلية يعتمدان على ما
- * يُبلّغ عنه المحرّك فعلياً: فيديو عادي = مدة ثابتة معروفة دائماً، بث مباشر بنافذة قابلة للسَّعي
- * (شائع بكثير من روابط m3u8 الحيّة) = سَعي حقيقي يعمل ضمن تلك النافذة، بث مباشر بلا نافذة إطلاقاً
- * = شريط التقدّم يبقى ظاهراً كما طُلب لكن دون قيمة مضلِّلة (لا نُلفّق تقدّماً وهمياً).
+ * الميزات:
+ *  - لمسة واحدة: إظهار/إخفاء الأزرار. لمستان على الثلث الأيسر/الأيمن: ترجيع/تقديم 10 ثوانٍ
+ *    (وتتراكم مع اللمسات المتتالية)، ولمستان في الوسط: تشغيل/إيقاف.
+ *  - سحب رأسي على نصف الشاشة الأيسر = السطوع، وعلى الأيمن = الصوت.
+ *  - سحب أفقي = تقديم/ترجيع مع معاينة للوقت (للمحتوى القابل للسَّعي).
+ *  - لوحة إعدادات جانبية: جودة الفيديو + سرعة التشغيل (للفيديو المسجّل) + نسبة العرض.
+ *  - بث مباشر بنافذة DVR: سَعي حقيقي وزر «العودة للمباشر»؛ بلا نافذة: شريط حي دون تقدّم مُلفَّق.
+ *
+ * منطق التشغيل (الاستئناف، التعافي الآلي، تجديد الروابط، تحرير المحرّك...) كما كان تماماً.
  */
 public class InternalPlayerActivity extends AppCompatActivity {
 
@@ -50,41 +62,29 @@ public class InternalPlayerActivity extends AppCompatActivity {
     /** اختياري: رابط API يُجدِّد رابط البث عند انتهاء صلاحيته (قنوات الرابط المتجدد فقط). */
     public static final String EXTRA_REFRESH_URL = "extra_refresh_url";
 
-    private static final long CONTROLS_AUTO_HIDE_MS = 4000L;
+    private static final long CONTROLS_AUTO_HIDE_MS = 4200L;
     private static final long TICK_INTERVAL_MS = 500L;
     private static final int POSITION_SAVE_EVERY_N_TICKS = 10; // كل ~5 ثوانٍ (10 × 500ms)
     private static final long SEEK_STEP_MS = 10_000L;
+    private static final long MULTI_TAP_WINDOW_MS = 320L;
+    private static final long LIVE_EDGE_SLACK_MS = 12_000L;
+    private static final float[] SPEEDS = {0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f};
 
-    private static final int COLOR_ACCENT = 0xFF10B981;
-    private static final int COLOR_ACCENT_DARK_TEXT = 0xFF052E21;
-    private static final int COLOR_TRACK_BG = 0x4DFFFFFF;
+    private static final int MODE_NONE = 0;
+    private static final int MODE_BRIGHTNESS = 1;
+    private static final int MODE_VOLUME = 2;
+    private static final int MODE_SEEK = 3;
+    private static final int MODE_IGNORE = 4;
 
+    private static final int MATCH = android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+    private static final int WRAP = android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+
+    // ----- المحرّك والحالة -----
     private PlaybackEngine engine;
     private String contentUrl;
     private String resumeKey;
+    private String titleString = "";
     private boolean isLive;
-
-    private FrameLayout videoContainer;
-    private FrameLayout loadingOverlay;
-    private TextView loadingStatusText;
-    private FrameLayout errorOverlay;
-    private TextView errorText;
-    private FrameLayout controlsOverlay;
-    private TextView titleText;
-    private TextView liveBadge;
-    private View playPauseBtn;
-    private View playGlyph;
-    private View pauseGlyph;
-    private LinearLayout bottomBar;
-    private View rewindBtn;
-    private View forwardBtn;
-    private TextView currentTimeText;
-    private TextView durationText;
-    private SeekBar seekBar;
-    private TextView resizeModeBtn;
-
-    private FrameLayout qualityPanel;
-    private LinearLayout qualityListContainer;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean userSeeking = false;
@@ -92,11 +92,126 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private boolean controlsVisible = true;
     private int tickCounter = 0;
     private PlaybackEngine.ResizeMode currentResizeMode = PlaybackEngine.ResizeMode.FIT;
+    private float currentSpeed = 1f;
+
+    // ----- الواجهة -----
+    private FrameLayout root;
+    private FrameLayout videoContainer;
+    private View gestureLayer;
+
+    private FrameLayout loadingOverlay;
+    private TextView loadingTitleText;
+    private TextView loadingStatusText;
+
+    private FrameLayout errorOverlay;
+    private TextView errorText;
+
+    private FrameLayout controlsOverlay;
+    private TextView titleText;
+    private LinearLayout liveBadgeTop;
+    private TextView speedBadge;
+    private YgIconView resizeIcon;
+    private TextView resizeLabel;
+    private YgIconView playPauseIcon;
+    private View rewindBtn;
+    private View forwardBtn;
+    private LinearLayout centerRow;
+    private TextView currentTimeText;
+    private TextView durationText;
+    private YgSeekView seekView;
+    private LinearLayout liveBadgeBottom;
+    private TextView liveBadgeBottomText;
+
+    private FrameLayout settingsOverlay;
+    private View settingsScrim;
+    private LinearLayout settingsPanel;
+    private LinearLayout qualityListContainer;
+    private LinearLayout speedSection;
+    private LinearLayout speedGrid;
+    private LinearLayout aspectRow;
+
+    // طبقة المؤشرات العابرة (HUD)
+    private LinearLayout brightnessHud;
+    private LinearLayout volumeHud;
+    private YgMeterView brightnessMeter;
+    private YgMeterView volumeMeter;
+    private TextView brightnessText;
+    private TextView volumeText;
+    private YgIconView volumeIcon;
+    private FrameLayout seekFeedbackLeft;
+    private FrameLayout seekFeedbackRight;
+    private TextView seekFeedbackLeftText;
+    private TextView seekFeedbackRightText;
+    private LinearLayout seekPreview;
+    private TextView seekPreviewTime;
+    private TextView seekPreviewDelta;
+    private LinearLayout centerToast;
+    private YgIconView centerToastIcon;
+    private TextView centerToastText;
+
+    // ----- الإيماءات -----
+    private GestureDetector gestureDetector;
+    private int gestureMode = MODE_NONE;
+    private boolean touchStartedInEdge = false;
+    private float brightness = 0.5f;
+    private AudioManager audio;
+    private int maxVolume = 15;
+    private float volumeFraction = 0.5f;
+    private long seekDragStartPos = 0L;
+    private long seekDragTarget = 0L;
+    private long seekDragRange = 120_000L;
+    private float seekDragAccumX = 0f;
+    private int tapChain = 0;
+    private int tapChainSide = 0; // -1 يسار، 0 وسط، +1 يمين
+    private long seekFeedbackAccumMs = 0L;
+    private boolean chainActive = false;
+    private int liveStateCache = -1;
 
     private final Runnable hideControlsRunnable = new Runnable() {
         @Override
         public void run() {
             hideControls();
+        }
+    };
+
+    private final Runnable singleTapRunnable = new Runnable() {
+        @Override
+        public void run() {
+            chainActive = false;
+            tapChain = 0;
+            toggleControls();
+        }
+    };
+
+    private final Runnable chainResetRunnable = new Runnable() {
+        @Override
+        public void run() {
+            chainActive = false;
+            tapChain = 0;
+            seekFeedbackAccumMs = 0L;
+        }
+    };
+
+    private final Runnable hideHudRunnable = new Runnable() {
+        @Override
+        public void run() {
+            fadeOut(brightnessHud);
+            fadeOut(volumeHud);
+        }
+    };
+
+    private final Runnable hideCenterToastRunnable = new Runnable() {
+        @Override
+        public void run() {
+            fadeOut(centerToast);
+        }
+    };
+
+    private final Runnable hideSeekFeedbackRunnable = new Runnable() {
+        @Override
+        public void run() {
+            fadeOut(seekFeedbackLeft);
+            fadeOut(seekFeedbackRight);
         }
     };
 
@@ -108,6 +223,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
                 if (!userSeeking) {
                     updateTimeUi(pos, knownDurationMs);
                 }
+                updateBufferedUi();
                 tickCounter++;
                 if (tickCounter % POSITION_SAVE_EVERY_N_TICKS == 0) {
                     savePositionNow(pos);
@@ -126,7 +242,8 @@ public class InternalPlayerActivity extends AppCompatActivity {
                     knownDurationMs = durationMs;
                     hideLoading();
                     hideError();
-                    if (durationMs > 0) durationText.setText(formatTime(durationMs));
+                    if (durationMs > 0 && !isLive) durationText.setText(formatTime(durationMs));
+                    applySeekMode();
                     resetAutoHideTimer();
                 }
             });
@@ -190,13 +307,17 @@ public class InternalPlayerActivity extends AppCompatActivity {
             mainHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    if (isQualityPanelVisible()) {
-                        refreshQualityPanelContent();
+                    if (isSettingsVisible()) {
+                        refreshQualityListContent();
                     }
                 }
             });
         }
     };
+
+    // =====================================================================================
+    //  دورة الحياة
+    // =====================================================================================
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -204,28 +325,36 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-        setContentView(buildUi());
-        hideSystemBars();
+        if (Build.VERSION.SDK_INT >= 28) {
+            // الفيديو يمتد تحت الشق (notch) في الوضع الأفقي بدل شريط أسود جانبي
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
 
         contentUrl = getIntent().getStringExtra(EXTRA_URL);
         String title = getIntent().getStringExtra(EXTRA_TITLE);
+        titleString = title != null ? title : "";
         isLive = getIntent().getBooleanExtra(EXTRA_IS_LIVE, false);
         resumeKey = getIntent().getStringExtra(EXTRA_RESUME_KEY);
+
+        setContentView(buildUi());
+        hideSystemBars();
 
         if (contentUrl == null || contentUrl.isEmpty()) {
             finish();
             return;
         }
 
-        titleText.setText(title != null ? title : "");
-        liveBadge.setVisibility(isLive ? View.VISIBLE : View.GONE);
+        titleText.setText(titleString);
+        loadingTitleText.setText(titleString);
+        liveBadgeTop.setVisibility(isLive ? View.VISIBLE : View.GONE);
+        liveBadgeBottom.setVisibility(isLive ? View.VISIBLE : View.GONE);
+        durationText.setVisibility(isLive ? View.GONE : View.VISIBLE);
+        applySeekMode();
 
-        // عناصر تقديم/ترجيع 10 ثوانٍ وشريط التقدّم تظهر دائماً بكلا الوضعين (فيديو أو بث مباشر) —
-        // راجع التوثيق أعلى الكلاس لتفاصيل كيفية تعاملها مع بث مباشر بلا مدة معروفة بأمان.
-        bottomBar.setVisibility(View.VISIBLE);
-        rewindBtn.setVisibility(View.VISIBLE);
-        forwardBtn.setVisibility(View.VISIBLE);
+        initBrightness();
+        initVolume();
 
         // المحرك الوحيد المتاح الآن — لا حاجة لأي فرع اختيار
         engine = new ExoPlaybackEngine();
@@ -243,727 +372,10 @@ public class InternalPlayerActivity extends AppCompatActivity {
         startPlayback();
     }
 
-    // ==================== بناء الواجهة برمجياً بالكامل ====================
-
-    private View buildUi() {
-        FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
-
-        videoContainer = new FrameLayout(this);
-        root.addView(videoContainer, matchParent());
-
-        View tapCatcher = new View(this);
-        tapCatcher.setBackgroundColor(Color.TRANSPARENT);
-        tapCatcher.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                toggleControls();
-            }
-        });
-        root.addView(tapCatcher, matchParent());
-
-        loadingOverlay = buildLoadingOverlay();
-        root.addView(loadingOverlay, matchParent());
-
-        errorOverlay = buildErrorOverlay();
-        errorOverlay.setVisibility(View.GONE);
-        root.addView(errorOverlay, matchParent());
-
-        controlsOverlay = buildControlsOverlay();
-        root.addView(controlsOverlay, matchParent());
-
-        qualityPanel = buildQualityPanel();
-        qualityPanel.setVisibility(View.GONE);
-        root.addView(qualityPanel, matchParent());
-
-        return root;
-    }
-
-    private FrameLayout buildLoadingOverlay() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(0x4D000000);
-
-        ProgressBar spinner = new ProgressBar(this);
-        spinner.setIndeterminateTintList(ColorStateList.valueOf(COLOR_ACCENT));
-        FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(dp(52), dp(52));
-        sp.gravity = Gravity.CENTER;
-        overlay.addView(spinner, sp);
-
-        // نص حالة يظهر فقط أثناء التعافي الآلي (مثل «جارٍ إعادة الاتصال (2/5)…») حتى لا ينتظر
-        // المستخدم أمام دائرة صامتة؛ مخفي افتراضياً ويُمسح مع إخفاء التحميل.
-        loadingStatusText = new TextView(this);
-        loadingStatusText.setTextColor(Color.WHITE);
-        loadingStatusText.setTextSize(14);
-        loadingStatusText.setGravity(Gravity.CENTER);
-        loadingStatusText.setShadowLayer(6f, 0f, 1f, Color.BLACK);
-        loadingStatusText.setPadding(dp(24), 0, dp(24), 0);
-        loadingStatusText.setVisibility(View.GONE);
-        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        tp.gravity = Gravity.CENTER;
-        tp.topMargin = dp(52) + dp(28);
-        overlay.addView(loadingStatusText, tp);
-        return overlay;
-    }
-
-    private FrameLayout buildErrorOverlay() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(0xCC000000);
-
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        col.setGravity(Gravity.CENTER);
-        col.setPadding(dp(32), dp(32), dp(32), dp(32));
-
-        errorText = new TextView(this);
-        errorText.setText("تعذر تشغيل هذا المحتوى.");
-        errorText.setTextColor(Color.WHITE);
-        errorText.setTextSize(15);
-        errorText.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams etp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        etp.bottomMargin = dp(20);
-        col.addView(errorText, etp);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER);
-
-        Button retryBtn = new Button(this);
-        retryBtn.setText("إعادة المحاولة");
-        retryBtn.setAllCaps(false);
-        retryBtn.setTextColor(COLOR_ACCENT_DARK_TEXT);
-        retryBtn.setBackgroundTintList(ColorStateList.valueOf(COLOR_ACCENT));
-        retryBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                hideError();
-                startPlayback();
-            }
-        });
-        LinearLayout.LayoutParams rbp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rbp.setMargins(dp(6), 0, dp(6), 0);
-        row.addView(retryBtn, rbp);
-
-        Button backBtnErr = new Button(this);
-        backBtnErr.setText("رجوع");
-        backBtnErr.setAllCaps(false);
-        backBtnErr.setTextColor(Color.WHITE);
-        backBtnErr.setBackgroundTintList(ColorStateList.valueOf(0xFF1E293B));
-        backBtnErr.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                finishAndSave();
-            }
-        });
-        LinearLayout.LayoutParams bbp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bbp.setMargins(dp(6), 0, dp(6), 0);
-        row.addView(backBtnErr, bbp);
-
-        col.addView(row);
-        FrameLayout.LayoutParams colParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        colParams.gravity = Gravity.CENTER;
-        overlay.addView(col, colParams);
-        return overlay;
-    }
-
-    private FrameLayout buildControlsOverlay() {
-        FrameLayout overlay = new FrameLayout(this);
-
-        // ----- الشريط العلوي: رجوع + العنوان + شارة مباشر + وضع الملء + زر الإعدادات (الدقة) -----
-        LinearLayout topBar = new LinearLayout(this);
-        topBar.setOrientation(LinearLayout.HORIZONTAL);
-        topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setBackground(scrimDrawable(true));
-        topBar.setPadding(dp(6), dp(10), dp(16), dp(26));
-
-        TextView backBtn = new TextView(this);
-        backBtn.setText("\u2190"); // ←
-        backBtn.setTextColor(Color.WHITE);
-        backBtn.setTextSize(22);
-        backBtn.setGravity(Gravity.CENTER);
-        backBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
-        backBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                finishAndSave();
-            }
-        });
-        topBar.addView(backBtn, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        titleText = new TextView(this);
-        titleText.setTextColor(Color.WHITE);
-        titleText.setTextSize(15);
-        titleText.setTypeface(Typeface.DEFAULT_BOLD);
-        titleText.setMaxLines(1);
-        titleText.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams ttp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        ttp.leftMargin = dp(6);
-        ttp.rightMargin = dp(6);
-        topBar.addView(titleText, ttp);
-
-        liveBadge = new TextView(this);
-        liveBadge.setText("\uD83D\uDD34 مباشر"); // 🔴 مباشر
-        liveBadge.setTextColor(Color.WHITE);
-        liveBadge.setTextSize(11);
-        liveBadge.setTypeface(Typeface.DEFAULT_BOLD);
-        liveBadge.setBackground(roundedDrawable(0xFFDC2626, 999));
-        liveBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
-        liveBadge.setVisibility(View.GONE);
-        LinearLayout.LayoutParams liveBadgeParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        liveBadgeParams.rightMargin = dp(8);
-        topBar.addView(liveBadge, liveBadgeParams);
-
-        resizeModeBtn = buildTopBarIconButton("\u2922"); // ⤢ رمز عام لوضع الملء/التكبير
-        resizeModeBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                cycleResizeMode();
-                resetAutoHideTimer();
-            }
-        });
-        LinearLayout.LayoutParams resizeParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        resizeParams.rightMargin = dp(8);
-        topBar.addView(resizeModeBtn, resizeParams);
-        updateResizeModeButtonLabel();
-
-        TextView settingsBtn = buildTopBarIconButton("\u2699"); // ⚙
-        settingsBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showQualityPanel();
-            }
-        });
-        topBar.addView(settingsBtn, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        FrameLayout.LayoutParams topBarParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        topBarParams.gravity = Gravity.TOP;
-        overlay.addView(topBar, topBarParams);
-
-        // ----- منتصف الشاشة: ترجيع 10 ثوانٍ / تشغيل-إيقاف / تقديم 10 ثوانٍ -----
-        LinearLayout centerRow = new LinearLayout(this);
-        centerRow.setOrientation(LinearLayout.HORIZONTAL);
-        centerRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        rewindBtn = buildCircleTextButton("-10", 15);
-        rewindBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                seekRelative(-SEEK_STEP_MS);
-                resetAutoHideTimer();
-            }
-        });
-        centerRow.addView(rewindBtn, new LinearLayout.LayoutParams(dp(58), dp(58)));
-
-        playPauseBtn = buildPlayPauseButton();
-        playPauseBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (engine == null) return;
-                if (engine.isPlaying()) {
-                    engine.pause();
-                } else {
-                    engine.play();
-                }
-                resetAutoHideTimer();
-            }
-        });
-        LinearLayout.LayoutParams ppp = new LinearLayout.LayoutParams(dp(76), dp(76));
-        ppp.leftMargin = dp(22);
-        ppp.rightMargin = dp(22);
-        centerRow.addView(playPauseBtn, ppp);
-
-        forwardBtn = buildCircleTextButton("+10", 15);
-        forwardBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                seekRelative(SEEK_STEP_MS);
-                resetAutoHideTimer();
-            }
-        });
-        centerRow.addView(forwardBtn, new LinearLayout.LayoutParams(dp(58), dp(58)));
-
-        FrameLayout.LayoutParams centerParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        centerParams.gravity = Gravity.CENTER;
-        overlay.addView(centerRow, centerParams);
-
-        // ----- الشريط السفلي: الوقت الحالي + شريط التقدّم + المدة الكلية -----
-        bottomBar = new LinearLayout(this);
-        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
-        bottomBar.setGravity(Gravity.CENTER_VERTICAL);
-        bottomBar.setBackground(scrimDrawable(false));
-        bottomBar.setPadding(dp(16), dp(26), dp(16), dp(14));
-
-        currentTimeText = new TextView(this);
-        currentTimeText.setText("00:00");
-        currentTimeText.setTextColor(Color.WHITE);
-        currentTimeText.setTextSize(12);
-        currentTimeText.setMinWidth(dp(42));
-        bottomBar.addView(currentTimeText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        seekBar = new SeekBar(this);
-        seekBar.setMax(1000);
-        seekBar.setProgressTintList(ColorStateList.valueOf(COLOR_ACCENT));
-        seekBar.setProgressBackgroundTintList(ColorStateList.valueOf(COLOR_TRACK_BG));
-        seekBar.setThumbTintList(ColorStateList.valueOf(COLOR_ACCENT));
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
-                if (fromUser && knownDurationMs > 0) {
-                    long pos = (long) ((progress / 1000.0) * knownDurationMs);
-                    currentTimeText.setText(formatTime(pos));
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar sb) {
-                userSeeking = true;
-                cancelAutoHideTimer();
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar sb) {
-                if (knownDurationMs > 0 && engine != null) {
-                    long pos = (long) ((sb.getProgress() / 1000.0) * knownDurationMs);
-                    engine.seekTo(pos);
-                }
-                userSeeking = false;
-                resetAutoHideTimer();
-            }
-        });
-        LinearLayout.LayoutParams sbp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        sbp.leftMargin = dp(8);
-        sbp.rightMargin = dp(8);
-        bottomBar.addView(seekBar, sbp);
-
-        durationText = new TextView(this);
-        durationText.setText("00:00");
-        durationText.setTextColor(0xFF94A3B8);
-        durationText.setTextSize(12);
-        durationText.setMinWidth(dp(42));
-        bottomBar.addView(durationText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        FrameLayout.LayoutParams bottomParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        bottomParams.gravity = Gravity.BOTTOM;
-        overlay.addView(bottomBar, bottomParams);
-
-        return overlay;
-    }
-
-    /**
-     * قائمة إعدادات الدقة — تظهر فوق كل شيء عند الضغط على زر الإعدادات (⚙): زر رجوع أعلى شيء
-     * يُخفيها فقط (لا يُغلق المشغل)، تحته "تلقائي" مثبّتاً أولاً دائماً، وتحته الدقات المتاحة
-     * فعلياً للفيديو/القناة الحالية.
-     */
-    private FrameLayout buildQualityPanel() {
-        FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(0xEE0B1220);
-        overlay.setClickable(true); // يمتص أي لمسة بدل تمريرها لعناصر التحكّم أو الفيديو خلفه
-
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-
-        LinearLayout headerRow = new LinearLayout(this);
-        headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.setGravity(Gravity.CENTER_VERTICAL);
-        headerRow.setPadding(dp(6), dp(14), dp(16), dp(10));
-
-        TextView backBtn = new TextView(this);
-        backBtn.setText("\u2190"); // ← يُخفي قائمة الإعدادات فقط ويعيد عناصر التحكّم العادية
-        backBtn.setTextColor(Color.WHITE);
-        backBtn.setTextSize(22);
-        backBtn.setPadding(dp(12), dp(8), dp(12), dp(8));
-        backBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                hideQualityPanel();
-            }
-        });
-        headerRow.addView(backBtn, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        TextView title = new TextView(this);
-        title.setText("جودة التشغيل");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(15);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        titleParams.leftMargin = dp(8);
-        headerRow.addView(title, titleParams);
-
-        col.addView(headerRow, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        ScrollView scroll = new ScrollView(this);
-        qualityListContainer = new LinearLayout(this);
-        qualityListContainer.setOrientation(LinearLayout.VERTICAL);
-        qualityListContainer.setPadding(dp(10), dp(4), dp(10), dp(16));
-        scroll.addView(qualityListContainer, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        col.addView(scroll, scrollParams);
-
-        overlay.addView(col, matchParent());
-        return overlay;
-    }
-
-    private void refreshQualityPanelContent() {
-        if (qualityListContainer == null || engine == null) return;
-        qualityListContainer.removeAllViews();
-
-        String selected = engine.getSelectedQualityId();
-        if (selected == null || selected.isEmpty()) selected = "auto";
-
-        addQualityRow("auto", "تلقائي", "auto".equals(selected));
-
-        List<PlaybackEngine.QualityOption> options = engine.getAvailableQualities();
-        if (options != null) {
-            for (PlaybackEngine.QualityOption opt : options) {
-                if (opt == null || opt.id == null || opt.id.isEmpty()) continue;
-                addQualityRow(opt.id, opt.label, opt.id.equals(selected));
-            }
-        }
-    }
-
-    private void addQualityRow(final String id, String label, boolean isSelected) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(14), dp(13), dp(14), dp(13));
-        row.setBackground(roundedDrawable(isSelected ? 0x3310B981 : 0x14FFFFFF, 10));
-
-        TextView label1 = new TextView(this);
-        label1.setText(label != null && !label.isEmpty() ? label : id);
-        label1.setTextColor(isSelected ? COLOR_ACCENT : Color.WHITE);
-        label1.setTypeface(isSelected ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-        label1.setTextSize(14);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        row.addView(label1, labelParams);
-
-        if (isSelected) {
-            TextView check = new TextView(this);
-            check.setText("\u2713");
-            check.setTextColor(COLOR_ACCENT);
-            check.setTextSize(16);
-            row.addView(check, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        }
-
-        row.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (engine != null) engine.selectQuality(id);
-                hideQualityPanel();
-            }
-        });
-
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.bottomMargin = dp(8);
-        qualityListContainer.addView(row, rowParams);
-    }
-
-    private void showQualityPanel() {
-        refreshQualityPanelContent();
-        qualityPanel.setVisibility(View.VISIBLE);
-        cancelAutoHideTimer();
-    }
-
-    private void hideQualityPanel() {
-        qualityPanel.setVisibility(View.GONE);
-        resetAutoHideTimer();
-    }
-
-    private boolean isQualityPanelVisible() {
-        return qualityPanel != null && qualityPanel.getVisibility() == View.VISIBLE;
-    }
-
-    private void cycleResizeMode() {
-        if (currentResizeMode == PlaybackEngine.ResizeMode.FIT) {
-            currentResizeMode = PlaybackEngine.ResizeMode.FILL;
-        } else if (currentResizeMode == PlaybackEngine.ResizeMode.FILL) {
-            currentResizeMode = PlaybackEngine.ResizeMode.ZOOM;
-        } else {
-            currentResizeMode = PlaybackEngine.ResizeMode.FIT;
-        }
-        if (engine != null) engine.setResizeMode(currentResizeMode);
-        updateResizeModeButtonLabel();
-    }
-
-    private void updateResizeModeButtonLabel() {
-        if (resizeModeBtn == null) return;
-        String suffix;
-        switch (currentResizeMode) {
-            case FILL:
-                suffix = " ملء";
-                break;
-            case ZOOM:
-                suffix = " تكبير";
-                break;
-            case FIT:
-            default:
-                suffix = " احتواء";
-                break;
-        }
-        resizeModeBtn.setText("\u2922" + suffix);
-    }
-
-    /** زر صغير بنص/رمز داخل الشريط العلوي — يُستخدم لوضع الملء وزر الإعدادات معاً لتناسق بصري موحّد. */
-    private TextView buildTopBarIconButton(String initialText) {
-        TextView btn = new TextView(this);
-        btn.setText(initialText);
-        btn.setTextColor(Color.WHITE);
-        btn.setTextSize(12);
-        btn.setTypeface(Typeface.DEFAULT_BOLD);
-        btn.setPadding(dp(10), dp(7), dp(10), dp(7));
-        btn.setBackground(roundedDrawable(0x33FFFFFF, 8));
-        btn.setGravity(Gravity.CENTER);
-        return btn;
-    }
-
-    /** زر دائري بسيط بنص فقط (بدون أي رمز/صورة) — يُستخدم للترجيع/التقديم. */
-    private View buildCircleTextButton(String label, float textSizeSp) {
-        FrameLayout btn = new FrameLayout(this);
-        btn.setBackground(circleDrawable(0x33FFFFFF));
-
-        TextView text = new TextView(this);
-        text.setText(label);
-        text.setTextColor(Color.WHITE);
-        text.setTextSize(textSizeSp);
-        text.setTypeface(Typeface.DEFAULT_BOLD);
-        FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        tp.gravity = Gravity.CENTER;
-        btn.addView(text, tp);
-        return btn;
-    }
-
-    /** زر التشغيل/الإيقاف: طبقتان متراكبتان (مثلث تشغيل نصّي، وشريطا إيقاف مؤقت)، تظهر إحداهما فقط. */
-    private View buildPlayPauseButton() {
-        FrameLayout btn = new FrameLayout(this);
-        btn.setBackground(circleDrawable(0x33FFFFFF));
-
-        TextView play = new TextView(this);
-        play.setText("\u25B6"); // ▶
-        play.setTextColor(Color.WHITE);
-        play.setTextSize(26);
-        FrameLayout.LayoutParams playParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        playParams.gravity = Gravity.CENTER;
-        // إزاحة بصرية بسيطة لأن شكل المثلث نفسه غير متمركز بصرياً كباقي الحروف
-        playParams.leftMargin = dp(3);
-        btn.addView(play, playParams);
-        playGlyph = play;
-
-        LinearLayout pause = new LinearLayout(this);
-        pause.setOrientation(LinearLayout.HORIZONTAL);
-        pause.setGravity(Gravity.CENTER);
-        View bar1 = new View(this);
-        bar1.setBackgroundColor(Color.WHITE);
-        LinearLayout.LayoutParams bar1p = new LinearLayout.LayoutParams(dp(6), dp(24));
-        bar1p.rightMargin = dp(5);
-        pause.addView(bar1, bar1p);
-        View bar2 = new View(this);
-        bar2.setBackgroundColor(Color.WHITE);
-        pause.addView(bar2, new LinearLayout.LayoutParams(dp(6), dp(24)));
-        FrameLayout.LayoutParams pauseParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT);
-        pauseParams.gravity = Gravity.CENTER;
-        pause.setVisibility(View.GONE);
-        btn.addView(pause, pauseParams);
-        pauseGlyph = pause;
-
-        return btn;
-    }
-
-    // ==================== أدوات مساعدة للرسم برمجياً ====================
-
-    private int dp(int value) {
-        float density = getResources().getDisplayMetrics().density;
-        return Math.round(value * density);
-    }
-
-    private FrameLayout.LayoutParams matchParent() {
-        return new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT);
-    }
-
-    private GradientDrawable circleDrawable(int color) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setShape(GradientDrawable.OVAL);
-        gd.setColor(color);
-        return gd;
-    }
-
-    private GradientDrawable roundedDrawable(int color, int radiusDp) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setShape(GradientDrawable.RECTANGLE);
-        gd.setColor(color);
-        gd.setCornerRadius(dp(radiusDp));
-        return gd;
-    }
-
-    /** تدرّج شفاف خفيف لضمان وضوح عناصر التحكّم فوق الفيديو (أعلى الشاشة أو أسفلها). */
-    private GradientDrawable scrimDrawable(boolean darkAtTop) {
-        int[] colors = darkAtTop
-                ? new int[]{0xB3000000, 0x00000000}
-                : new int[]{0x00000000, 0xB3000000};
-        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors);
-    }
-
-    // ==================== منطق التشغيل ====================
-
-    private void startPlayback() {
-        if (engine == null) return;
-        showLoading();
-        long startPos = 0L;
-        if (!isLive && resumeKey != null && !resumeKey.isEmpty()) {
-            startPos = PlaybackPositionStore.getPosition(getApplicationContext(), resumeKey);
-        }
-        engine.playUrl(contentUrl, startPos);
-    }
-
-    private void seekRelative(long deltaMs) {
-        if (engine == null) return;
-        long current = engine.getCurrentPosition();
-        long target = current + deltaMs;
-        if (target < 0) target = 0;
-        if (knownDurationMs > 0 && target > knownDurationMs) target = knownDurationMs;
-        engine.seekTo(target);
-        updateTimeUi(target, knownDurationMs);
-    }
-
-    private void updateTimeUi(long positionMs, long durationMs) {
-        currentTimeText.setText(formatTime(positionMs));
-        if (durationMs > 0) {
-            int progress = (int) Math.min(1000L, Math.max(0L, (positionMs * 1000L) / durationMs));
-            seekBar.setProgress(progress);
-        }
-    }
-
-    private String formatTime(long ms) {
-        if (ms < 0) ms = 0;
-        long totalSeconds = ms / 1000L;
-        long hours = totalSeconds / 3600L;
-        long minutes = (totalSeconds % 3600L) / 60L;
-        long seconds = totalSeconds % 60L;
-        if (hours > 0) {
-            return String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds);
-        }
-        return String.format(Locale.US, "%02d:%02d", minutes, seconds);
-    }
-
-    private void updatePlayPauseIcon(boolean isPlaying) {
-        playGlyph.setVisibility(isPlaying ? View.GONE : View.VISIBLE);
-        pauseGlyph.setVisibility(isPlaying ? View.VISIBLE : View.GONE);
-    }
-
-    private void showLoading() {
-        loadingOverlay.setVisibility(View.VISIBLE);
-    }
-
-    private void hideLoading() {
-        loadingOverlay.setVisibility(View.GONE);
-        if (loadingStatusText != null) {
-            loadingStatusText.setVisibility(View.GONE);
-            loadingStatusText.setText("");
-        }
-    }
-
-    /** المحرّك يتعافى تلقائياً من فشل مؤقت: دائرة التحميل + نص يوضح ما يجري بدل رسالة خطأ. */
-    private void showRecovering(String statusMessage) {
-        hideError();
-        showLoading();
-        if (loadingStatusText != null && statusMessage != null && !statusMessage.isEmpty()) {
-            loadingStatusText.setText(statusMessage);
-            loadingStatusText.setVisibility(View.VISIBLE);
-        }
-    }
-
-    private void showError(String message) {
-        hideLoading();
-        errorText.setText(message != null && !message.isEmpty() ? message : "تعذر تشغيل هذا المحتوى.");
-        errorOverlay.setVisibility(View.VISIBLE);
-        cancelAutoHideTimer();
-    }
-
-    private void hideError() {
-        errorOverlay.setVisibility(View.GONE);
-    }
-
-    private void toggleControls() {
-        if (isQualityPanelVisible()) return; // اللمسة خلف قائمة الإعدادات المفتوحة تُتجاهل هنا (الطبقة تمتصها أصلاً)
-        if (controlsVisible) {
-            hideControls();
-        } else {
-            showControls();
-        }
-    }
-
-    private void showControls() {
-        controlsVisible = true;
-        controlsOverlay.setVisibility(View.VISIBLE);
-        resetAutoHideTimer();
-    }
-
-    private void hideControls() {
-        controlsVisible = false;
-        controlsOverlay.setVisibility(View.GONE);
-        cancelAutoHideTimer();
-    }
-
-    private void resetAutoHideTimer() {
-        cancelAutoHideTimer();
-        mainHandler.postDelayed(hideControlsRunnable, CONTROLS_AUTO_HIDE_MS);
-    }
-
-    private void cancelAutoHideTimer() {
-        mainHandler.removeCallbacks(hideControlsRunnable);
-    }
-
-    private void savePositionNow(long positionMs) {
-        if (isLive || resumeKey == null || resumeKey.isEmpty()) return;
-        PlaybackPositionStore.savePosition(getApplicationContext(), resumeKey, positionMs, knownDurationMs);
-    }
-
-    private void finishAndSave() {
-        if (engine != null) {
-            savePositionNow(engine.getCurrentPosition());
-        }
-        // نحرّر المشغّل واتصال البث الآن، لا بعد onDestroy: finish() لا تستدعي onDestroy فوراً (تتأخر
-        // حتى ينتهي انتقال الشاشة)، وخلال هذه الفترة كان الاتصال القديم مفتوحاً والصوت ما يزال
-        // يعمل بينما قد يضغط المستخدم قناة جديدة — فتصطدم بحدّ الاتصالات المتزامنة في حسابات Xtream.
-        releaseEngineNow();
-        finish();
-    }
-
-    private void releaseEngineNow() {
-        if (engine != null) {
-            engine.release();
-            engine = null;
-        }
-    }
-
     @Override
     public void onBackPressed() {
-        if (isQualityPanelVisible()) {
-            hideQualityPanel();
+        if (isSettingsVisible()) {
+            hideSettings();
             return;
         }
         finishAndSave();
@@ -1010,5 +422,1383 @@ public class InternalPlayerActivity extends AppCompatActivity {
                     WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             controller.hide(WindowInsetsCompat.Type.systemBars());
         }
+    }
+
+    // =====================================================================================
+    //  بناء الواجهة
+    // =====================================================================================
+
+    private View buildUi() {
+        root = new FrameLayout(this);
+        root.setBackgroundColor(Color.BLACK);
+
+        videoContainer = new FrameLayout(this);
+        root.addView(videoContainer, fl(MATCH, MATCH));
+
+        gestureLayer = new View(this);
+        setupGestures();
+        root.addView(gestureLayer, fl(MATCH, MATCH));
+
+        root.addView(buildHudLayer(), fl(MATCH, MATCH));
+
+        loadingOverlay = buildLoadingOverlay();
+        root.addView(loadingOverlay, fl(MATCH, MATCH));
+
+        controlsOverlay = buildControlsOverlay();
+        root.addView(controlsOverlay, fl(MATCH, MATCH));
+
+        errorOverlay = buildErrorOverlay();
+        errorOverlay.setVisibility(View.GONE);
+        root.addView(errorOverlay, fl(MATCH, MATCH));
+
+        settingsOverlay = buildSettingsOverlay();
+        settingsOverlay.setVisibility(View.GONE);
+        root.addView(settingsOverlay, fl(MATCH, MATCH));
+
+        // مساحات الشق/الحواف: نُبعد عناصر التحكّم عن منطقة القص دون المساس بالفيديو نفسه
+        ViewCompat.setOnApplyWindowInsetsListener(controlsOverlay, new androidx.core.view.OnApplyWindowInsetsListener() {
+            @Override
+            public WindowInsetsCompat onApplyWindowInsets(View v, WindowInsetsCompat insets) {
+                Insets i = insets.getInsets(WindowInsetsCompat.Type.systemBars()
+                        | WindowInsetsCompat.Type.displayCutout());
+                v.setPadding(i.left, i.top, i.right, i.bottom);
+                return insets;
+            }
+        });
+        return root;
+    }
+
+    // ---------- المؤشرات العابرة (سطوع/صوت/تقديم/إشعار وسطي) ----------
+
+    private FrameLayout buildHudLayer() {
+        FrameLayout layer = new FrameLayout(this);
+
+        // سطوع (يسار)
+        brightnessHud = new LinearLayout(this);
+        brightnessMeter = new YgMeterView(this);
+        brightnessText = hudText();
+        buildHudCapsule(brightnessHud, new YgIconView(this, "sun-medium", Color.WHITE), brightnessMeter, brightnessText);
+        FrameLayout.LayoutParams bp = fl(dp(54), dp(176), Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        bp.leftMargin = dp(40);
+        layer.addView(brightnessHud, bp);
+
+        // صوت (يمين)
+        volumeHud = new LinearLayout(this);
+        volumeMeter = new YgMeterView(this);
+        volumeText = hudText();
+        volumeIcon = new YgIconView(this, "volume-2", Color.WHITE);
+        buildHudCapsule(volumeHud, volumeIcon, volumeMeter, volumeText);
+        FrameLayout.LayoutParams vp = fl(dp(54), dp(176), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        vp.rightMargin = dp(40);
+        layer.addView(volumeHud, vp);
+
+        // أصداء اللمس المزدوج
+        seekFeedbackLeft = buildSeekFeedback(false);
+        seekFeedbackLeftText = (TextView) ((LinearLayout) seekFeedbackLeft.getChildAt(0)).getChildAt(1);
+        FrameLayout.LayoutParams lfp = fl(dp(170), dp(170), Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        lfp.leftMargin = -dp(56);
+        layer.addView(seekFeedbackLeft, lfp);
+
+        seekFeedbackRight = buildSeekFeedback(true);
+        seekFeedbackRightText = (TextView) ((LinearLayout) seekFeedbackRight.getChildAt(0)).getChildAt(1);
+        FrameLayout.LayoutParams rfp = fl(dp(170), dp(170), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        rfp.rightMargin = -dp(56);
+        layer.addView(seekFeedbackRight, rfp);
+
+        // معاينة السحب الأفقي
+        seekPreview = new LinearLayout(this);
+        seekPreview.setOrientation(LinearLayout.HORIZONTAL);
+        seekPreview.setGravity(Gravity.CENTER);
+        seekPreview.setPadding(dp(18), dp(8), dp(18), dp(8));
+        seekPreview.setBackground(YgUi.rect(0xB8050A1B, dp(22)));
+        seekPreviewTime = label("0:00", 26, Color.WHITE, YgUi.display(this));
+        seekPreviewDelta = label("", 15, YgUi.EMBER_2, YgUi.display(this));
+        LinearLayout.LayoutParams dlp = ll(WRAP, WRAP);
+        dlp.leftMargin = dp(10);
+        seekPreview.addView(seekPreviewTime, ll(WRAP, WRAP));
+        seekPreview.addView(seekPreviewDelta, dlp);
+        seekPreview.setVisibility(View.GONE);
+        layer.addView(seekPreview, fl(WRAP, WRAP, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
+        ((FrameLayout.LayoutParams) seekPreview.getLayoutParams()).topMargin = dp(46);
+
+        // إشعار وسطي (نسبة العرض، السرعة...)
+        centerToast = new LinearLayout(this);
+        centerToast.setOrientation(LinearLayout.HORIZONTAL);
+        centerToast.setGravity(Gravity.CENTER_VERTICAL);
+        centerToast.setPadding(dp(16), 0, dp(18), 0);
+        centerToast.setBackground(toastBackground());
+        centerToastText = label("", 13, Color.WHITE, YgUi.bold(this));
+        centerToastIcon = new YgIconView(this, "scan", YgUi.COBALT_3);
+        LinearLayout.LayoutParams iconLp = ll(dp(18), dp(18));
+        iconLp.rightMargin = dp(8);
+        centerToast.addView(centerToastIcon, iconLp);
+        centerToast.addView(centerToastText, ll(WRAP, WRAP));
+        centerToast.setVisibility(View.GONE);
+        layer.addView(centerToast, fl(WRAP, dp(42), Gravity.CENTER));
+
+        brightnessHud.setVisibility(View.GONE);
+        volumeHud.setVisibility(View.GONE);
+        seekFeedbackLeft.setVisibility(View.GONE);
+        seekFeedbackRight.setVisibility(View.GONE);
+        return layer;
+    }
+
+    private GradientDrawable toastBackground() {
+        GradientDrawable gd = YgUi.rect(0xB8050A1B, dp(21));
+        gd.setStroke(Math.max(1, dp(1)), GLASS_EDGE);
+        return gd;
+    }
+
+    private static final int GLASS_EDGE = 0x33FFFFFF;
+
+    private TextView hudText() {
+        return label("0", 14, Color.WHITE, YgUi.display(this));
+    }
+
+    private void buildHudCapsule(LinearLayout capsule, YgIconView icon, YgMeterView meter, TextView text) {
+        capsule.setOrientation(LinearLayout.VERTICAL);
+        capsule.setGravity(Gravity.CENTER_HORIZONTAL);
+        capsule.setPadding(0, dp(12), 0, dp(10));
+        GradientDrawable bg = YgUi.rect(0xA6050A1B, dp(27));
+        bg.setStroke(Math.max(1, dp(1)), GLASS_EDGE);
+        capsule.setBackground(bg);
+        capsule.addView(icon, ll(dp(20), dp(20)));
+        LinearLayout.LayoutParams mp = ll(dp(6), 0, 1f);
+        mp.topMargin = dp(8);
+        mp.bottomMargin = dp(8);
+        capsule.addView(meter, mp);
+        capsule.addView(text, ll(WRAP, WRAP));
+    }
+
+    /** دائرة شبه شفافة بسهمين و«+10» تظهر عند اللمس المزدوج على جانبي الشاشة. */
+    private FrameLayout buildSeekFeedback(boolean forward) {
+        FrameLayout f = new FrameLayout(this);
+        f.setBackground(YgUi.oval(0x2EFFFFFF));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER);
+        YgIconView chev = new YgIconView(this, forward ? "chevrons-right" : "chevrons-left", Color.WHITE);
+        col.addView(chev, ll(dp(30), dp(30)));
+        TextView t = label(forward ? "+10" : "-10", 24, Color.WHITE, YgUi.display(this));
+        t.setGravity(Gravity.CENTER);
+        col.addView(t, ll(WRAP, WRAP));
+        TextView s = label("ثوانٍ", 11, 0xD9FFFFFF, YgUi.text(this));
+        s.setGravity(Gravity.CENTER);
+        col.addView(s, ll(WRAP, WRAP));
+        // نُبعد المحتوى نحو مركز الشاشة (الجزء الظاهر من الدائرة)
+        FrameLayout.LayoutParams cp = fl(WRAP, WRAP, Gravity.CENTER);
+        cp.leftMargin = forward ? 0 : dp(56);
+        cp.rightMargin = forward ? dp(56) : 0;
+        f.addView(col, cp);
+        return f;
+    }
+
+    // ---------- التحميل ----------
+
+    private FrameLayout buildLoadingOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x66020510);
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        YgSpinnerView spinner = new YgSpinnerView(this);
+        col.addView(spinner, ll(dp(62), dp(62)));
+
+        // اسم القناة/الفيلم تحت الدائرة ليعرف المستخدم ماذا يُحمَّل
+        loadingTitleText = label("", 14, Color.WHITE, YgUi.bold(this));
+        loadingTitleText.setGravity(Gravity.CENTER);
+        loadingTitleText.setMaxLines(1);
+        loadingTitleText.setEllipsize(TextUtils.TruncateAt.END);
+        loadingTitleText.setShadowLayer(8f, 0f, 1f, Color.BLACK);
+        LinearLayout.LayoutParams tp = ll(WRAP, WRAP);
+        tp.topMargin = dp(18);
+        col.addView(loadingTitleText, tp);
+
+        // نص حالة يظهر فقط أثناء التعافي الآلي (مثل «جارٍ إعادة الاتصال (2/5)…») حتى لا ينتظر
+        // المستخدم أمام دائرة صامتة؛ مخفي افتراضياً ويُمسح مع إخفاء التحميل.
+        loadingStatusText = label("", 12, YgUi.MIST, YgUi.text(this));
+        loadingStatusText.setGravity(Gravity.CENTER);
+        loadingStatusText.setShadowLayer(8f, 0f, 1f, Color.BLACK);
+        loadingStatusText.setVisibility(View.GONE);
+        LinearLayout.LayoutParams sp = ll(WRAP, WRAP);
+        sp.topMargin = dp(4);
+        col.addView(loadingStatusText, sp);
+
+        FrameLayout.LayoutParams cp = fl(dp(300), WRAP, Gravity.CENTER);
+        overlay.addView(col, cp);
+        return overlay;
+    }
+
+    // ---------- الخطأ ----------
+
+    private FrameLayout buildErrorOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0xC7020510);
+        overlay.setClickable(true); // يمتص اللمس خلفه
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(22), dp(24), dp(22), dp(20));
+        card.setBackground(YgUi.panel(this, dp(26)));
+
+        FrameLayout iconBox = new FrameLayout(this);
+        GradientDrawable ib = YgUi.rect(0x24FF5A6E, dp(20));
+        ib.setStroke(Math.max(1, dp(1)), 0x59FF5A6E);
+        iconBox.setBackground(ib);
+        iconBox.addView(new YgIconView(this, "triangle-alert", YgUi.BAD), fl(dp(30), dp(30), Gravity.CENTER));
+        card.addView(iconBox, ll(dp(60), dp(60)));
+
+        TextView title = label("تعذّر التشغيل", 22, Color.WHITE, YgUi.display(this));
+        title.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams tlp = ll(WRAP, WRAP);
+        tlp.topMargin = dp(14);
+        card.addView(title, tlp);
+
+        errorText = label("تعذر تشغيل هذا المحتوى.", 12.5f, YgUi.MIST, YgUi.text(this));
+        errorText.setGravity(Gravity.CENTER);
+        errorText.setLineSpacing(0f, 1.35f);
+        LinearLayout.LayoutParams elp = ll(MATCH, WRAP);
+        elp.topMargin = dp(8);
+        elp.bottomMargin = dp(18);
+        card.addView(errorText, elp);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+
+        // «رجوع» على اليسار و«إعادة المحاولة» على اليمين (اتجاه عربي)
+        TextView back = label("رجوع", 13.5f, Color.WHITE, YgUi.bold(this));
+        back.setGravity(Gravity.CENTER);
+        back.setPadding(dp(22), 0, dp(22), 0);
+        back.setBackground(YgUi.glass(this, dp(15), false));
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finishAndSave();
+            }
+        });
+        YgUi.pressable(back);
+        row.addView(back, ll(WRAP, dp(44)));
+
+        LinearLayout retry = new LinearLayout(this);
+        retry.setOrientation(LinearLayout.HORIZONTAL);
+        retry.setGravity(Gravity.CENTER);
+        retry.setPadding(dp(20), 0, dp(22), 0);
+        retry.setBackground(YgUi.primary(dp(15), false));
+        TextView retryText = label("إعادة المحاولة", 13.5f, Color.WHITE, YgUi.bold(this));
+        retry.addView(retryText, ll(WRAP, WRAP));
+        YgIconView retryIcon = new YgIconView(this, "refresh-cw", Color.WHITE);
+        LinearLayout.LayoutParams rip = ll(dp(18), dp(18));
+        rip.leftMargin = dp(8);
+        retry.addView(retryIcon, rip);
+        retry.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hideError();
+                startPlayback();
+            }
+        });
+        YgUi.pressable(retry);
+        LinearLayout.LayoutParams rlp = ll(WRAP, dp(44));
+        rlp.leftMargin = dp(10);
+        row.addView(retry, rlp);
+
+        card.addView(row, ll(WRAP, WRAP));
+        overlay.addView(card, fl(dp(340), WRAP, Gravity.CENTER));
+        return overlay;
+    }
+
+    // ---------- عناصر التحكّم ----------
+
+    private FrameLayout buildControlsOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+
+        // ===== الشريط العلوي (من اليسار): إعدادات | نسبة العرض | العنوان | رجوع =====
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setBackground(scrim(true));
+        top.setPadding(dp(18), dp(14), dp(18), dp(34));
+
+        View settingsBtn = glassIconButton("sliders-horizontal", 44, 22, "إعدادات التشغيل");
+        settingsBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSettings();
+            }
+        });
+        top.addView(settingsBtn, ll(dp(44), dp(44)));
+
+        LinearLayout resizeChip = new LinearLayout(this);
+        resizeChip.setOrientation(LinearLayout.HORIZONTAL);
+        resizeChip.setGravity(Gravity.CENTER_VERTICAL);
+        resizeChip.setPadding(dp(14), 0, dp(14), 0);
+        resizeChip.setBackground(YgUi.glass(this, dp(19), false));
+        resizeChip.setContentDescription("نسبة العرض");
+        resizeLabel = label("احتواء", 12, Color.WHITE, YgUi.bold(this));
+        resizeIcon = new YgIconView(this, "scan", Color.WHITE);
+        resizeChip.addView(resizeLabel, ll(WRAP, WRAP));
+        LinearLayout.LayoutParams rilp = ll(dp(16), dp(16));
+        rilp.leftMargin = dp(7);
+        resizeChip.addView(resizeIcon, rilp);
+        resizeChip.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                cycleResizeMode();
+                resetAutoHideTimer();
+            }
+        });
+        YgUi.pressable(resizeChip);
+        LinearLayout.LayoutParams rcp = ll(WRAP, dp(38));
+        rcp.leftMargin = dp(10);
+        top.addView(resizeChip, rcp);
+
+        // العنوان + شارات (مباشر/السرعة) — محاذاة لليمين كأي نص عربي
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.setGravity(Gravity.RIGHT);
+        titleText = label("", 17, Color.WHITE, YgUi.bold(this));
+        titleText.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        titleText.setMaxLines(1);
+        titleText.setEllipsize(TextUtils.TruncateAt.END);
+        titleText.setShadowLayer(10f, 0f, 1f, 0xCC000000);
+        titleBlock.addView(titleText, ll(MATCH, WRAP));
+
+        LinearLayout badges = new LinearLayout(this);
+        badges.setOrientation(LinearLayout.HORIZONTAL);
+        badges.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        speedBadge = label("", 12, 0xFF2A1200, YgUi.display(this));
+        speedBadge.setGravity(Gravity.CENTER);
+        speedBadge.setPadding(dp(9), dp(1), dp(9), dp(1));
+        speedBadge.setBackground(YgUi.rect(YgUi.EMBER_2, dp(11)));
+        speedBadge.setVisibility(View.GONE);
+        LinearLayout.LayoutParams sbp = ll(WRAP, dp(22));
+        sbp.rightMargin = dp(8);
+        badges.addView(speedBadge, sbp);
+        liveBadgeTop = buildLivePill(11, 22);
+        badges.addView(liveBadgeTop, ll(WRAP, dp(22)));
+        LinearLayout.LayoutParams blp = ll(MATCH, WRAP);
+        blp.topMargin = dp(4);
+        titleBlock.addView(badges, blp);
+
+        LinearLayout.LayoutParams tblp = ll(0, WRAP, 1f);
+        tblp.leftMargin = dp(14);
+        tblp.rightMargin = dp(14);
+        top.addView(titleBlock, tblp);
+
+        View backBtn = glassIconButton("arrow-right", 44, 22, "رجوع");
+        backBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finishAndSave();
+            }
+        });
+        top.addView(backBtn, ll(dp(44), dp(44)));
+
+        overlay.addView(top, fl(MATCH, WRAP, Gravity.TOP));
+
+        // ===== منتصف الشاشة: ترجيع | تشغيل/إيقاف | تقديم =====
+        LinearLayout center = new LinearLayout(this);
+        centerRow = center;
+        center.setOrientation(LinearLayout.HORIZONTAL);
+        center.setGravity(Gravity.CENTER_VERTICAL);
+
+        rewindBtn = buildSkipButton(false);
+        rewindBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                seekRelative(-SEEK_STEP_MS);
+                resetAutoHideTimer();
+            }
+        });
+        center.addView(rewindBtn, ll(dp(58), dp(58)));
+
+        FrameLayout playOuter = new FrameLayout(this);
+        playOuter.setBackground(YgUi.oval(YgUi.withAlpha(YgUi.COBALT, 0x38)));
+        FrameLayout playInner = new FrameLayout(this);
+        playInner.setBackground(YgUi.primary(0, true));
+        playPauseIcon = new YgIconView(this, "play", Color.WHITE);
+        playPauseIcon.setFilled(true);
+        playPauseIcon.setStrokeUnits(1.6f);
+        playPauseIcon.setTranslationX(dp(1.5f));
+        FrameLayout.LayoutParams ipp = fl(dp(36), dp(36), Gravity.CENTER);
+        playInner.addView(playPauseIcon, ipp);
+        playOuter.addView(playInner, fl(dp(80), dp(80), Gravity.CENTER));
+        playOuter.setContentDescription("تشغيل أو إيقاف");
+        playOuter.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                togglePlayPause();
+                resetAutoHideTimer();
+            }
+        });
+        YgUi.pressable(playOuter);
+        LinearLayout.LayoutParams pp = ll(dp(98), dp(98));
+        pp.leftMargin = dp(26);
+        pp.rightMargin = dp(26);
+        center.addView(playOuter, pp);
+
+        forwardBtn = buildSkipButton(true);
+        forwardBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                seekRelative(SEEK_STEP_MS);
+                resetAutoHideTimer();
+            }
+        });
+        center.addView(forwardBtn, ll(dp(58), dp(58)));
+        overlay.addView(center, fl(WRAP, WRAP, Gravity.CENTER));
+
+        // ===== الشريط السفلي: الوقت الحالي | شريط التقدّم | المدة أو شارة المباشر =====
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setOrientation(LinearLayout.HORIZONTAL);
+        bottom.setGravity(Gravity.CENTER_VERTICAL);
+        bottom.setBackground(scrim(false));
+        bottom.setPadding(dp(18), dp(40), dp(18), dp(14));
+
+        currentTimeText = label("0:00", 17, Color.WHITE, YgUi.display(this));
+        currentTimeText.setGravity(Gravity.CENTER);
+        currentTimeText.setMinWidth(dp(54));
+        currentTimeText.setShadowLayer(8f, 0f, 1f, 0x99000000);
+        bottom.addView(currentTimeText, ll(WRAP, WRAP));
+
+        seekView = new YgSeekView(this);
+        seekView.setListener(new YgSeekView.Listener() {
+            @Override
+            public void onSeekStart() {
+                userSeeking = true;
+                cancelAutoHideTimer();
+            }
+
+            @Override
+            public void onSeekChange(float fraction) {
+                if (knownDurationMs > 0) {
+                    currentTimeText.setText(formatTime((long) (fraction * knownDurationMs)));
+                }
+            }
+
+            @Override
+            public void onSeekEnd(float fraction) {
+                if (knownDurationMs > 0 && engine != null) {
+                    engine.seekTo((long) (fraction * knownDurationMs));
+                }
+                userSeeking = false;
+                resetAutoHideTimer();
+            }
+        });
+        LinearLayout.LayoutParams skp = ll(0, dp(38), 1f);
+        skp.leftMargin = dp(4);
+        skp.rightMargin = dp(4);
+        bottom.addView(seekView, skp);
+
+        FrameLayout endSlot = new FrameLayout(this);
+        durationText = label("0:00", 17, 0xB3FFFFFF, YgUi.display(this));
+        durationText.setGravity(Gravity.CENTER);
+        durationText.setMinWidth(dp(54));
+        durationText.setShadowLayer(8f, 0f, 1f, 0x99000000);
+        endSlot.addView(durationText, fl(WRAP, WRAP, Gravity.CENTER));
+        liveBadgeBottom = buildLivePill(12, 28);
+        liveBadgeBottomText = (TextView) liveBadgeBottom.getChildAt(1);
+        liveBadgeBottom.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                goToLiveEdge();
+            }
+        });
+        endSlot.addView(liveBadgeBottom, fl(WRAP, dp(28), Gravity.CENTER));
+        bottom.addView(endSlot, ll(WRAP, WRAP));
+
+        overlay.addView(bottom, fl(MATCH, WRAP, Gravity.BOTTOM));
+        return overlay;
+    }
+
+    /** زر دائري زجاجي بأيقونة متجهية. */
+    private View glassIconButton(String icon, int sizeDp, int iconDp, String description) {
+        FrameLayout b = new FrameLayout(this);
+        b.setBackground(YgUi.glass(this, 0, true));
+        b.addView(new YgIconView(this, icon, Color.WHITE), fl(dp(iconDp), dp(iconDp), Gravity.CENTER));
+        b.setContentDescription(description);
+        YgUi.pressable(b);
+        return b;
+    }
+
+    /** زر ترجيع/تقديم 10 ثوانٍ: سهم دائري + رقم 10 بخط العناوين. */
+    private View buildSkipButton(boolean forward) {
+        FrameLayout b = new FrameLayout(this);
+        b.setBackground(YgUi.glass(this, 0, true));
+        b.addView(new YgIconView(this, forward ? "rotate-cw" : "rotate-ccw", Color.WHITE), fl(dp(32), dp(32), Gravity.CENTER));
+        TextView n = label("10", 11, Color.WHITE, YgUi.display(this));
+        n.setGravity(Gravity.CENTER);
+        FrameLayout.LayoutParams np = fl(WRAP, WRAP, Gravity.CENTER);
+        np.topMargin = dp(1);
+        b.addView(n, np);
+        b.setContentDescription(forward ? "تقديم 10 ثوانٍ" : "ترجيع 10 ثوانٍ");
+        YgUi.pressable(b);
+        return b;
+    }
+
+    /** شارة «مباشر»: نقطة نابضة + نص، خلفية حمراء. */
+    private LinearLayout buildLivePill(float textSp, int heightDp) {
+        LinearLayout pill = new LinearLayout(this);
+        pill.setOrientation(LinearLayout.HORIZONTAL);
+        pill.setGravity(Gravity.CENTER_VERTICAL);
+        pill.setPadding(dp(10), 0, dp(11), 0);
+        pill.setBackground(YgUi.rect(YgUi.LIVE, dp(heightDp) / 2f));
+
+        View dot = new View(this);
+        dot.setBackground(YgUi.oval(Color.WHITE));
+        AlphaAnimation pulse = new AlphaAnimation(1f, 0.3f);
+        pulse.setDuration(850);
+        pulse.setRepeatMode(Animation.REVERSE);
+        pulse.setRepeatCount(Animation.INFINITE);
+        dot.startAnimation(pulse);
+        LinearLayout.LayoutParams dotLp = ll(dp(7), dp(7));
+        dotLp.rightMargin = dp(6);
+        pill.addView(dot, dotLp);
+
+        TextView t = label("مباشر", textSp, Color.WHITE, YgUi.bold(this));
+        pill.addView(t, ll(WRAP, WRAP));
+        return pill;
+    }
+
+    // ---------- لوحة الإعدادات الجانبية ----------
+
+    private FrameLayout buildSettingsOverlay() {
+        FrameLayout overlay = new FrameLayout(this);
+
+        settingsScrim = new View(this);
+        settingsScrim.setBackgroundColor(0x99020510);
+        settingsScrim.setClickable(true);
+        settingsScrim.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hideSettings();
+            }
+        });
+        overlay.addView(settingsScrim, fl(MATCH, MATCH));
+
+        settingsPanel = new LinearLayout(this);
+        settingsPanel.setOrientation(LinearLayout.VERTICAL);
+        settingsPanel.setClickable(true);
+        GradientDrawable pbg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFA0E1634, 0xFA050A1B});
+        float r = dp(26);
+        pbg.setCornerRadii(new float[]{r, r, 0, 0, 0, 0, r, r});
+        pbg.setStroke(Math.max(1, dp(1)), YgUi.LINE);
+        settingsPanel.setBackground(pbg);
+        settingsPanel.setPadding(dp(16), dp(14), dp(16), dp(10));
+
+        // الرأس: [إغلاق]  ......  [العنوان]
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        View close = glassIconButton("x", 38, 18, "إغلاق");
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hideSettings();
+            }
+        });
+        head.addView(close, ll(dp(38), dp(38)));
+        TextView ht = label("إعدادات التشغيل", 21, Color.WHITE, YgUi.display(this));
+        ht.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        head.addView(ht, ll(0, WRAP, 1f));
+        settingsPanel.addView(head, ll(MATCH, WRAP));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(0, dp(4), 0, dp(14));
+
+        // جودة الفيديو
+        body.addView(sectionLabel("جودة الفيديو"), ll(MATCH, WRAP));
+        qualityListContainer = new LinearLayout(this);
+        qualityListContainer.setOrientation(LinearLayout.VERTICAL);
+        body.addView(qualityListContainer, ll(MATCH, WRAP));
+
+        // سرعة التشغيل (للفيديو المسجّل فقط)
+        speedSection = new LinearLayout(this);
+        speedSection.setOrientation(LinearLayout.VERTICAL);
+        speedSection.addView(sectionLabel("سرعة التشغيل"), ll(MATCH, WRAP));
+        speedGrid = new LinearLayout(this);
+        speedGrid.setOrientation(LinearLayout.VERTICAL);
+        speedSection.addView(speedGrid, ll(MATCH, WRAP));
+        body.addView(speedSection, ll(MATCH, WRAP));
+
+        // نسبة العرض
+        body.addView(sectionLabel("نسبة العرض"), ll(MATCH, WRAP));
+        aspectRow = new LinearLayout(this);
+        aspectRow.setOrientation(LinearLayout.HORIZONTAL);
+        body.addView(aspectRow, ll(MATCH, WRAP));
+
+        scroll.addView(body, new FrameLayout.LayoutParams(MATCH, WRAP));
+        settingsPanel.addView(scroll, ll(MATCH, 0, 1f));
+
+        overlay.addView(settingsPanel, fl(dp(340), MATCH, Gravity.RIGHT));
+        return overlay;
+    }
+
+    private TextView sectionLabel(String text) {
+        TextView t = label(text, 12, YgUi.COBALT_3, YgUi.bold(this));
+        t.setGravity(Gravity.RIGHT);
+        t.setPadding(dp(2), dp(14), dp(2), dp(8));
+        return t;
+    }
+
+    private void showSettings() {
+        refreshQualityListContent();
+        refreshSpeedGrid();
+        refreshAspectRow();
+        speedSection.setVisibility(isLive ? View.GONE : View.VISIBLE);
+        cancelAutoHideTimer();
+
+        int w = Math.min(dp(340), (int) (root.getWidth() * 0.9f));
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) settingsPanel.getLayoutParams();
+        lp.width = w;
+        settingsPanel.setLayoutParams(lp);
+
+        settingsOverlay.setVisibility(View.VISIBLE);
+        settingsScrim.setAlpha(0f);
+        settingsScrim.animate().alpha(1f).setDuration(200).start();
+        settingsPanel.setTranslationX(w);
+        settingsPanel.animate().translationX(0f).setDuration(260)
+                .setInterpolator(new DecelerateInterpolator(1.6f)).start();
+    }
+
+    private void hideSettings() {
+        if (!isSettingsVisible()) return;
+        int w = settingsPanel.getWidth();
+        settingsScrim.animate().alpha(0f).setDuration(180).start();
+        settingsPanel.animate().translationX(w).setDuration(200).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                settingsOverlay.setVisibility(View.GONE);
+            }
+        }).start();
+        resetAutoHideTimer();
+    }
+
+    private boolean isSettingsVisible() {
+        return settingsOverlay != null && settingsOverlay.getVisibility() == View.VISIBLE;
+    }
+
+    private void refreshQualityListContent() {
+        if (qualityListContainer == null || engine == null) return;
+        qualityListContainer.removeAllViews();
+
+        String selected = engine.getSelectedQualityId();
+        if (selected == null || selected.isEmpty()) selected = "auto";
+
+        addQualityRow("auto", "تلقائي", "auto".equals(selected));
+
+        List<PlaybackEngine.QualityOption> options = engine.getAvailableQualities();
+        if (options != null) {
+            for (PlaybackEngine.QualityOption opt : options) {
+                if (opt == null || opt.id == null || opt.id.isEmpty()) continue;
+                addQualityRow(opt.id, opt.label, opt.id.equals(selected));
+            }
+        }
+    }
+
+    private void addQualityRow(final String id, String label, boolean isSelected) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), 0, dp(16), 0);
+        GradientDrawable bg = YgUi.rect(isSelected ? 0x382F6BFF : 0x0FFFFFFF, dp(13));
+        if (isSelected) bg.setStroke(Math.max(1, dp(1.4f)), 0xCC5B8DFF);
+        row.setBackground(bg);
+
+        YgIconView check = new YgIconView(this, "check", YgUi.COBALT_3);
+        check.setStrokeUnits(2.8f);
+        check.setVisibility(isSelected ? View.VISIBLE : View.INVISIBLE);
+        row.addView(check, ll(dp(18), dp(18)));
+
+        TextView t = label(label != null && !label.isEmpty() ? label : id, 14,
+                isSelected ? Color.WHITE : YgUi.CHALK,
+                isSelected ? YgUi.bold(this) : YgUi.text(this));
+        t.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        row.addView(t, ll(0, WRAP, 1f));
+
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (engine != null) engine.selectQuality(id);
+                hideSettings();
+            }
+        });
+        YgUi.pressable(row);
+        LinearLayout.LayoutParams lp = ll(MATCH, dp(44));
+        lp.bottomMargin = dp(7);
+        qualityListContainer.addView(row, lp);
+    }
+
+    private void refreshSpeedGrid() {
+        speedGrid.removeAllViews();
+        LinearLayout row = null;
+        for (int i = 0; i < SPEEDS.length; i++) {
+            if (i % 3 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rlp = ll(MATCH, dp(40));
+                rlp.bottomMargin = dp(8);
+                speedGrid.addView(row, rlp);
+            }
+            final float s = SPEEDS[i];
+            boolean sel = Math.abs(s - currentSpeed) < 0.01f;
+            TextView pill = label(formatSpeed(s), 16, Color.WHITE, YgUi.display(this));
+            pill.setGravity(Gravity.CENTER);
+            pill.setBackground(sel ? YgUi.primary(dp(20), false) : YgUi.rect(0x14FFFFFF, dp(20)));
+            pill.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    setSpeed(s);
+                    refreshSpeedGrid();
+                }
+            });
+            YgUi.pressable(pill);
+            LinearLayout.LayoutParams plp = ll(0, MATCH, 1f);
+            if (i % 3 != 0) plp.leftMargin = dp(8);
+            row.addView(pill, plp);
+        }
+    }
+
+    private void refreshAspectRow() {
+        aspectRow.removeAllViews();
+        PlaybackEngine.ResizeMode[] modes = {PlaybackEngine.ResizeMode.FIT,
+                PlaybackEngine.ResizeMode.FILL, PlaybackEngine.ResizeMode.ZOOM};
+        for (int i = 0; i < modes.length; i++) {
+            final PlaybackEngine.ResizeMode m = modes[i];
+            boolean sel = (m == currentResizeMode);
+            LinearLayout cell = new LinearLayout(this);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER);
+            GradientDrawable bg = YgUi.rect(sel ? 0x382F6BFF : 0x0FFFFFFF, dp(14));
+            if (sel) bg.setStroke(Math.max(1, dp(1.4f)), 0xCC5B8DFF);
+            cell.setBackground(bg);
+            cell.addView(new YgIconView(this, resizeIconName(m), sel ? Color.WHITE : YgUi.MIST), ll(dp(20), dp(20)));
+            TextView t = label(resizeLabelText(m), 11.5f, sel ? Color.WHITE : YgUi.MIST,
+                    sel ? YgUi.bold(this) : YgUi.text(this));
+            t.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams tlp = ll(WRAP, WRAP);
+            tlp.topMargin = dp(5);
+            cell.addView(t, tlp);
+            cell.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    setResizeMode(m, true);
+                    refreshAspectRow();
+                }
+            });
+            YgUi.pressable(cell);
+            LinearLayout.LayoutParams clp = ll(0, dp(62), 1f);
+            if (i > 0) clp.leftMargin = dp(8);
+            aspectRow.addView(cell, clp);
+        }
+    }
+
+    // =====================================================================================
+    //  الإيماءات
+    // =====================================================================================
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupGestures() {
+        final int slop = ViewConfiguration.get(this).getScaledTouchSlop();
+        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDown(MotionEvent e) {
+                gestureMode = MODE_NONE;
+                seekDragAccumX = 0f;
+                int w = gestureLayer.getWidth();
+                int h = gestureLayer.getHeight();
+                int edge = dp(26);
+                // اللمسات الملاصقة للحواف نتركها لإيماءات النظام (سحب شريط التنقّل/الإشعارات)
+                touchStartedInEdge = e.getX() < edge || e.getX() > w - edge
+                        || e.getY() < edge || e.getY() > h - edge;
+                return true;
+            }
+
+            @Override
+            public boolean onSingleTapUp(MotionEvent e) {
+                handleTap(e.getX());
+                return true;
+            }
+
+            @Override
+            public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
+                if (e1 == null) return false;
+                int w = Math.max(1, gestureLayer.getWidth());
+                int h = Math.max(1, gestureLayer.getHeight());
+                if (gestureMode == MODE_NONE) {
+                    float totalX = e2.getX() - e1.getX();
+                    float totalY = e2.getY() - e1.getY();
+                    if (Math.abs(totalX) < slop * 1.6f && Math.abs(totalY) < slop * 1.6f) return false;
+                    if (touchStartedInEdge) {
+                        gestureMode = MODE_IGNORE;
+                        return false;
+                    }
+                    if (Math.abs(totalY) > Math.abs(totalX)) {
+                        gestureMode = e1.getX() < w / 2f ? MODE_BRIGHTNESS : MODE_VOLUME;
+                    } else if (canSeek()) {
+                        gestureMode = MODE_SEEK;
+                        beginSeekDrag();
+                    } else {
+                        gestureMode = MODE_IGNORE;
+                    }
+                }
+                switch (gestureMode) {
+                    case MODE_BRIGHTNESS:
+                        applyBrightness(brightness + (dy / h) * 1.15f);
+                        break;
+                    case MODE_VOLUME:
+                        applyVolume(volumeFraction + (dy / h) * 1.15f);
+                        break;
+                    case MODE_SEEK:
+                        seekDragAccumX += -dx;
+                        updateSeekDrag(w);
+                        break;
+                    default:
+                        break;
+                }
+                return true;
+            }
+        });
+        gestureDetector.setIsLongpressEnabled(false);
+        gestureDetector.setOnDoubleTapListener(null);
+
+        gestureLayer.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent ev) {
+                gestureDetector.onTouchEvent(ev);
+                int a = ev.getActionMasked();
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                    endGesture();
+                }
+                return true;
+            }
+        });
+    }
+
+    /** لمسة واحدة = إظهار/إخفاء؛ لمسات متتالية خلال نافذة قصيرة = تقديم/ترجيع متراكم. */
+    private void handleTap(float x) {
+        if (isSettingsVisible()) return;
+        int w = Math.max(1, gestureLayer.getWidth());
+        int side = x < w / 3f ? -1 : (x > w * 2f / 3f ? 1 : 0);
+
+        if (chainActive) {
+            // لمسة ثانية فأكثر ضمن النافذة
+            mainHandler.removeCallbacks(singleTapRunnable);
+            mainHandler.removeCallbacks(chainResetRunnable);
+            tapChain++;
+            if (side == tapChainSide && side != 0) {
+                multiTapSeek(side);
+            } else if (side == 0 && tapChain == 2 && tapChainSide == 0) {
+                togglePlayPause();
+                showControlsBriefly();
+            } else if (side != tapChainSide) {
+                // تغيّر الجانب: نبدأ سلسلة جديدة من هذه اللمسة
+                tapChainSide = side;
+                tapChain = 1;
+                seekFeedbackAccumMs = 0L;
+                mainHandler.postDelayed(singleTapRunnable, MULTI_TAP_WINDOW_MS);
+                return;
+            }
+            mainHandler.postDelayed(chainResetRunnable, MULTI_TAP_WINDOW_MS);
+            return;
+        }
+        chainActive = true;
+        tapChain = 1;
+        tapChainSide = side;
+        seekFeedbackAccumMs = 0L;
+        mainHandler.removeCallbacks(singleTapRunnable);
+        mainHandler.postDelayed(singleTapRunnable, MULTI_TAP_WINDOW_MS);
+    }
+
+    private void multiTapSeek(int side) {
+        if (!canSeek()) {
+            showCenterToast("lock", "لا يمكن التقديم في هذا البث");
+            return;
+        }
+        long delta = side * SEEK_STEP_MS;
+        seekRelative(delta);
+        seekFeedbackAccumMs += delta;
+        long secs = Math.abs(seekFeedbackAccumMs) / 1000L;
+        String txt = (side > 0 ? "+" : "-") + secs;
+        FrameLayout target = side > 0 ? seekFeedbackRight : seekFeedbackLeft;
+        TextView tv = side > 0 ? seekFeedbackRightText : seekFeedbackLeftText;
+        FrameLayout other = side > 0 ? seekFeedbackLeft : seekFeedbackRight;
+        tv.setText(txt);
+        other.setVisibility(View.GONE);
+        fadeIn(target);
+        mainHandler.removeCallbacks(hideSeekFeedbackRunnable);
+        mainHandler.postDelayed(hideSeekFeedbackRunnable, 650);
+    }
+
+    private void endGesture() {
+        if (gestureMode == MODE_SEEK) {
+            commitSeekDrag();
+        }
+        if (gestureMode == MODE_BRIGHTNESS || gestureMode == MODE_VOLUME) {
+            mainHandler.removeCallbacks(hideHudRunnable);
+            mainHandler.postDelayed(hideHudRunnable, 700);
+        }
+        gestureMode = MODE_NONE;
+    }
+
+    // ----- السطوع -----
+
+    private void initBrightness() {
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        if (lp.screenBrightness >= 0f) {
+            brightness = lp.screenBrightness;
+        } else {
+            try {
+                int sys = Settings.System.getInt(getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
+                brightness = sys / 255f;
+            } catch (Exception e) {
+                brightness = 0.5f;
+            }
+        }
+        brightnessMeter.setValue(brightness);
+        brightnessText.setText(String.valueOf(Math.round(brightness * 100)));
+    }
+
+    private void applyBrightness(float v) {
+        brightness = clamp(v, 0.02f, 1f);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = brightness;
+        getWindow().setAttributes(lp);
+        brightnessMeter.setValue(brightness);
+        brightnessText.setText(String.valueOf(Math.round(brightness * 100)));
+        fadeIn(brightnessHud);
+        fadeOut(volumeHud);
+        mainHandler.removeCallbacks(hideHudRunnable);
+    }
+
+    // ----- الصوت -----
+
+    private void initVolume() {
+        audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audio != null) {
+            maxVolume = Math.max(1, audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
+            volumeFraction = audio.getStreamVolume(AudioManager.STREAM_MUSIC) / (float) maxVolume;
+        }
+        volumeMeter.setValue(volumeFraction);
+        volumeText.setText(String.valueOf(Math.round(volumeFraction * 100)));
+        updateVolumeIcon();
+    }
+
+    private void applyVolume(float v) {
+        volumeFraction = clamp(v, 0f, 1f);
+        if (audio != null) {
+            try {
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(volumeFraction * maxVolume), 0);
+            } catch (SecurityException ignored) {
+                // بعض الأجهزة تمنع تغيير الصوت في أوضاع معيّنة (عدم الإزعاج)
+            }
+        }
+        volumeMeter.setValue(volumeFraction);
+        volumeText.setText(String.valueOf(Math.round(volumeFraction * 100)));
+        updateVolumeIcon();
+        fadeIn(volumeHud);
+        fadeOut(brightnessHud);
+        mainHandler.removeCallbacks(hideHudRunnable);
+    }
+
+    private void updateVolumeIcon() {
+        if (volumeIcon == null) return;
+        if (volumeFraction <= 0.001f) volumeIcon.setIcon("volume-x");
+        else if (volumeFraction < 0.5f) volumeIcon.setIcon("volume-1");
+        else volumeIcon.setIcon("volume-2");
+    }
+
+    // ----- السحب الأفقي للتقديم -----
+
+    private boolean canSeek() {
+        return !isLive || knownDurationMs > 0;
+    }
+
+    private void beginSeekDrag() {
+        if (engine == null) return;
+        seekDragStartPos = engine.getCurrentPosition();
+        seekDragTarget = seekDragStartPos;
+        seekDragRange = knownDurationMs > 0 ? Math.min(knownDurationMs, 180_000L) : 120_000L;
+        userSeeking = true;
+        cancelAutoHideTimer();
+        seekPreview.setVisibility(View.VISIBLE);
+        seekPreview.setAlpha(1f);
+    }
+
+    private void updateSeekDrag(int screenWidth) {
+        float frac = seekDragAccumX / (float) screenWidth;
+        long delta = (long) (frac * seekDragRange);
+        long target = seekDragStartPos + delta;
+        if (target < 0) target = 0;
+        if (knownDurationMs > 0 && target > knownDurationMs) target = knownDurationMs;
+        seekDragTarget = target;
+        long shown = target - seekDragStartPos;
+        seekPreviewTime.setText(formatTime(target));
+        seekPreviewDelta.setText((shown >= 0 ? "+" : "-") + formatTime(Math.abs(shown)));
+        updateTimeUi(target, knownDurationMs);
+    }
+
+    private void commitSeekDrag() {
+        seekPreview.setVisibility(View.GONE);
+        userSeeking = false;
+        if (engine != null && Math.abs(seekDragTarget - seekDragStartPos) > 500) {
+            engine.seekTo(seekDragTarget);
+        }
+        resetAutoHideTimer();
+    }
+
+    // =====================================================================================
+    //  منطق التشغيل (كما كان) + إضافات الواجهة
+    // =====================================================================================
+
+    private void startPlayback() {
+        if (engine == null) return;
+        showLoading();
+        long startPos = 0L;
+        if (!isLive && resumeKey != null && !resumeKey.isEmpty()) {
+            startPos = PlaybackPositionStore.getPosition(getApplicationContext(), resumeKey);
+        }
+        engine.playUrl(contentUrl, startPos);
+    }
+
+    private void togglePlayPause() {
+        if (engine == null) return;
+        if (engine.isPlaying()) {
+            engine.pause();
+        } else {
+            engine.play();
+        }
+    }
+
+    private void seekRelative(long deltaMs) {
+        if (engine == null) return;
+        long current = engine.getCurrentPosition();
+        long target = current + deltaMs;
+        if (target < 0) target = 0;
+        if (knownDurationMs > 0 && target > knownDurationMs) target = knownDurationMs;
+        engine.seekTo(target);
+        updateTimeUi(target, knownDurationMs);
+    }
+
+    private void goToLiveEdge() {
+        if (engine == null || knownDurationMs <= 0) return;
+        engine.seekTo(knownDurationMs);
+        resetAutoHideTimer();
+    }
+
+    /** يضبط شكل شريط التقدّم والأزرار بحسب نوع المحتوى (فيديو / بث بنافذة / بث بلا نافذة). */
+    private void applySeekMode() {
+        boolean liveNoWindow = isLive && knownDurationMs <= 0;
+        seekView.setLiveFull(liveNoWindow);
+        seekView.setSeekable(!liveNoWindow);
+        float a = liveNoWindow ? 0.38f : 1f;
+        rewindBtn.setAlpha(a);
+        forwardBtn.setAlpha(a);
+        if (!isLive && knownDurationMs > 0) durationText.setText(formatTime(knownDurationMs));
+        updateLiveBadgeState(engine != null ? engine.getCurrentPosition() : 0L);
+    }
+
+    private void updateTimeUi(long positionMs, long durationMs) {
+        currentTimeText.setText(formatTime(positionMs));
+        if (durationMs > 0) {
+            seekView.setProgress(Math.min(1f, Math.max(0f, positionMs / (float) durationMs)));
+        }
+        if (isLive) updateLiveBadgeState(positionMs);
+    }
+
+    private void updateBufferedUi() {
+        if (engine == null || knownDurationMs <= 0) return;
+        long b = engine.getBufferedPosition();
+        seekView.setBuffered(b / (float) knownDurationMs);
+    }
+
+    /** شارة الأسفل: حمراء «مباشر» عند الحافة الحية، ورمادية «العودة للمباشر» عند التأخّر ضمن نافذة DVR. */
+    private void updateLiveBadgeState(long positionMs) {
+        if (!isLive || liveBadgeBottom == null) return;
+        boolean dvr = knownDurationMs > 0;
+        boolean atEdge = !dvr || (knownDurationMs - positionMs) <= LIVE_EDGE_SLACK_MS;
+        int state = atEdge ? 1 : 0;
+        if (state == liveStateCache) return;
+        liveStateCache = state;
+        liveBadgeBottom.setBackground(YgUi.rect(atEdge ? YgUi.LIVE : 0x33FFFFFF, dp(14)));
+        liveBadgeBottomText.setText(atEdge ? "مباشر" : "العودة للمباشر");
+        liveBadgeBottom.setClickable(dvr && !atEdge);
+    }
+
+    private void updatePlayPauseIcon(boolean isPlaying) {
+        playPauseIcon.setIcon(isPlaying ? "pause" : "play");
+        playPauseIcon.setFilled(true);
+        // مثلث التشغيل يبدو أيسر من مركزه الهندسي — نزيحه قليلاً لتوسيط بصري
+        playPauseIcon.setTranslationX(isPlaying ? 0f : dp(1.5f));
+        playPauseIcon.setScaleX(0.8f);
+        playPauseIcon.setScaleY(0.8f);
+        playPauseIcon.animate().scaleX(1f).scaleY(1f).setDuration(160).start();
+    }
+
+    private void setSpeed(float s) {
+        currentSpeed = s;
+        if (engine != null) engine.setPlaybackSpeed(s);
+        boolean normal = Math.abs(s - 1f) < 0.01f;
+        speedBadge.setVisibility(normal ? View.GONE : View.VISIBLE);
+        speedBadge.setText(formatSpeed(s));
+        showCenterToast("gauge", "السرعة " + formatSpeed(s));
+    }
+
+    private static String formatSpeed(float s) {
+        if (Math.abs(s - Math.round(s)) < 0.001f) return ((int) Math.round(s)) + "×";
+        String t = String.format(Locale.US, "%.2f", s);
+        if (t.endsWith("0")) t = t.substring(0, t.length() - 1);
+        return t + "×";
+    }
+
+    private void cycleResizeMode() {
+        PlaybackEngine.ResizeMode next;
+        if (currentResizeMode == PlaybackEngine.ResizeMode.FIT) next = PlaybackEngine.ResizeMode.FILL;
+        else if (currentResizeMode == PlaybackEngine.ResizeMode.FILL) next = PlaybackEngine.ResizeMode.ZOOM;
+        else next = PlaybackEngine.ResizeMode.FIT;
+        setResizeMode(next, true);
+    }
+
+    private void setResizeMode(PlaybackEngine.ResizeMode mode, boolean announce) {
+        currentResizeMode = mode;
+        if (engine != null) engine.setResizeMode(mode);
+        resizeIcon.setIcon(resizeIconName(mode));
+        resizeLabel.setText(resizeLabelText(mode));
+        if (announce) showCenterToast(resizeIconName(mode), resizeLabelText(mode));
+    }
+
+    private static String resizeIconName(PlaybackEngine.ResizeMode m) {
+        switch (m) {
+            case FILL:
+                return "maximize-2";
+            case ZOOM:
+                return "zoom-in";
+            case FIT:
+            default:
+                return "scan";
+        }
+    }
+
+    private static String resizeLabelText(PlaybackEngine.ResizeMode m) {
+        switch (m) {
+            case FILL:
+                return "ملء";
+            case ZOOM:
+                return "تكبير";
+            case FIT:
+            default:
+                return "احتواء";
+        }
+    }
+
+    private String formatTime(long ms) {
+        if (ms < 0) ms = 0;
+        long totalSeconds = ms / 1000L;
+        long hours = totalSeconds / 3600L;
+        long minutes = (totalSeconds % 3600L) / 60L;
+        long seconds = totalSeconds % 60L;
+        if (hours > 0) {
+            return String.format(Locale.US, "%d:%02d:%02d", hours, minutes, seconds);
+        }
+        return String.format(Locale.US, "%d:%02d", minutes, seconds);
+    }
+
+    // ----- التحميل/الخطأ -----
+
+    private void showLoading() {
+        loadingOverlay.setVisibility(View.VISIBLE);
+        // دائرة التحميل في مركز الشاشة نفسه الذي يشغله زر التشغيل الكبير (الذي يعلوها في الترتيب)
+        // فنُخفيه أثناء التحميل ليظهر مؤشر التحميل بوضوح، ثم يعود فور الجاهزية.
+        if (centerRow != null) centerRow.setVisibility(View.INVISIBLE);
+    }
+
+    private void hideLoading() {
+        loadingOverlay.setVisibility(View.GONE);
+        if (centerRow != null) centerRow.setVisibility(View.VISIBLE);
+        if (loadingStatusText != null) {
+            loadingStatusText.setVisibility(View.GONE);
+            loadingStatusText.setText("");
+        }
+    }
+
+    /** المحرّك يتعافى تلقائياً من فشل مؤقت: دائرة التحميل + نص يوضح ما يجري بدل رسالة خطأ. */
+    private void showRecovering(String statusMessage) {
+        hideError();
+        showLoading();
+        if (loadingStatusText != null && statusMessage != null && !statusMessage.isEmpty()) {
+            loadingStatusText.setText(statusMessage);
+            loadingStatusText.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void showError(String message) {
+        hideLoading();
+        errorText.setText(message != null && !message.isEmpty() ? message : "تعذر تشغيل هذا المحتوى.");
+        errorOverlay.setVisibility(View.VISIBLE);
+        errorOverlay.setAlpha(0f);
+        errorOverlay.animate().alpha(1f).setDuration(220).start();
+        cancelAutoHideTimer();
+        controlsVisible = false;
+        controlsOverlay.animate().cancel();
+        controlsOverlay.setAlpha(0f);
+        controlsOverlay.setVisibility(View.GONE);
+    }
+
+    private void hideError() {
+        errorOverlay.setVisibility(View.GONE);
+    }
+
+    // ----- إظهار/إخفاء عناصر التحكّم -----
+
+    private void toggleControls() {
+        if (isSettingsVisible()) return;
+        if (controlsVisible) {
+            hideControls();
+        } else {
+            showControls();
+        }
+    }
+
+    private void showControls() {
+        controlsVisible = true;
+        controlsOverlay.animate().cancel();
+        controlsOverlay.setVisibility(View.VISIBLE);
+        controlsOverlay.animate().alpha(1f).setDuration(180).start();
+        resetAutoHideTimer();
+    }
+
+    private void showControlsBriefly() {
+        if (!controlsVisible) showControls(); else resetAutoHideTimer();
+    }
+
+    private void hideControls() {
+        controlsVisible = false;
+        cancelAutoHideTimer();
+        controlsOverlay.animate().cancel();
+        controlsOverlay.animate().alpha(0f).setDuration(200).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                if (!controlsVisible) controlsOverlay.setVisibility(View.GONE);
+            }
+        }).start();
+    }
+
+    private void resetAutoHideTimer() {
+        cancelAutoHideTimer();
+        mainHandler.postDelayed(hideControlsRunnable, CONTROLS_AUTO_HIDE_MS);
+    }
+
+    private void cancelAutoHideTimer() {
+        mainHandler.removeCallbacks(hideControlsRunnable);
+    }
+
+    // ----- إشعار وسطي + تلاشي -----
+
+    private void showCenterToast(String icon, String text) {
+        centerToastIcon.setIcon(icon);
+        centerToastText.setText(text);
+        fadeIn(centerToast);
+        mainHandler.removeCallbacks(hideCenterToastRunnable);
+        mainHandler.postDelayed(hideCenterToastRunnable, 1100);
+    }
+
+    private void fadeIn(final View v) {
+        if (v == null) return;
+        v.animate().cancel();
+        if (v.getVisibility() != View.VISIBLE) {
+            v.setAlpha(0f);
+            v.setVisibility(View.VISIBLE);
+        }
+        v.animate().alpha(1f).setDuration(120).start();
+    }
+
+    private void fadeOut(final View v) {
+        if (v == null || v.getVisibility() != View.VISIBLE) return;
+        v.animate().cancel();
+        v.animate().alpha(0f).setDuration(220).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                v.setVisibility(View.GONE);
+            }
+        }).start();
+    }
+
+    // ----- الحفظ والإغلاق -----
+
+    private void savePositionNow(long positionMs) {
+        if (isLive || resumeKey == null || resumeKey.isEmpty()) return;
+        PlaybackPositionStore.savePosition(getApplicationContext(), resumeKey, positionMs, knownDurationMs);
+    }
+
+    private void finishAndSave() {
+        if (engine != null) {
+            savePositionNow(engine.getCurrentPosition());
+        }
+        // نحرّر المشغّل واتصال البث الآن، لا بعد onDestroy: finish() لا تستدعي onDestroy فوراً (تتأخر
+        // حتى ينتهي انتقال الشاشة)، وخلال هذه الفترة كان الاتصال القديم مفتوحاً والصوت ما يزال
+        // يعمل بينما قد يضغط المستخدم قناة جديدة — فتصطدم بحدّ الاتصالات المتزامنة في حسابات Xtream.
+        releaseEngineNow();
+        finish();
+    }
+
+    private void releaseEngineNow() {
+        if (engine != null) {
+            engine.release();
+            engine = null;
+        }
+    }
+
+    // =====================================================================================
+    //  أدوات رسم مساعدة
+    // =====================================================================================
+
+    private int dp(float v) {
+        return YgUi.dp(this, v);
+    }
+
+    private FrameLayout.LayoutParams fl(int w, int h) {
+        return new FrameLayout.LayoutParams(w, h);
+    }
+
+    private FrameLayout.LayoutParams fl(int w, int h, int gravity) {
+        return new FrameLayout.LayoutParams(w, h, gravity);
+    }
+
+    private LinearLayout.LayoutParams ll(int w, int h) {
+        return new LinearLayout.LayoutParams(w, h);
+    }
+
+    private LinearLayout.LayoutParams ll(int w, int h, float weight) {
+        return new LinearLayout.LayoutParams(w, h, weight);
+    }
+
+    private TextView label(String text, float sp, int color, Typeface tf) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextSize(sp);
+        t.setTextColor(color);
+        if (tf != null) t.setTypeface(tf);
+        t.setIncludeFontPadding(false);
+        return t;
+    }
+
+    private GradientDrawable scrim(boolean darkAtTop) {
+        int[] colors = darkAtTop
+                ? new int[]{0xDB020510, 0x00020510}
+                : new int[]{0x00020510, 0xEB020510};
+        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, colors);
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 }
