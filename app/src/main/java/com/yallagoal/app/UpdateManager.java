@@ -1,14 +1,11 @@
 package com.yallagoal.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
-import android.content.res.ColorStateList;
-import android.graphics.Color;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -19,7 +16,6 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -81,11 +77,11 @@ public class UpdateManager {
     private volatile boolean isDownloading = false;
 
     // عناصر حوار التقدّم
-    private AlertDialog progressDialog;
+    private Dialog progressDialog;
     private TextView progressStatusText;
     private TextView progressPercentText;
     private TextView progressSizeText;
-    private ProgressBar progressBar;
+    private YgProgressView progressBar;
 
     private final UpdateProgressBus.Listener progressListener = new UpdateProgressBus.Listener() {
         @Override
@@ -197,18 +193,12 @@ public class UpdateManager {
                 : "يتوفر إصدار جديد من التطبيق"
                         + (pendingVersionName.isEmpty() ? "" : " (" + pendingVersionName + ")") + ".";
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
-                .setTitle("تحديث متوفر")
-                .setMessage(message)
-                .setCancelable(!pendingForce)
-                .setPositiveButton("تحديث الآن", (dialog, which) -> beginDownloadFlow());
+        String chip = pendingVersionName.isEmpty() ? null : "الإصدار " + pendingVersionName;
 
-        if (!pendingForce) {
-            builder.setNegativeButton("لاحقاً", (dialog, which) -> dialog.dismiss());
-        }
-
-        AlertDialog dialog = builder.create();
-        dialog.setCanceledOnTouchOutside(false);
+        Dialog dialog = YgDialog.alert(activity, "download", YgDialog.TONE_BRAND,
+                "تحديث متوفر", chip, message,
+                "تحديث الآن", "download", this::beginDownloadFlow,
+                pendingForce ? null : "لاحقاً", !pendingForce);
 
         if (pendingForce) {
             // يمنع إغلاق الرسالة بزر الرجوع طالما التحديث إلزامي
@@ -220,80 +210,76 @@ public class UpdateManager {
 
     // ==================== حوار التقدّم ====================
 
-    private int dp(int value) {
-        float density = activity.getResources().getDisplayMetrics().density;
-        return Math.round(value * density);
-    }
-
     /**
      * يبني تخطيط حوار التقدّم برمجياً بالكامل (بدون أي ملف XML خارجي في res/layout) —
      * هذا مقصود: ملف Java واحد ذاتي الاكتفاء لا يعتمد على وجود ملف موارد منفصل، حتى لا
      * يفشل البناء لو نُسي إضافة ملف جديد بالمسار الصحيح عند دمج التعديلات يدوياً بمشروع قائم.
+     * (التصميم بهوية التطبيق: شارة تنزيل متوهّجة + شريط بتدرّج أزرق/برتقالي + نسبة بخط Lalezar.)
      */
-    private View buildProgressView() {
-        int hPad = dp(24);
+    private LinearLayout buildProgressCard() {
+        LinearLayout card = YgDialog.card(activity);
 
-        LinearLayout root = new LinearLayout(activity);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(hPad, dp(8), hPad, dp(8));
+        card.addView(YgDialog.badge(activity, "download", YgDialog.TONE_BRAND),
+                new LinearLayout.LayoutParams(YgUi.dp(activity, 66), YgUi.dp(activity, 66)));
+
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        tp.topMargin = YgUi.dp(activity, 16);
+        card.addView(YgDialog.title(activity, "جاري تحديث التطبيق"), tp);
 
         progressStatusText = new TextView(activity);
         progressStatusText.setText("جاري تحضير التنزيل...");
-        progressStatusText.setTextColor(Color.parseColor("#F1F5F9"));
-        progressStatusText.setTextSize(14);
-        progressStatusText.setTypeface(Typeface.DEFAULT_BOLD);
-        root.addView(progressStatusText, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        progressStatusText.setTextColor(YgUi.CHALK);
+        progressStatusText.setTextSize(13);
+        progressStatusText.setTypeface(YgUi.bold(activity));
+        progressStatusText.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        sp.topMargin = YgUi.dp(activity, 10);
+        card.addView(progressStatusText, sp);
 
-        progressBar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        progressBar = new YgProgressView(activity);
         progressBar.setMax(1000); // دقة 0.1% لحركة أنعم بصرياً، محسوبة من downloadedBytes/totalBytes الفعليين
         progressBar.setProgress(0);
         progressBar.setIndeterminate(false);
-        progressBar.setProgressTintList(ColorStateList.valueOf(Color.parseColor("#10B981")));
-        progressBar.setProgressBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#1E293B")));
         LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(10));
-        barParams.topMargin = dp(16);
-        root.addView(progressBar, barParams);
+                LinearLayout.LayoutParams.MATCH_PARENT, YgUi.dp(activity, 10));
+        barParams.topMargin = YgUi.dp(activity, 20);
+        card.addView(progressBar, barParams);
 
         LinearLayout row = new LinearLayout(activity);
         row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rowParams.topMargin = dp(10);
+        rowParams.topMargin = YgUi.dp(activity, 12);
+        rowParams.bottomMargin = YgUi.dp(activity, 4);
 
         progressPercentText = new TextView(activity);
         progressPercentText.setText("");
-        progressPercentText.setTextColor(Color.parseColor("#10B981"));
-        progressPercentText.setTypeface(Typeface.DEFAULT_BOLD);
-        progressPercentText.setTextSize(13);
+        progressPercentText.setTextColor(YgUi.COBALT_3);
+        progressPercentText.setTypeface(YgUi.display(activity));
+        progressPercentText.setTextSize(22);
         progressPercentText.setGravity(Gravity.START);
+        progressPercentText.setIncludeFontPadding(false);
         row.addView(progressPercentText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         progressSizeText = new TextView(activity);
         progressSizeText.setText("");
-        progressSizeText.setTextColor(Color.parseColor("#94A3B8"));
+        progressSizeText.setTextColor(YgUi.FOG);
+        progressSizeText.setTypeface(YgUi.text(activity));
         progressSizeText.setTextSize(12);
         progressSizeText.setGravity(Gravity.END);
         row.addView(progressSizeText, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        root.addView(row, rowParams);
-
-        return root;
+        card.addView(row, rowParams);
+        return card;
     }
 
     private void buildProgressDialogIfNeeded() {
         if (!isActivityUsable()) return;
 
-        View view = buildProgressView();
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
-                .setTitle("جاري تحديث التطبيق")
-                .setView(view)
-                .setCancelable(false);
-
-        progressDialog = builder.create();
-        progressDialog.setCanceledOnTouchOutside(false);
+        progressDialog = YgDialog.create(activity, buildProgressCard(), false);
         // التنزيل عملية إلزامية بمجرد بدئها لتفادي ملفات نصف مكتملة وتشابك محاولات متعددة —
         // زر "إعادة المحاولة" في حوار الخطأ هو الطريق الوحيد للتكرار، ولا زر رجوع هنا. كما أن
         // التنزيل نفسه يستمر بخدمة Foreground بالخلفية حتى لو أغلق المستخدم هذا الحوار بالكامل
@@ -398,18 +384,10 @@ public class UpdateManager {
     private void showErrorDialog(String message) {
         if (!isActivityUsable()) return;
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
-                .setTitle("تعذر إكمال التحديث")
-                .setMessage(message)
-                .setCancelable(!pendingForce)
-                .setPositiveButton("إعادة المحاولة", (dialog, which) -> beginDownloadFlow());
-
-        if (!pendingForce) {
-            builder.setNegativeButton("لاحقاً", (dialog, which) -> dialog.dismiss());
-        }
-
-        AlertDialog dialog = builder.create();
-        dialog.setCanceledOnTouchOutside(false);
+        Dialog dialog = YgDialog.alert(activity, "triangle-alert", YgDialog.TONE_BAD,
+                "تعذر إكمال التحديث", null, message,
+                "إعادة المحاولة", "refresh-cw", this::beginDownloadFlow,
+                pendingForce ? null : "لاحقاً", !pendingForce);
 
         if (pendingForce) {
             dialog.setOnKeyListener((d, keyCode, event) -> keyCode == KeyEvent.KEYCODE_BACK);
