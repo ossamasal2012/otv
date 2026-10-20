@@ -75,10 +75,21 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAMPER_HTML =
             "<!DOCTYPE html><html lang='ar' dir='rtl'><head><meta charset='utf-8'>"
             + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            + "<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
-            + "background:#0b1220;color:#e2e8f0;font-family:sans-serif;text-align:center;padding:24px;box-sizing:border-box}"
-            + "h1{font-size:20px;margin:0 0 12px;color:#f87171}p{font-size:15px;line-height:1.9;margin:0;color:#94a3b8}"
-            + "</style></head><body><div><h1>نسخة غير رسمية من التطبيق</h1>"
+            + "<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+            + "background:radial-gradient(80% 40% at 50% 0%,rgba(255,59,85,.18),transparent 70%),#050A1B;color:#F3F6FF;"
+            + "font-family:'Segoe UI',Roboto,'Noto Sans Arabic',sans-serif;text-align:center;padding:24px}"
+            + ".c{max-width:360px;width:100%;padding:30px 24px;border-radius:28px;"
+            + "background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.02)),#0A1230;"
+            + "border:1px solid rgba(255,90,110,.35);box-shadow:0 30px 60px -24px rgba(0,0,0,.9)}"
+            + ".i{width:68px;height:68px;margin:0 auto 18px;border-radius:24px;display:flex;align-items:center;justify-content:center;"
+            + "background:rgba(255,90,110,.14);border:1px solid rgba(255,90,110,.4)}"
+            + "svg{width:34px;height:34px;stroke:#FF5A6E;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}"
+            + "h1{font-size:21px;margin:0 0 12px;color:#FF8A9A;font-weight:800}"
+            + "p{font-size:14.5px;line-height:1.95;margin:0;color:#B0BEE8}"
+            + "</style></head><body><div class='c'><div class='i'><svg viewBox='0 0 24 24'>"
+            + "<path d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/>"
+            + "<path d='M12 9v4'/><path d='M12 17h.01'/></svg></div>"
+            + "<h1>نسخة غير رسمية من التطبيق</h1>"
             + "<p>تعذّر التحقق من سلامة هذه النسخة (قد تكون معدَّلة أو غير مكتملة).<br>"
             + "يرجى حذفها وتثبيت النسخة الرسمية من المصدر الأصلي.</p></div></body></html>";
 
@@ -139,6 +150,8 @@ public class MainActivity extends AppCompatActivity {
 
         fullscreenContainer = findViewById(R.id.fullscreen_container);
         webView = findViewById(R.id.webview);
+        // لون الخلفية قبل أن تُرسم الصفحة: يمنع وميض الأبيض عند فتح التطبيق وعند تدوير الشاشة
+        webView.setBackgroundColor(0xFF050A1B);
 
         WebView.setWebContentsDebuggingEnabled(false);
 
