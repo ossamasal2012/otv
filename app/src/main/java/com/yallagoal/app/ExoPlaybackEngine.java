@@ -238,6 +238,23 @@ final class ExoPlaybackEngine implements PlaybackEngine {
     }
 
     @Override
+    public void setVolume(float volume) {
+        if (player == null) return;
+        float v = volume < 0f ? 0f : (volume > 1f ? 1f : volume);
+        player.setVolume(v);
+    }
+
+    @Override
+    public boolean hasVideo() {
+        if (player == null) return false;
+        try {
+            return player.getCurrentTracks().isTypeSelected(C.TRACK_TYPE_VIDEO);
+        } catch (Throwable t) {
+            return true; // عند الشك لا نُظهر واجهة «صوت فقط»
+        }
+    }
+
+    @Override
     public void setResizeMode(ResizeMode mode) {
         if (playerView == null || mode == null) return;
         switch (mode) {
