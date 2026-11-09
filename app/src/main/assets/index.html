@@ -668,6 +668,11 @@ button, .chip, .dock, .channel-item, .coll, .poster, .ep, .opt {
 .coll--xtream::after { background-position: left top; background-size: auto; }
 .coll--quran::after { background-repeat: repeat; opacity: 1; -webkit-mask-image: linear-gradient(135deg, #000, transparent 70%); mask-image: linear-gradient(135deg, #000, transparent 70%); }
 .coll--poems::after { background-position: right bottom; background-size: 150px 54px; }
+.coll--radio {
+    --coll-bg: linear-gradient(150deg, #FF9F3D 0%, #E0560F 52%, #7A2108 100%);
+    --coll-pat: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='150' height='110' viewBox='0 0 150 110'><g fill='none' stroke='white' stroke-opacity='.17' stroke-width='1.6'><circle cx='150' cy='110' r='26'/><circle cx='150' cy='110' r='50'/><circle cx='150' cy='110' r='74'/><circle cx='150' cy='110' r='98'/></g></svg>");
+}
+.coll--radio::after { background-position: right bottom; background-size: 150px 110px; }
 
 /* ===== شريط «تابع المشاهدة» ===== */
 .recent {
@@ -2492,6 +2497,7 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
         let myChannels = [];
         let quranChannels = [];
         let poemsChannels = [];
+        let radioChannels = [];
         let xtreamServers = [];
         let currentTab = "main";
         let currentCat = "الكل";
@@ -2505,6 +2511,8 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
         // 📡 مصدر سيرفرات Xtream — نفس فكرة channels.json/quran.json تماماً: ملف JSON على
         // GitHub بصيغة موحّدة، يُقرأ تلقائياً دون أي تدخل يدوي من المستخدم عند إضافة سيرفر جديد.
         const XTREAM_SERVERS_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/xtream.json";
+        // 📻 مصدر مجلد «راديو» — نفس صيغة channels.json تماماً (n / logo / c / s[]) ويُقرأ تلقائياً مع بقية المصادر.
+        const RADIO_JSON_URL = "https://raw.githubusercontent.com/ossamasal2012/yalla-data/refs/heads/main/radio.json";
 
         function buildFallbackUrls(rawUrl) {
             try {
@@ -2599,11 +2607,12 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
             document.getElementById('errorScreen').classList.add('hidden');
             renderListSkeleton();
 
-            const [mainResult, quranResult, poemsResult, xtreamResult] = await Promise.allSettled([
+            const [mainResult, quranResult, poemsResult, xtreamResult, radioResult] = await Promise.allSettled([
                 fetchJsonRobust(MAIN_CHANNELS_URL),
                 fetchJsonRobust(QURAN_JSON_URL),
                 fetchJsonRobust(POEMS_JSON_URL),
-                fetchJsonRobust(XTREAM_SERVERS_URL)
+                fetchJsonRobust(XTREAM_SERVERS_URL),
+                fetchJsonRobust(RADIO_JSON_URL)
             ]);
 
             const sourceErrors = [];
@@ -2676,6 +2685,35 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                 console.warn("تعذر تحميل سيرفرات Xtream (طبيعي إن لم يُضَف أي سيرفر بعد):", xtreamResult.reason);
             }
 
+            // 📻 الراديو — مجلد اختياري مثل Xtream: غياب الملف أو فراغه ليس خطأً ولا يُحتسب ضمن
+            // «فشل التحميل الكامل» أدناه، ولا يؤثر على أي مجلد آخر.
+            if (radioResult.status === 'fulfilled' && Array.isArray(radioResult.value)) {
+                radioChannels = radioResult.value
+                    .filter(ch => ch && typeof ch === 'object' && !Array.isArray(ch) &&
+                        typeof ch.n === 'string' && ch.n.trim() !== '' &&
+                        Array.isArray(ch.s) && ch.s.length > 0)
+                    .map(ch => {
+                        const servers = ch.s
+                            .filter(s => s && typeof s === 'object' && typeof s.u === 'string' && s.u.trim() !== '')
+                            .map((s, idx) => ({
+                                name: (typeof s.n === 'string' && s.n.trim() !== '') ? s.n.trim() : ('سيرفر ' + (idx + 1)),
+                                url: s.u.trim(),
+                                type: (s.t === 'i') ? 'i' : 'v'
+                            }));
+                        return {
+                            name: ch.n.trim(),
+                            category: 'راديو',
+                            logo: (typeof ch.logo === 'string' && ch.logo.trim() !== '') ? ch.logo.trim() : '',
+                            isRadio: true,
+                            servers
+                        };
+                    })
+                    .filter(ch => ch.servers.length > 0);
+            } else {
+                radioChannels = [];
+                console.warn("تعذر تحميل محطات الراديو (طبيعي إن لم يُضَف الملف بعد):", radioResult.reason);
+            }
+
             if (myChannels.length === 0 && quranChannels.length === 0 && poemsChannels.length === 0) {
                 renderListLoadError('تعذر تحميل قائمة القنوات. تأكد من اتصالك بالإنترنت ثم حاول مجدداً.');
                 return;
@@ -2697,7 +2735,8 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
         function favTotalCount() {
             const mainCount = myChannels.filter(c => favorites.includes(c.name)).length;
             const folderCount = quranChannels.concat(poemsChannels).filter(c => favorites.includes(c[0])).length;
-            return mainCount + folderCount;
+            const radioCount = radioChannels.filter(c => favorites.includes(c.name)).length;
+            return mainCount + folderCount + radioCount;
         }
 
         function renderMenu() {
@@ -2751,6 +2790,10 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
             const pCount = poemsChannels.filter(c => normalizeArabic(c[0]).includes(q)).length;
             if (pCount > 0 || !searching) {
                 tiles.push(collTile('poems', 'mic-vocal', 'قصائد حسينية', poemsChannels.length + ' عينة', "pushScreen({screen:'poems'})"));
+            }
+            const rCount = radioChannels.filter(c => normalizeArabic(c.name).includes(q)).length;
+            if (rCount > 0 || !searching) {
+                tiles.push(collTile('radio', 'radio', 'راديو', radioChannels.length + ' محطة', "pushScreen({screen:'radio'})"));
             }
             return tiles.length ? `<div class="collections no-scrollbar">${tiles.join('')}</div>` : '';
         }
@@ -2858,11 +2901,66 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                 `<div class="ch-name" title="${escHtml(ch.name)}">${escHtml(ch.name)}</div></div>`;
         }
 
+        // ===== 📻 الراديو: صفّ/بطاقة محطة (نفس تصميم القنوات الرئيسية وبدون أزرار البث للتلفاز) =====
+        function radioChannelRowHtml(ch) {
+            const isFav = favorites.includes(ch.name);
+            const idx = radioChannels.indexOf(ch);
+            const count = ch.servers.length > 1
+                ? `<span class="row-count" title="عدد السيرفرات">${ch.servers.length}</span>` : '';
+            return `<div class="row channel-item${isPlayingChannelName(ch.name) ? ' active-card' : ''}" data-name="${escHtml(ch.name)}" role="button" tabindex="0" onclick="openRadio(${idx}, this)">` +
+                `<span class="row-lead row-lead--ember">${ic('radio')}</span>` +
+                `<div class="row-main"><div class="row-name">${escHtml(ch.name)}</div><div class="row-sub">بث صوتي مباشر</div></div>` +
+                `${count}` +
+                `<button class="row-fav${isFav ? ' is-fav' : ''}" onclick="toggleFavorite(event, '${escAttr(ch.name)}')" aria-label="مفضلة">${ic('star')}</button></div>`;
+        }
+
+        function radioChannelCardHtml(ch) {
+            const isFav = favorites.includes(ch.name);
+            const idx = radioChannels.indexOf(ch);
+            const srv = ch.servers.length > 1 ? `<span class="ch-srv">${ic('server')}${ch.servers.length}</span>` : '';
+            const media = ch.logo
+                ? `<img class="ch-img" src="${escHtml(ch.logo)}" alt="" loading="lazy" decoding="async" onerror="xtreamImgFallback(this, '${escAttr(ch.name)}')">`
+                : xtreamPlaceholderHtml(ch.name);
+            return `<div class="ch-card channel-item${isPlayingChannelName(ch.name) ? ' active-card' : ''}" data-name="${escHtml(ch.name)}" role="button" tabindex="0" onclick="openRadio(${idx}, this)">` +
+                `<div class="ch-tile">${media}${srv}` +
+                `<button class="ch-fav${isFav ? ' is-fav' : ''}" onclick="toggleFavorite(event, '${escAttr(ch.name)}')" aria-label="مفضلة">${ic('star')}</button>` +
+                `<span class="ch-eq"><i></i><i></i><i></i></span></div>` +
+                `<div class="ch-name" title="${escHtml(ch.name)}">${escHtml(ch.name)}</div></div>`;
+        }
+
+        function openRadio(radioIndex, el) {
+            const ch = radioChannels[radioIndex];
+            if (!ch || !Array.isArray(ch.servers) || ch.servers.length === 0) return;
+            if (ch.servers.length > 1) {
+                showServerChooser(ch, el);
+                return;
+            }
+            playChannel(ch.servers[0].url, ch.servers[0].type, ch.name, el, false, false, null,
+                { channel: ch, serverIndex: 0, isLive: true });
+        }
+
         function renderChannels() {
             const box = document.getElementById('channelsBox');
             const normalizedQuery = normalizeArabic(searchQuery);
             const searching = searchQuery.trim() !== '';
             let html = '';
+
+            // ===== 📻 مجلد الراديو =====
+            if (currentTab === "radio") {
+                const filteredRadio = radioChannels.filter(c => normalizeArabic(c.name).includes(normalizedQuery));
+                html += xtreamHeaderBlock('راديو', { sub: formatStatNumber(filteredRadio.length) + ' محطة' });
+                if (filteredRadio.length) {
+                    html += getChannelDisplayMode() === 'icons'
+                        ? `<div class="ch-grid">${filteredRadio.map(ch => radioChannelCardHtml(ch)).join('')}</div>`
+                        : `<div class="list">${filteredRadio.map(ch => radioChannelRowHtml(ch)).join('')}</div>`;
+                } else {
+                    html += emptyStateHtml({ icon: searching ? 'search-x' : 'radio',
+                        title: searching ? 'لا توجد نتائج' : 'لا توجد محطات بعد',
+                        text: searching ? 'جرّب كلمة بحث أخرى.' : 'ستظهر محطات الراديو هنا فور إضافتها.' });
+                }
+                box.innerHTML = html;
+                return;
+            }
 
             // ===== مجلدا القرآن الكريم وقصائد حسينية =====
             if (currentTab === "quran" || currentTab === "poems") {
@@ -2903,6 +3001,17 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                 }
             }
 
+            // ===== مفضلة الراديو =====
+            let favRadio = [];
+            if (isFavs) {
+                favRadio = radioChannels
+                    .filter(c => favorites.includes(c.name) && normalizeArabic(c.name).includes(normalizedQuery));
+                if (favRadio.length) {
+                    html += secHead('من الراديو', favRadio.length);
+                    html += `<div class="list list-gap">${favRadio.map(ch => radioChannelRowHtml(ch)).join('')}</div>`;
+                }
+            }
+
             // ===== القنوات الرئيسية =====
             if (filteredMain.length) {
                 html += secHead(isAll ? 'كل القنوات' : (isFavs ? 'القنوات المفضلة' : currentCat), filteredMain.length);
@@ -2911,7 +3020,7 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                 } else {
                     html += `<div class="list">${filteredMain.map(ch => mainChannelRowHtml(ch)).join('')}</div>`;
                 }
-            } else if (!favFolders.length) {
+            } else if (!favFolders.length && !favRadio.length) {
                 if (isFavs && !searching) {
                     html += emptyStateHtml({ icon: 'star', tone: 'gold', title: 'لا توجد مفضلة بعد',
                         text: 'اضغط على النجمة في أي قناة لتظهر هنا ويسهل الوصول إليها.' });
@@ -3133,6 +3242,10 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                     currentTab = 'poems';
                     renderChannels();
                     break;
+                case 'radio':
+                    currentTab = 'radio';
+                    renderChannels();
+                    break;
                 case 'xtream-list':
                     renderXtreamServerList();
                     break;
@@ -3156,7 +3269,7 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                     renderMenu();
                     renderChannels();
             }
-            if (s.screen === 'main' || s.screen === 'quran' || s.screen === 'poems') {
+            if (s.screen === 'main' || s.screen === 'quran' || s.screen === 'poems' || s.screen === 'radio') {
                 const box = document.getElementById('channelsBox');
                 if (box && s.__scrollTop && navDir === '') box.scrollTop = s.__scrollTop;
             }
@@ -3169,6 +3282,7 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
                 case 'main':
                 case 'quran':
                 case 'poems':
+                case 'radio':
                     renderChannels();
                     break;
                 case 'xtream-list':
@@ -4529,7 +4643,7 @@ body.kb-open .dock { transform: translateY(140%); opacity: 0; pointer-events: no
             document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
             if (el) el.classList.add('active-card');
             syncActiveCards();
-            if (channelCtx && channelCtx.channel) recordRecent(channelCtx.channel.name);
+            if (channelCtx && channelCtx.channel && !channelCtx.channel.isRadio) recordRecent(channelCtx.channel.name);
 
             // ============================================================
             //  🚀 التعديل الأساسي: استخدام البروكسي لكل روابط الفيديو (HLS)
