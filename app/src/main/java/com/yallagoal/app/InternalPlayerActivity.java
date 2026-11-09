@@ -2,14 +2,18 @@ package com.yallagoal.app;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.Intent;
+import android.database.Cursor;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.GestureDetector;
@@ -25,7 +29,11 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -85,6 +93,16 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private String resumeKey;
     private String titleString = "";
     private boolean isLive;
+
+    // ----- الصوت الإضافي (رابط / ملف / راديو) — انظر ExtraAudioPlayer و ExtraAudioUi -----
+    private ExtraAudioPlayer extraAudio;
+    private ExtraAudioUi extraUi;
+    private ActivityResultLauncher<String[]> pickAudioLauncher;
+    private LinearLayout settingsHead;
+    private ScrollView settingsScroll;
+    private View extraPage;
+    private LinearLayout audioOnlyBackdrop;
+    private TextView audioOnlyTitle;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean userSeeking = false;
@@ -244,6 +262,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
                     hideError();
                     if (durationMs > 0 && !isLive) durationText.setText(formatTime(durationMs));
                     applySeekMode();
+                    updateAudioOnlyBackdrop(true);
                     resetAutoHideTimer();
                 }
             });
@@ -298,6 +317,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
                 @Override
                 public void run() {
                     updatePlayPauseIcon(isPlaying);
+                    if (extraAudio != null) extraAudio.onMainPlayingChanged();
                 }
             });
         }
@@ -310,6 +330,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
                     if (isSettingsVisible()) {
                         refreshQualityListContent();
                     }
+                    updateAudioOnlyBackdrop(false);
                 }
             });
         }
@@ -322,6 +343,15 @@ public class InternalPlayerActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // منتقي ملفات الصوت (Storage Access Framework): يجب تسجيله قبل أن يبدأ النشاط.
+        pickAudioLauncher = registerForActivityResult(new ActivityResultContracts.OpenDocument(),
+                new ActivityResultCallback<Uri>() {
+                    @Override
+                    public void onActivityResult(Uri uri) {
+                        onAudioFilePicked(uri);
+                    }
+                });
 
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -348,6 +378,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
         titleText.setText(titleString);
         loadingTitleText.setText(titleString);
+        if (audioOnlyTitle != null) audioOnlyTitle.setText(titleString);
         liveBadgeTop.setVisibility(isLive ? View.VISIBLE : View.GONE);
         liveBadgeBottom.setVisibility(isLive ? View.VISIBLE : View.GONE);
         durationText.setVisibility(isLive ? View.GONE : View.VISIBLE);
@@ -370,12 +401,22 @@ public class InternalPlayerActivity extends AppCompatActivity {
         }
 
         startPlayback();
+        setupExtraAudio(refreshUrl);
     }
 
     @Override
     public void onBackPressed() {
         if (isSettingsVisible()) {
-            hideSettings();
+            // من صفحة الصوت الإضافي نعود أولاً لإعدادات التشغيل ثم نُغلق.
+            if (isExtraPageVisible()) {
+                closeExtraPage();
+            } else {
+                hideSettings();
+            }
+            return;
+        }
+        if (extraUi != null && extraUi.isSyncPanelVisible()) {
+            extraUi.hideSyncPanel();
             return;
         }
         finishAndSave();
@@ -431,9 +472,15 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private View buildUi() {
         root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
+        extraUi = new ExtraAudioUi(this, extraHost);
 
         videoContainer = new FrameLayout(this);
         root.addView(videoContainer, fl(MATCH, MATCH));
+
+        // واجهة «صوت فقط» (محطات الراديو): تظهر فوق مساحة الفيديو الفارغة حين لا يوجد مسار فيديو.
+        audioOnlyBackdrop = buildAudioOnlyBackdrop();
+        audioOnlyBackdrop.setVisibility(View.GONE);
+        root.addView(audioOnlyBackdrop, fl(MATCH, MATCH));
 
         gestureLayer = new View(this);
         setupGestures();
@@ -446,6 +493,9 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
         controlsOverlay = buildControlsOverlay();
         root.addView(controlsOverlay, fl(MATCH, MATCH));
+
+        // لوحة مزامنة الصوت الإضافي العائمة (لا تُظلّل الصورة)
+        root.addView(extraUi.buildSyncPanel(), extraUi.syncPanelParams());
 
         errorOverlay = buildErrorOverlay();
         errorOverlay.setVisibility(View.GONE);
@@ -732,6 +782,12 @@ public class InternalPlayerActivity extends AppCompatActivity {
         });
         top.addView(settingsBtn, ll(dp(44), dp(44)));
 
+        // زر الصوت الإضافي: يظهر فقط حين يوجد صوت مُضاف، ويفتح لوحة المزامنة مباشرةً.
+        View audioBtn = extraUi.buildQuickButton();
+        LinearLayout.LayoutParams audioLp = ll(dp(44), dp(44));
+        audioLp.leftMargin = dp(8);
+        top.addView(audioBtn, audioLp);
+
         LinearLayout resizeChip = new LinearLayout(this);
         resizeChip.setOrientation(LinearLayout.HORIZONTAL);
         resizeChip.setGravity(Gravity.CENTER_VERTICAL);
@@ -1007,6 +1063,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
         ht.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         head.addView(ht, ll(0, WRAP, 1f));
         settingsPanel.addView(head, ll(MATCH, WRAP));
+        settingsHead = head;
 
         ScrollView scroll = new ScrollView(this);
         scroll.setVerticalScrollBarEnabled(false);
@@ -1014,6 +1071,16 @@ public class InternalPlayerActivity extends AppCompatActivity {
         LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(0, dp(4), 0, dp(14));
+
+        // الصوت الإضافي (رابط / ملف / راديو): صف يفتح صفحته الكاملة داخل نفس اللوحة
+        LinearLayout.LayoutParams entryLp = ll(MATCH, WRAP);
+        entryLp.topMargin = dp(8);
+        body.addView(extraUi.buildSettingsEntry(new Runnable() {
+            @Override
+            public void run() {
+                openExtraPage();
+            }
+        }), entryLp);
 
         // جودة الفيديو
         body.addView(sectionLabel("جودة الفيديو"), ll(MATCH, WRAP));
@@ -1038,6 +1105,22 @@ public class InternalPlayerActivity extends AppCompatActivity {
 
         scroll.addView(body, new FrameLayout.LayoutParams(MATCH, WRAP));
         settingsPanel.addView(scroll, ll(MATCH, 0, 1f));
+        settingsScroll = scroll;
+
+        // صفحة الصوت الإضافي: تحلّ محل الرأس والمحتوى داخل اللوحة نفسها عند فتحها.
+        extraPage = extraUi.buildPage(new Runnable() {
+            @Override
+            public void run() {
+                closeExtraPage();
+            }
+        }, new Runnable() {
+            @Override
+            public void run() {
+                hideSettings();
+            }
+        });
+        extraPage.setVisibility(View.GONE);
+        settingsPanel.addView(extraPage, ll(MATCH, 0, 1f));
 
         overlay.addView(settingsPanel, fl(dp(340), MATCH, Gravity.RIGHT));
         return overlay;
@@ -1051,6 +1134,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
     }
 
     private void showSettings() {
+        closeExtraPage();
         refreshQualityListContent();
         refreshSpeedGrid();
         refreshAspectRow();
@@ -1547,6 +1631,7 @@ public class InternalPlayerActivity extends AppCompatActivity {
     private void setSpeed(float s) {
         currentSpeed = s;
         if (engine != null) engine.setPlaybackSpeed(s);
+        if (extraAudio != null) extraAudio.onMainSpeedChanged(s);
         boolean normal = Math.abs(s - 1f) < 0.01f;
         speedBadge.setVisibility(normal ? View.GONE : View.VISIBLE);
         speedBadge.setText(formatSpeed(s));
@@ -1739,6 +1824,165 @@ public class InternalPlayerActivity extends AppCompatActivity {
         PlaybackPositionStore.savePosition(getApplicationContext(), resumeKey, positionMs, knownDurationMs);
     }
 
+    // =====================================================================================
+    //  الصوت الإضافي: ربط النشاط بـ ExtraAudioPlayer / ExtraAudioUi
+    // =====================================================================================
+
+    private final ExtraAudioUi.Host extraHost = new ExtraAudioUi.Host() {
+        @Override
+        public void pickAudioFile() {
+            launchAudioPicker();
+        }
+
+        @Override
+        public void toast(String text) {
+            showExtraToast(text);
+        }
+
+        @Override
+        public void touch() {
+            resetAutoHideTimer();
+        }
+
+        @Override
+        public void openPage() {
+            showSettings();
+            openExtraPage();
+        }
+
+        @Override
+        public void closeSettings() {
+            hideSettings();
+        }
+
+        @Override
+        public boolean isLiveContent() {
+            return isLive;
+        }
+    };
+
+    /** يُنشئ مشغّل الصوت الإضافي لهذا المحتوى ويستعيد إعداده المحفوظ (إن وُجد). فشله لا يمنع المشاهدة أبداً. */
+    private void setupExtraAudio(String refreshUrl) {
+        try {
+            final String key = ExtraAudioStore.keyFor(titleString, isLive, resumeKey, refreshUrl, contentUrl);
+            extraAudio = new ExtraAudioPlayer(this, engine, isLive, key);
+            extraUi.bind(extraAudio);
+            final ExtraAudioStore.Profile saved = ExtraAudioStore.load(this, key);
+            if (saved != null) {
+                extraAudio.restore(saved);
+                showExtraToast("تم استرجاع الصوت الإضافي المحفوظ");
+            }
+        } catch (Throwable t) {
+            extraAudio = null;
+        }
+    }
+
+    private void openExtraPage() {
+        if (extraPage == null || settingsHead == null || settingsScroll == null) return;
+        settingsHead.setVisibility(View.GONE);
+        settingsScroll.setVisibility(View.GONE);
+        extraPage.setVisibility(View.VISIBLE);
+    }
+
+    private void closeExtraPage() {
+        if (extraPage == null || settingsHead == null || settingsScroll == null) return;
+        extraPage.setVisibility(View.GONE);
+        settingsHead.setVisibility(View.VISIBLE);
+        settingsScroll.setVisibility(View.VISIBLE);
+    }
+
+    private boolean isExtraPageVisible() {
+        return extraPage != null && extraPage.getVisibility() == View.VISIBLE;
+    }
+
+    private void launchAudioPicker() {
+        try {
+            pickAudioLauncher.launch(new String[]{"*/*"});
+        } catch (Throwable t) {
+            showExtraToast("تعذّر فتح منتقي الملفات على هذا الجهاز");
+        }
+    }
+
+    private void onAudioFilePicked(Uri uri) {
+        if (uri == null || extraAudio == null) return;
+        try {
+            // نطلب صلاحية دائمة ليبقى الملف متاحاً بعد إغلاق التطبيق (للحفظ لكل قناة).
+            getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (Throwable ignored) {
+            // بعض المزوّدين لا يدعمون الصلاحية الدائمة: يعمل الملف في هذه الجلسة فقط.
+        }
+        extraAudio.setSourceFile(uri.toString(), queryDisplayName(uri));
+        showExtraToast("تمت إضافة الملف");
+    }
+
+    private String queryDisplayName(Uri uri) {
+        Cursor c = null;
+        try {
+            c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null);
+            if (c != null && c.moveToFirst()) {
+                String n = c.getString(0);
+                if (n != null && !n.isEmpty()) return n;
+            }
+        } catch (Throwable ignored) {
+            // نكتفي بالاسم الاحتياطي
+        } finally {
+            if (c != null) c.close();
+        }
+        String last = uri.getLastPathSegment();
+        return last == null || last.isEmpty() ? "ملف صوتي" : last;
+    }
+
+    /** الرسائل القصيرة بالإشعار الوسطي، والأطول (نصائح/أخطاء) بإشعار النظام لأن الكبسولة سطر واحد. */
+    private void showExtraToast(String text) {
+        if (text == null || text.isEmpty()) return;
+        if (text.length() <= 34 && centerToast != null) {
+            showCenterToast("audio-lines", text);
+        } else {
+            Toast.makeText(this, text, text.length() > 70 ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private LinearLayout buildAudioOnlyBackdrop() {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setGravity(Gravity.CENTER);
+        col.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF0B1330, 0xFF050A1B}));
+        FrameLayout badge = new FrameLayout(this);
+        badge.setBackground(YgUi.oval(YgUi.withAlpha(YgUi.EMBER, 0x2E)));
+        badge.addView(new YgIconView(this, "radio", YgUi.EMBER_2), fl(dp(52), dp(52), Gravity.CENTER));
+        col.addView(badge, ll(dp(112), dp(112)));
+        audioOnlyTitle = label("", 20, Color.WHITE, YgUi.display(this));
+        audioOnlyTitle.setGravity(Gravity.CENTER);
+        audioOnlyTitle.setMaxLines(2);
+        audioOnlyTitle.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams tp = ll(MATCH, WRAP);
+        tp.topMargin = dp(18);
+        tp.leftMargin = dp(32);
+        tp.rightMargin = dp(32);
+        col.addView(audioOnlyTitle, tp);
+        TextView sub = label("بثّ صوتي مباشر", 13, YgUi.MIST, YgUi.text(this));
+        sub.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams sp = ll(MATCH, WRAP);
+        sp.topMargin = dp(6);
+        col.addView(sub, sp);
+        return col;
+    }
+
+    /**
+     * يُظهر واجهة «صوت فقط» حين يكون المحتوى بلا فيديو (راديو). يُحدَّث عند الجاهزية فقط (تكون المسارات معروفة)،
+     * أما أثناء تغيّر المسارات فنكتفي بإخفائها إن ظهر فيديو، حتى لا تومض أثناء إعادة الاتصال بقناة فيديو.
+     */
+    private void updateAudioOnlyBackdrop(boolean allowShow) {
+        if (audioOnlyBackdrop == null || engine == null) return;
+        boolean hasVideo = engine.hasVideo();
+        if (hasVideo) {
+            audioOnlyBackdrop.setVisibility(View.GONE);
+        } else if (allowShow) {
+            audioOnlyBackdrop.setVisibility(View.VISIBLE);
+        }
+    }
+
     private void finishAndSave() {
         if (engine != null) {
             savePositionNow(engine.getCurrentPosition());
@@ -1751,6 +1995,12 @@ public class InternalPlayerActivity extends AppCompatActivity {
     }
 
     private void releaseEngineNow() {
+        // الصوت الإضافي أولاً (يقرأ من المحرّك الرئيسي)، ثم المحرّك.
+        if (extraUi != null) extraUi.dismissAll();
+        if (extraAudio != null) {
+            extraAudio.release();
+            extraAudio = null;
+        }
         if (engine != null) {
             engine.release();
             engine = null;
