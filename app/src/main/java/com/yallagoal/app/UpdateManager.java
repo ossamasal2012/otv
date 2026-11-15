@@ -48,7 +48,7 @@ import java.util.Locale;
 public class UpdateManager {
 
     // ⚠️ مهم جداً: غيّر السطر التالي إلى "اسم_المستخدم/اسم_المستودع" الخاص بك بالضبط
-    private static final String GITHUB_REPO = "ossamasal2012/otv";
+    private static final String GITHUB_REPO = "Ossama-dev-1/yalla-releases";
 
     private static final String VERSION_URL =
             "https://github.com/" + GITHUB_REPO + "/releases/latest/download/version.json";
