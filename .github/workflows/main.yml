@@ -140,9 +140,8 @@ jobs:
           HASH=$(sha256sum app/build/outputs/apk/release/YallaGoal.apk | awk '{print $1}')
           echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
 
-      # 🔒 (اختياري) نشر الإصدارات في مستودع عام منفصل يحوي الـ APK فقط، ليبقى مستودع الكود الرئيسي
-      # خاصاً (Private). بدون ضبط المتغيّر RELEASES_REPO يُنشر في هذا المستودع كما كان تماماً.
-      # التفاصيل والخطوات: README_SECURITY.md ← "فصل مستودع الإصدارات".
+
+      # إنشاء معلومات الإصدار ورابط التنزيل في الحساب الثاني
       - name: Generate version.json
         run: |
           cat > version.json << EOF
@@ -151,20 +150,40 @@ jobs:
             "versionName": "${{ steps.version.outputs.name }}",
             "force_update": true,
             "changelog": "يتوفر إصدار جديد من تطبيق يلا گول (الإصدار ${{ steps.version.outputs.name }}). يرجى التحديث للمتابعة.",
-            "download_url": "https://github.com/${{ vars.RELEASES_REPO || github.repository }}/releases/latest/download/YallaGoal.apk",
+            "download_url": "https://github.com/${{ vars.RELEASES_REPO }}/releases/latest/download/YallaGoal.apk",
             "sha256": "${{ steps.checksum.outputs.sha256 }}"
           }
           EOF
 
-      - name: Publish rolling "latest" release (used by the in-app update checker)
+      # نشر APK وversion.json في الحساب الثاني
+      - name: Publish YallaGoal to secondary releases repository
         uses: softprops/action-gh-release@v2
         with:
-          repository: ${{ vars.RELEASES_REPO || github.repository }}
-          token: ${{ secrets.RELEASES_TOKEN || github.token }}
+          repository: ${{ vars.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN }}
           tag_name: latest
           name: "Latest build (v${{ steps.version.outputs.name }})"
           body: "بناء تلقائي - الإصدار ${{ steps.version.outputs.name }}"
           make_latest: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
           files: |
             app/build/outputs/apk/release/YallaGoal.apk
             version.json
+
+      # نشر ملف معلومات التحديث في المستودع القديم
+      # حتى تستطيع النسخ القديمة اكتشاف الإصدار الجديد
+      - name: Publish legacy update manifest to otv
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          tag_name: latest
+          name: "YallaGoal compatibility manifest (v${{ steps.version.outputs.name }})"
+          body: "ملف التحديث التوافقي للنسخ القديمة من يلا گول."
+          make_latest: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            version.json
+
